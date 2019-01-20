@@ -194,7 +194,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				"\"Load All\": Add all fonts to system font table.\r\n"
 				"\"Unload\": Remove selected fonts from system font table.\r\n"
 				"\"Unload All\": Remove all fonts from system font table.\r\n"
-				"\"Broadcast WM_FONTCHANGE\": If checked, broadcast WM_FONTCHANGE message to all top windows.\r\n"
+				"\"Broadcast WM_FONTCHANGE\": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.\r\n"
 				"\"Font Name\": Names of the fonts added to the list.\r\n"
 				"\"State\": State of the font. There are four states, \"Loaded\", \"Load failed\", \"Unloaded\" and \"Unload failed\".\r\n"
 				"\r\n"
