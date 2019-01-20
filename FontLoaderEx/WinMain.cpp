@@ -14,6 +14,7 @@
 #include "FontResource.h"
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+void DoEvents();	//C++ equivalent of vb DoEvents()
 
 std::list<FontResource> FontList{};
 
@@ -33,10 +34,6 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 			{
 				FontList.push_back(argv[i]);
 			}
-		}
-		for (auto& i : FontList)
-		{
-			i.Load();
 		}
 	}
 	LocalFree(argv);
@@ -64,11 +61,18 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	UpdateWindow(hWnd);
 
 	BOOL bRet{};
-	while ((bRet = GetMessage(&msg, NULL, 0, 0)) != 0)
+	int ret{};
+	while ((bRet = GetMessage(&msg, NULL, 0, 0)))
 	{
-		if (bRet == -1)
+		if (bRet == 0)
 		{
-			return (int)GetLastError();
+			ret = (int)msg.wParam;
+			break;
+		}
+		else if (ret == -1)
+		{
+			ret = (int)GetLastError();
+			break;
 		}
 		else
 		{
@@ -77,7 +81,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		}
 	}
 
-	return (int)msg.wParam;
+	return ret;
 }
 
 HWND hButtonOpen;
@@ -195,25 +199,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				"\"State\": State of the font. There are four states, \"Loaded\", \"Load failed\", \"Unloaded\" and \"Unload failed\".\r\n"
 				"\r\n"
 			);
-			ret = 0;	
+			ret = 0;
 		}
 		break;
 	case WM_ACTIVATE:
 		{
-			if (DragDropHasFonts)	//Process drag-drop font files onto the application icon stage II
+			if (DragDropHasFonts)
 			{
+				//Process drag-drop font files onto the application icon stage II
 				LVITEM lvi{ LVIF_TEXT };
 				std::list<FontResource>::iterator iter = FontList.begin();
 				for (int i = 0; i < (int)FontList.size(); i++)
 				{
 					lvi.iItem = i;
 					lvi.iSubItem = 0;
-					lvi.pszText = (LPWSTR)iter->GetFontPath().c_str();
+					lvi.pszText = (LPWSTR)(iter->GetFontPath().c_str());
 					ListView_InsertItem(hListViewFontList, &lvi);
 					lvi.iSubItem = 1;
-					lvi.pszText = NULL;
-					ListView_SetItem(hListViewFontList, &lvi);
-					if (iter->IsLoaded())
+					if (iter->Load())
 					{
 						lvi.pszText = (LPWSTR)L"Loaded";
 						ListView_SetItem(hListViewFontList, &lvi);
@@ -236,15 +239,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 					}
 					iter++;
+					DoEvents();
 				}
+				Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 				Edit_ReplaceSel(hEditMessage, L"\r\n");
 				Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 				DragDropHasFonts = false;
+
+				ret = 0;
 			}
-			ret = 0;
 		}
 		break;
-	case WM_COMMAND: 
+	case WM_COMMAND:
 		{
 			ret = ButtonOpenProc(hWnd, msg, wParam, lParam);
 			ret = ButtonCloseProc(hWnd, msg, wParam, lParam);
@@ -306,6 +312,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 					continue;
 				}
 				iter++;
+				DoEvents();
 			}
 			FontList.reverse();
 			if ((Button_GetCheck(hButtonBroadcastMsg) == BST_CHECKED && bIsFontListChanged))
@@ -482,6 +489,7 @@ LRESULT ButtonCloseProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 							}
 						}
 						iter++;
+						DoEvents();
 					}
 					FontList.reverse();
 					if ((Button_GetCheck(hButtonBroadcastMsg) == BST_CHECKED && bIsFontListChanged))
@@ -562,6 +570,7 @@ LRESULT ButtonCloseAllProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 							continue;
 						}
 						iter++;
+						DoEvents();
 					}
 					FontList.reverse();
 					if ((Button_GetCheck(hButtonBroadcastMsg) == BST_CHECKED && bIsFontListChanged))
@@ -629,6 +638,7 @@ LRESULT ButtonLoadProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 						}
 						iter++;
+						DoEvents();
 					}
 					if ((Button_GetCheck(hButtonBroadcastMsg) == BST_CHECKED && bIsFontListChanged))
 					{
@@ -694,6 +704,7 @@ LRESULT ButtonLoadAllProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 							}
 						}
 						iter++;
+						DoEvents();
 					}
 					if ((Button_GetCheck(hButtonBroadcastMsg) == BST_CHECKED && bIsFontListChanged))
 					{
@@ -759,6 +770,7 @@ LRESULT ButtonUnloadProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 							}
 						}
 						iter++;
+						DoEvents();
 					}
 					if ((Button_GetCheck(hButtonBroadcastMsg) == BST_CHECKED && bIsFontListChanged))
 					{
@@ -824,6 +836,7 @@ LRESULT ButtonUnloadAllProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 							}
 						}
 						iter++;
+						DoEvents();
 					}
 					if ((Button_GetCheck(hButtonBroadcastMsg) == BST_CHECKED && bIsFontListChanged))
 					{
@@ -890,4 +903,28 @@ LRESULT CALLBACK ListViewProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		break;
 	}
 	return ret;
+}
+
+void DoEvents()
+{
+	MSG msg{};
+	BOOL ret{};
+	while (PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE))
+	{
+		ret = GetMessage(&msg, NULL, 0, 0);
+		if (ret == 0)
+		{
+			PostQuitMessage((int)msg.wParam);
+			break;
+		}
+		else if (ret == -1)
+		{
+			TerminateProcess(GetCurrentProcess(), -1);
+		}
+		else
+		{
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+	}
 }
