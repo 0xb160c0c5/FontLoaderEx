@@ -47,11 +47,11 @@ bool FontResource::Unload()
 {
 #ifndef _DEBUG
 	bool bRet;
-	if (!bIsLoaded_)
+	if (bIsLoaded_)
 	{
-		if (AddFontResource(strFontPath_.c_str()))
+		if (RemoveFontResource(strFontPath_.c_str()))
 		{
-			bIsLoaded_ = true;
+			bIsLoaded_ = false;
 			bRet = true;
 		}
 		else

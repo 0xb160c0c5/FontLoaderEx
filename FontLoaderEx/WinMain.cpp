@@ -220,7 +220,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 						Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
 						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, L" is successfully opened and loaded\r\n");
+						Edit_ReplaceSel(hEditMessage, L" successfully opened and loaded\r\n");
 						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 					}
 					else
@@ -531,7 +531,7 @@ LRESULT ButtonCloseAllProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L" is successfully unloaded and closed\r\n");
+								Edit_ReplaceSel(hEditMessage, L" successfully unloaded and closed\r\n");
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 								iter = FontList.erase(iter);
 								continue;
@@ -611,7 +611,7 @@ LRESULT ButtonLoadProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L" is successfully loaded\r\n");
+								Edit_ReplaceSel(hEditMessage, L" successfully loaded\r\n");
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 							}
 							else
@@ -677,7 +677,7 @@ LRESULT ButtonLoadAllProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L" is successfully loaded\r\n");
+								Edit_ReplaceSel(hEditMessage, L" successfully loaded\r\n");
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 							}
 							else
@@ -742,7 +742,7 @@ LRESULT ButtonUnloadProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L" is successfully unloaded\r\n");
+								Edit_ReplaceSel(hEditMessage, L" successfully unloaded\r\n");
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 							}
 							else
@@ -807,7 +807,7 @@ LRESULT ButtonUnloadAllProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L" is successfully unloaded\r\n");
+								Edit_ReplaceSel(hEditMessage, L" successfully unloaded\r\n");
 								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 							}
 							else
@@ -872,7 +872,7 @@ LRESULT CALLBACK ListViewProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 					Edit_ReplaceSel(hEditMessage, lpszFileName.get());
 					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					Edit_ReplaceSel(hEditMessage, L" is successfully opened\r\n");
+					Edit_ReplaceSel(hEditMessage, L" successfully opened\r\n");
 					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
 				}
 			}
