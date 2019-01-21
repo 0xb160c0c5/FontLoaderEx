@@ -38,6 +38,7 @@ bool FontResource::Load()
 	}
 	return bRet;
 #else
+	Sleep(500);
 	bIsLoaded_ = true;
 	return true;
 #endif
@@ -65,6 +66,7 @@ bool FontResource::Unload()
 	}
 	return bRet;
 #else
+	Sleep(500);
 	bIsLoaded_ = false;
 	return true;
 #endif

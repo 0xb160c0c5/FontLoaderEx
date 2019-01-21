@@ -6,22 +6,27 @@
 #include <CommCtrl.h>
 #include <shlwapi.h>
 #include <windowsx.h>
+#include <process.h>
 #include <string>
 #include <cstring>
 #include <list>
 #include <vector>
 #include <memory>
 #include "FontResource.h"
+#include "Globals.h"
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-void DoEvents();	//C++ equivalent of vb DoEvents()
 
 std::list<FontResource> FontList{};
 
+HWND hWndMainWindow{};
+CRITICAL_SECTION CriticalSection{};
 bool DragDropHasFonts = false;
 
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
+	InitializeCriticalSection(&CriticalSection);
+
 	//Process drag-drop font files onto the application icon stage I
 	int argc{};
 	LPWSTR* argv = CommandLineToArgvW(GetCommandLine(), &argc);
@@ -38,12 +43,11 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	}
 	LocalFree(argv);
 
+	InitCommonControls();
+
 	//Create window
-	HWND hWnd{};
 	MSG msg{};
 	WNDCLASS wndclass{ CS_HREDRAW | CS_VREDRAW, WndProc, 0, 0, hInstance, LoadIcon(NULL, IDI_APPLICATION), LoadCursor(NULL, IDC_ARROW), GetSysColorBrush(COLOR_WINDOW), NULL, L"FontLoaderEx" };
-
-	InitCommonControls();
 
 	if (!RegisterClass(&wndclass))
 	{
@@ -51,14 +55,14 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		return -1;
 	}
 
-	if (!(hWnd = CreateWindow(L"FontLoaderEx", L"FontLoaderEx", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_BORDER | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, 700, 700, NULL, NULL, hInstance, NULL)))
+	if (!(hWndMainWindow = CreateWindow(L"FontLoaderEx", L"FontLoaderEx", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_BORDER | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, 700, 700, NULL, NULL, hInstance, NULL)))
 	{
 		MessageBox(NULL, L"Failed to create window.", L"FontLoaderEx", MB_ICONERROR);
 		return -1;
 	}
 
-	ShowWindow(hWnd, nShowCmd);
-	UpdateWindow(hWnd);
+	ShowWindow(hWndMainWindow, nShowCmd);
+	UpdateWindow(hWndMainWindow);
 
 	BOOL bRet{};
 	int ret{};
@@ -81,19 +85,21 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		}
 	}
 
+	DeleteCriticalSection(&CriticalSection);
+
 	return ret;
 }
 
-HWND hButtonOpen;
-HWND hButtonClose;
-HWND hButtonCloseAll;
-HWND hButtonLoad;
-HWND hButtonLoadAll;
-HWND hButtonUnload;
-HWND hButtonUnloadAll;
-HWND hButtonBroadcastMsg;
-HWND hListViewFontList;
-HWND hEditMessage;
+HWND hWndButtonOpen{};
+HWND hWndButtonClose{};
+HWND hWndButtonCloseAll{};
+HWND hWndButtonLoad{};
+HWND hWndButtonLoadAll{};
+HWND hWndButtonUnload{};
+HWND hWndButtonUnloadAll{};
+HWND hWndButtonBroadcastWM_FONTCHANGE{};
+HWND hWndListViewFontList{};
+HWND hWndEditMessage{};
 const unsigned int idButtonOpen{ 0 };
 const unsigned int idButtonClose{ 1 };
 const unsigned int idButtonCloseAll{ 2 };
@@ -101,9 +107,12 @@ const unsigned int idButtonLoad{ 3 };
 const unsigned int idButtonLoadAll{ 4 };
 const unsigned int idButtonUnload{ 5 };
 const unsigned int idButtonUnloadAll{ 6 };
-const unsigned int idButtonBroadcastMsg{ 7 };
+const unsigned int idButtonBroadcastWM_FONTCHANGE{ 7 };
 const unsigned int idListViewFontList{ 8 };
 const unsigned int idEditMessage{ 9 };
+
+extern const UINT UM_WORKINGTHREADTERMINATED = WM_USER + 0x100;
+extern const UINT UM_CLOSEWORKINGTHREADTERMINATED = WM_USER + 0x101;
 
 LRESULT ButtonOpenProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 LRESULT ButtonCloseProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -114,7 +123,19 @@ LRESULT ButtonUnloadProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 LRESULT ButtonUnloadAllProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 LRESULT CALLBACK ListViewProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
+extern DWORD DragDropWorkingThreadProc(void* lpParameter);
+extern DWORD CloseWorkingThreadProc(void* lpParameter);
+extern DWORD ButtonCloseWorkingThreadProc(void* lpParameter);
+extern DWORD ButtonCloseAllWorkingThreadProc(void* lpParameter);
+extern DWORD ButtonLoadWorkingThreadProc(void* lpParameter);
+extern DWORD ButtonLoadAllWorkingThreadProc(void* lpParameter);
+extern DWORD ButtonUnloadWorkingThreadProc(void* lpParameter);
+extern DWORD ButtonUnloadAllWorkingThreadProc(void* lpParameter);
+
 LONG_PTR OldListViewProc;
+
+void EnableAllButtons();
+void DisableAllButtons();
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -130,53 +151,53 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			HFONT hFont = CreateFontIndirect(&ncm.lfMessageFont);
 
 			//Initialize ButtonOpen
-			hButtonOpen = CreateWindow(WC_BUTTON, L"Open", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 50, 50, hWnd, (HMENU)(idButtonOpen | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-			SetWindowFont(hButtonOpen, hFont, TRUE);
+			hWndButtonOpen = CreateWindow(WC_BUTTON, L"Open", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 0, 0, 50, 50, hWnd, (HMENU)(idButtonOpen | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			SetWindowFont(hWndButtonOpen, hFont, TRUE);
 
 			//Initialize ButtonClose
-			hButtonClose = CreateWindow(WC_BUTTON, L"Close", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 50, 0, 50, 50, hWnd, (HMENU)(idButtonClose | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-			SetWindowFont(hButtonClose, hFont, TRUE);
+			hWndButtonClose = CreateWindow(WC_BUTTON, L"Close", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 50, 0, 50, 50, hWnd, (HMENU)(idButtonClose | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			SetWindowFont(hWndButtonClose, hFont, TRUE);
 
 			//Initialize ButtonCloseAll
-			hButtonCloseAll = CreateWindow(WC_BUTTON, L"Close\r\nAll", WS_CHILD | WS_VISIBLE | BS_MULTILINE | BS_PUSHBUTTON, 100, 0, 50, 50, hWnd, (HMENU)(idButtonCloseAll | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-			SetWindowFont(hButtonCloseAll, hFont, TRUE);
+			hWndButtonCloseAll = CreateWindow(WC_BUTTON, L"Close\r\nAll", WS_CHILD | WS_VISIBLE | BS_MULTILINE | BS_PUSHBUTTON, 100, 0, 50, 50, hWnd, (HMENU)(idButtonCloseAll | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			SetWindowFont(hWndButtonCloseAll, hFont, TRUE);
 
 			//Initialize ButtonLoad
-			hButtonLoad = CreateWindow(WC_BUTTON, L"Load", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 150, 0, 50, 50, hWnd, (HMENU)(idButtonLoad | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-			SetWindowFont(hButtonLoad, hFont, TRUE);
+			hWndButtonLoad = CreateWindow(WC_BUTTON, L"Load", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 150, 0, 50, 50, hWnd, (HMENU)(idButtonLoad | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			SetWindowFont(hWndButtonLoad, hFont, TRUE);
 
 			//Initialize ButtonLoadAll
-			hButtonLoadAll = CreateWindow(WC_BUTTON, L"Load\r\nAll", WS_CHILD | WS_VISIBLE | BS_MULTILINE | BS_PUSHBUTTON, 200, 0, 50, 50, hWnd, (HMENU)(idButtonLoadAll | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-			SetWindowFont(hButtonLoadAll, hFont, TRUE);
+			hWndButtonLoadAll = CreateWindow(WC_BUTTON, L"Load\r\nAll", WS_CHILD | WS_VISIBLE | BS_MULTILINE | BS_PUSHBUTTON, 200, 0, 50, 50, hWnd, (HMENU)(idButtonLoadAll | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			SetWindowFont(hWndButtonLoadAll, hFont, TRUE);
 
 			//Initialize ButtonUnload
-			hButtonUnload = CreateWindow(WC_BUTTON, L"Unload", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 250, 0, 50, 50, hWnd, (HMENU)(idButtonUnload | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-			SetWindowFont(hButtonUnload, hFont, TRUE);
+			hWndButtonUnload = CreateWindow(WC_BUTTON, L"Unload", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 250, 0, 50, 50, hWnd, (HMENU)(idButtonUnload | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			SetWindowFont(hWndButtonUnload, hFont, TRUE);
 
 			//Initialize ButtonUnloadAll
-			hButtonUnloadAll = CreateWindow(WC_BUTTON, L"Unload\r\nAll", WS_CHILD | WS_VISIBLE | BS_MULTILINE | BS_PUSHBUTTON, 300, 0, 50, 50, hWnd, (HMENU)(idButtonUnloadAll | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-			SetWindowFont(hButtonUnloadAll, hFont, TRUE);
+			hWndButtonUnloadAll = CreateWindow(WC_BUTTON, L"Unload\r\nAll", WS_CHILD | WS_VISIBLE | BS_MULTILINE | BS_PUSHBUTTON, 300, 0, 50, 50, hWnd, (HMENU)(idButtonUnloadAll | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			SetWindowFont(hWndButtonUnloadAll, hFont, TRUE);
 
 			//Initialize ButtonBroadcastMsg
-			hButtonBroadcastMsg = CreateWindow(WC_BUTTON, L"Broadcast WM_FONTCHANGE", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 350, 0, 250, 20, hWnd, (HMENU)(idButtonBroadcastMsg | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-			SetWindowFont(hButtonBroadcastMsg, hFont, TRUE);
+			hWndButtonBroadcastWM_FONTCHANGE = CreateWindow(WC_BUTTON, L"Broadcast WM_FONTCHANGE", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 350, 0, 250, 20, hWnd, (HMENU)(idButtonBroadcastWM_FONTCHANGE | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			SetWindowFont(hWndButtonBroadcastWM_FONTCHANGE, hFont, TRUE);
 
 			//Initialize ListViewFontList
-			hListViewFontList = CreateWindow(WC_LISTVIEW, L"FontList", WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT, 0, 50, rectClient.right - rectClient.left, 300, hWnd, (HMENU)(idListViewFontList | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-			SetWindowFont(hListViewFontList, hFont, TRUE);
-			DragAcceptFiles(hListViewFontList, TRUE);
-			OldListViewProc = GetWindowLongPtr(hListViewFontList, GWLP_WNDPROC);
-			SetWindowLongPtr(hListViewFontList, GWLP_WNDPROC, (LONG_PTR)ListViewProc);
+			hWndListViewFontList = CreateWindow(WC_LISTVIEW, L"FontList", WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT, 0, 50, rectClient.right - rectClient.left, 300, hWnd, (HMENU)(idListViewFontList | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			SetWindowFont(hWndListViewFontList, hFont, TRUE);
+			DragAcceptFiles(hWndListViewFontList, TRUE);
+			OldListViewProc = GetWindowLongPtr(hWndListViewFontList, GWLP_WNDPROC);
+			SetWindowLongPtr(hWndListViewFontList, GWLP_WNDPROC, (LONG_PTR)ListViewProc);
 			LVCOLUMN lvcolumn1{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectClient.right - rectClient.left) * 7 / 10 , (LPWSTR)L"Font Name" };
-			ListView_InsertColumn(hListViewFontList, 0, &lvcolumn1);
+			ListView_InsertColumn(hWndListViewFontList, 0, &lvcolumn1);
 			LVCOLUMN lvcolumn2{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectClient.right - rectClient.left) * 3 / 10 , (LPWSTR)L"State" };
-			ListView_InsertColumn(hListViewFontList, 1, &lvcolumn2);
-			ListView_SetExtendedListViewStyle(hListViewFontList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+			ListView_InsertColumn(hWndListViewFontList, 1, &lvcolumn2);
+			ListView_SetExtendedListViewStyle(hWndListViewFontList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 
 			//Initialize EditMessage
-			hEditMessage = CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_READONLY | ES_LEFT | ES_MULTILINE, 0, 350, rectClient.right - rectClient.left, rectClient.bottom - rectClient.top - 350, hWnd, (HMENU)(idEditMessage | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-			SetWindowFont(hEditMessage, hFont, TRUE);
-			Edit_SetText(hEditMessage,
+			hWndEditMessage = CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_READONLY | ES_LEFT | ES_MULTILINE, 0, 350, rectClient.right - rectClient.left, rectClient.bottom - rectClient.top - 350, hWnd, (HMENU)(idEditMessage | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			SetWindowFont(hWndEditMessage, hFont, TRUE);
+			Edit_SetText(hWndEditMessage,
 				L"Temporary load and unload fonts to system font table.\r\n"
 				"\r\n"
 				"How to load fonts:\r\n"
@@ -207,44 +228,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			if (DragDropHasFonts)
 			{
 				//Process drag-drop font files onto the application icon stage II
-				LVITEM lvi{ LVIF_TEXT };
-				std::list<FontResource>::iterator iter = FontList.begin();
-				for (int i = 0; i < (int)FontList.size(); i++)
-				{
-					lvi.iItem = i;
-					lvi.iSubItem = 0;
-					lvi.pszText = (LPWSTR)(iter->GetFontPath().c_str());
-					ListView_InsertItem(hListViewFontList, &lvi);
-					lvi.iSubItem = 1;
-					if (iter->Load())
-					{
-						lvi.pszText = (LPWSTR)L"Loaded";
-						ListView_SetItem(hListViewFontList, &lvi);
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, L" successfully opened and loaded\r\n");
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					}
-					else
-					{
-						lvi.pszText = (LPWSTR)L"Load failed";
-						ListView_SetItem(hListViewFontList, &lvi);
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, L"Failed to load ");
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, L"\r\n");
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					}
-					iter++;
-					DoEvents();
-				}
-				Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-				Edit_ReplaceSel(hEditMessage, L"\r\n");
-				Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-				DragDropHasFonts = false;
+				DisableAllButtons();
+				_beginthread((_beginthread_proc_type)DragDropWorkingThreadProc, 0, nullptr);
 
 				ret = 0;
 			}
@@ -264,91 +249,46 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_CLOSE:
 		{
 			//Unload all fonts
-			bool bIsFontListChanged{ false };
-			bool bIsUnloadSuccessful{ true };
-			LVITEM lvi{ LVIF_TEXT, 0, 1 };
-			FontList.reverse();
-			std::list<FontResource>::iterator iter = FontList.begin();
-			for (int i = ListView_GetItemCount(hListViewFontList) - 1; i >= 0; i--)
-			{
-				if (iter->IsLoaded())
-				{
-					if (iter->Unload())
-					{
-						bIsFontListChanged = true;
-						ListView_DeleteItem(hListViewFontList, i);
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, L" successfully unloaded and closed\r\n");
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						iter = FontList.erase(iter);
-						continue;
-					}
-					else
-					{
-						bIsUnloadSuccessful = false;
-						lvi.iItem = i;
-						lvi.pszText = (LPWSTR)L"Unload failed";
-						ListView_SetItem(hListViewFontList, &lvi);
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, L"Failed to unload ");
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, L"\r\n");
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					}
-				}
-				else
-				{
-					ListView_DeleteItem(hListViewFontList, i);
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					Edit_ReplaceSel(hEditMessage, L" successfully closed\r\n");
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					iter = FontList.erase(iter);
-					continue;
-				}
-				iter++;
-				DoEvents();
-			}
-			FontList.reverse();
-			if ((Button_GetCheck(hButtonBroadcastMsg) == BST_CHECKED && bIsFontListChanged))
-			{
-				FORWARD_WM_FONTCHANGE(HWND_BROADCAST, SendMessage);
-				Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-				Edit_ReplaceSel(hEditMessage, L"WM_FONTCHANGE broadcasted to all top windows.\r\n");
-				Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-			}
-			Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-			Edit_ReplaceSel(hEditMessage, L"\r\n");
-			Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
+			DisableAllButtons();
+			_beginthread((_beginthread_proc_type)CloseWorkingThreadProc, 0, nullptr);
 
-			//If some fonts are not unloaded, prompt user whether inisit to exit.
-			if (bIsUnloadSuccessful)
-			{
-				DestroyWindow(hWnd);
-			}
-			else
-			{
-				switch (MessageBox(hWnd, L"Some fonts are not successfully unloaded.\r\n\r\nDo you still want to exit?", L"FontLoaderEx", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1 | MB_APPLMODAL))
-				{
-				case IDYES:
-					DestroyWindow(hWnd);
-					break;
-				case IDNO:
-					break;
-				default:
-					break;
-				}
-			}
+			ret = 0;
 		}
 		break;
 	case WM_DESTROY:
 		{
 			PostQuitMessage(0);
+			ret = 0;
+		}
+		break;
+	case UM_WORKINGTHREADTERMINATED:
+		{
+			EnableAllButtons();
+
+			ret = 0;
+		}
+		break;
+	case UM_CLOSEWORKINGTHREADTERMINATED:
+		{
+			if (wParam)
+			{
+				DestroyWindow(hWndMainWindow);
+			}
+			else
+			{
+				switch (MessageBox(hWndMainWindow, L"Some fonts are not successfully unloaded.\r\n\r\nDo you still want to exit?", L"FontLoaderEx", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1 | MB_APPLMODAL))
+				{
+				case IDYES:
+					DestroyWindow(hWndMainWindow);
+					break;
+				case IDNO:
+					EnableAllButtons();
+					break;
+				default:
+					break;
+				}
+			}
+
 			ret = 0;
 		}
 		break;
@@ -398,22 +338,22 @@ LRESULT ButtonOpenProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 						LVITEM lvi{ LVIF_TEXT };
 						for (int i = 0; i < (int)NewFontList.size(); i++)
 						{
-							lvi.iItem = ListView_GetItemCount(hListViewFontList);
+							lvi.iItem = ListView_GetItemCount(hWndListViewFontList);
 							lvi.iSubItem = 0;
 							lvi.pszText = (LPWSTR)(NewFontList[i].c_str());
-							ListView_InsertItem(hListViewFontList, &lvi);
+							ListView_InsertItem(hWndListViewFontList, &lvi);
 							lvi.iSubItem = 1;
 							lvi.pszText = NULL;
-							ListView_SetItem(hListViewFontList, &lvi);
+							ListView_SetItem(hWndListViewFontList, &lvi);
 							FontList.push_back(NewFontList[i]);
-							Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-							Edit_ReplaceSel(hEditMessage, NewFontList[i].c_str());
-							Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-							Edit_ReplaceSel(hEditMessage, L" successfully opened\r\n");
-							Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
+							Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
+							Edit_ReplaceSel(hWndEditMessage, NewFontList[i].c_str());
+							Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
+							Edit_ReplaceSel(hWndEditMessage, L" successfully opened\r\n");
+							Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
 						}
-						Edit_ReplaceSel(hEditMessage, L"\r\n");
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
+						Edit_ReplaceSel(hWndEditMessage, L"\r\n");
+						Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
 					}
 				}
 				break;
@@ -440,69 +380,12 @@ LRESULT ButtonCloseProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				{
 					//Unload and close selected fonts
 					//Won't close those failed to unload
-					bool bIsFontListChanged{ false };
-					LVITEM lvi{ LVIF_TEXT, 0, 1 };
-					FontList.reverse();
-					std::list<FontResource>::iterator iter = FontList.begin();
-					for (int i = ListView_GetItemCount(hListViewFontList) - 1; i >= 0; i--)
-					{
-						if ((ListView_GetItemState(hListViewFontList, i, LVIS_SELECTED) & LVIS_SELECTED))
-						{
-							if (iter->IsLoaded())
-							{
-								if (iter->Unload())
-								{
-									bIsFontListChanged = true;
-									ListView_DeleteItem(hListViewFontList, i);
-									Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-									Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-									Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-									Edit_ReplaceSel(hEditMessage, L" successfully unloaded and closed\r\n");
-									Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-									iter = FontList.erase(iter);
-									continue;
-								}
-								else
-								{
-									lvi.iItem = i;
-									lvi.pszText = (LPWSTR)L"Unload failed";
-									ListView_SetItem(hListViewFontList, &lvi);
-									Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-									Edit_ReplaceSel(hEditMessage, L"Failed to unload ");
-									Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-									Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-									Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-									Edit_ReplaceSel(hEditMessage, L"\r\n");
-									Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								}
-							}
-							else
-							{
-								ListView_DeleteItem(hListViewFontList, i);
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L" successfully closed\r\n");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								iter = FontList.erase(iter);
-								continue;
-							}
-						}
-						iter++;
-						DoEvents();
-					}
-					FontList.reverse();
-					if ((Button_GetCheck(hButtonBroadcastMsg) == BST_CHECKED && bIsFontListChanged))
-					{
-						FORWARD_WM_FONTCHANGE(HWND_BROADCAST, SendMessage);
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, L"WM_FONTCHANGE broadcasted to all top windows.\r\n");
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					}
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					Edit_ReplaceSel(hEditMessage, L"\r\n");
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
+					DisableAllButtons();
+					_beginthread((_beginthread_proc_type)ButtonCloseWorkingThreadProc, 0, nullptr);
 				}
+				break;
+			default:
+				break;
 			}
 		}
 	default:
@@ -524,66 +407,12 @@ LRESULT ButtonCloseAllProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				{
 					//Unload and close all fonts
 					//Won't close those failed to unload
-					bool bIsFontListChanged{ false };
-					LVITEM lvi{ LVIF_TEXT, 0, 1 };
-					FontList.reverse();
-					std::list<FontResource>::iterator iter = FontList.begin();
-					for (int i = ListView_GetItemCount(hListViewFontList) - 1; i >= 0; i--)
-					{
-						if (iter->IsLoaded())
-						{
-							if (iter->Unload())
-							{
-								bIsFontListChanged = true;
-								ListView_DeleteItem(hListViewFontList, i);
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L" successfully unloaded and closed\r\n");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								iter = FontList.erase(iter);
-								continue;
-							}
-							else
-							{
-								lvi.iItem = i;
-								lvi.pszText = (LPWSTR)L"Unload failed";
-								ListView_SetItem(hListViewFontList, &lvi);
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L"Failed to unload ");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L"\r\n");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-							}
-						}
-						else
-						{
-							ListView_DeleteItem(hListViewFontList, i);
-							Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-							Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-							Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-							Edit_ReplaceSel(hEditMessage, L" successfully closed\r\n");
-							Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-							iter = FontList.erase(iter);
-							continue;
-						}
-						iter++;
-						DoEvents();
-					}
-					FontList.reverse();
-					if ((Button_GetCheck(hButtonBroadcastMsg) == BST_CHECKED && bIsFontListChanged))
-					{
-						FORWARD_WM_FONTCHANGE(HWND_BROADCAST, SendMessage);
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, L"WM_FONTCHANGE broadcasted to all top windows.\r\n");
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					}
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					Edit_ReplaceSel(hEditMessage, L"\r\n");
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
+					DisableAllButtons();
+					_beginthread((_beginthread_proc_type)ButtonCloseAllWorkingThreadProc, 0, nullptr);
 				}
+				break;
+			default:
+				break;
 			}
 		}
 	default:
@@ -604,53 +433,11 @@ LRESULT ButtonLoadProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			case BN_CLICKED:
 				{
 					//Load selected fonts
-					bool bIsFontListChanged{ false };
-					LVITEM lvi{ LVIF_TEXT, 0, 1 };
-					std::list<FontResource>::iterator iter = FontList.begin();
-					for (int i = 0; i < ListView_GetItemCount(hListViewFontList); i++)
-					{
-						if ((ListView_GetItemState(hListViewFontList, i, LVIS_SELECTED) & LVIS_SELECTED) && (!(iter->IsLoaded())))
-						{
-							lvi.iItem = i;
-							if (iter->Load())
-							{
-								bIsFontListChanged = true;
-								lvi.pszText = (LPWSTR)L"Loaded";
-								ListView_SetItem(hListViewFontList, &lvi);
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L" successfully loaded\r\n");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-							}
-							else
-							{
-								lvi.pszText = (LPWSTR)L"Load failed";
-								ListView_SetItem(hListViewFontList, &lvi);
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L"Failed to load ");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L"\r\n");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-							}
-
-						}
-						iter++;
-						DoEvents();
-					}
-					if ((Button_GetCheck(hButtonBroadcastMsg) == BST_CHECKED && bIsFontListChanged))
-					{
-						FORWARD_WM_FONTCHANGE(HWND_BROADCAST, SendMessage);
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, L"WM_FONTCHANGE broadcasted to all top windows.\r\n");
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					}
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					Edit_ReplaceSel(hEditMessage, L"\r\n");
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
+					DisableAllButtons();
+					_beginthread((_beginthread_proc_type)ButtonLoadWorkingThreadProc, 0, nullptr);
 				}
+			default:
+				break;
 			}
 		}
 	default:
@@ -671,52 +458,11 @@ LRESULT ButtonLoadAllProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			case BN_CLICKED:
 				{
 					//Load all fonts
-					bool bIsFontListChanged{ false };
-					LVITEM lvi{ LVIF_TEXT, 0, 1 };
-					std::list<FontResource>::iterator iter = FontList.begin();
-					for (int i = 0; i < (int)FontList.size(); i++)
-					{
-						lvi.iItem = i;
-						if (!(iter->IsLoaded()))
-						{
-							if (iter->Load())
-							{
-								bIsFontListChanged = true;
-								lvi.pszText = (LPWSTR)L"Loaded";
-								ListView_SetItem(hListViewFontList, &lvi);
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L" successfully loaded\r\n");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-							}
-							else
-							{
-								lvi.pszText = (LPWSTR)L"Load failed";
-								ListView_SetItem(hListViewFontList, &lvi);
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L"Failed to load ");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L"\r\n");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-							}
-						}
-						iter++;
-						DoEvents();
-					}
-					if ((Button_GetCheck(hButtonBroadcastMsg) == BST_CHECKED && bIsFontListChanged))
-					{
-						FORWARD_WM_FONTCHANGE(HWND_BROADCAST, SendMessage);
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, L"WM_FONTCHANGE broadcasted to all top windows.\r\n");
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					}
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					Edit_ReplaceSel(hEditMessage, L"\r\n");
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
+					DisableAllButtons();
+					_beginthread((_beginthread_proc_type)ButtonLoadAllWorkingThreadProc, 0, nullptr);
 				}
+			default:
+				break;
 			}
 		}
 	default:
@@ -737,52 +483,11 @@ LRESULT ButtonUnloadProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			case BN_CLICKED:
 				{
 					//Unload selected fonts;
-					bool bIsFontListChanged{ false };
-					LVITEM lvi{ LVIF_TEXT, 0, 1 };
-					std::list<FontResource>::iterator iter = FontList.begin();
-					for (int i = 0; i < ListView_GetItemCount(hListViewFontList); i++)
-					{
-						if ((ListView_GetItemState(hListViewFontList, i, LVIS_SELECTED) & LVIS_SELECTED) && (iter->IsLoaded()))
-						{
-							lvi.iItem = i;
-							if (iter->Unload())
-							{
-								bIsFontListChanged = true;
-								lvi.pszText = (LPWSTR)L"Unloaded";
-								ListView_SetItem(hListViewFontList, &lvi);
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L" successfully unloaded\r\n");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-							}
-							else
-							{
-								lvi.pszText = (LPWSTR)L"Unload failed";
-								ListView_SetItem(hListViewFontList, &lvi);
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L"Failed to unload ");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L"\r\n");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-							}
-						}
-						iter++;
-						DoEvents();
-					}
-					if ((Button_GetCheck(hButtonBroadcastMsg) == BST_CHECKED && bIsFontListChanged))
-					{
-						FORWARD_WM_FONTCHANGE(HWND_BROADCAST, SendMessage);
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, L"WM_FONTCHANGE broadcasted to all top windows.\r\n");
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					}
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					Edit_ReplaceSel(hEditMessage, L"\r\n");
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
+					DisableAllButtons();
+					_beginthread((_beginthread_proc_type)ButtonUnloadWorkingThreadProc, 0, nullptr);
 				}
+			default:
+				break;
 			}
 		}
 	default:
@@ -803,52 +508,11 @@ LRESULT ButtonUnloadAllProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			case BN_CLICKED:
 				{
 					//Unload all fonts
-					bool bIsFontListChanged{ false };
-					LVITEM lvi{ LVIF_TEXT, 0, 1 };
-					std::list<FontResource>::iterator iter = FontList.begin();
-					for (int i = 0; i < (int)FontList.size(); i++)
-					{
-						lvi.iItem = i;
-						if (iter->IsLoaded())
-						{
-							if (iter->Unload())
-							{
-								bIsFontListChanged = true;
-								lvi.pszText = (LPWSTR)L"Unloaded";
-								ListView_SetItem(hListViewFontList, &lvi);
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L" successfully unloaded\r\n");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-							}
-							else
-							{
-								lvi.pszText = (LPWSTR)L"Unload failed";
-								ListView_SetItem(hListViewFontList, &lvi);
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L"Failed to unload ");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, iter->GetFontPath().c_str());
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-								Edit_ReplaceSel(hEditMessage, L"\r\n");
-								Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-							}
-						}
-						iter++;
-						DoEvents();
-					}
-					if ((Button_GetCheck(hButtonBroadcastMsg) == BST_CHECKED && bIsFontListChanged))
-					{
-						FORWARD_WM_FONTCHANGE(HWND_BROADCAST, SendMessage);
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-						Edit_ReplaceSel(hEditMessage, L"WM_FONTCHANGE broadcasted to all top windows.\r\n");
-						Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					}
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					Edit_ReplaceSel(hEditMessage, L"\r\n");
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
+					DisableAllButtons();
+					_beginthread((_beginthread_proc_type)ButtonUnloadAllWorkingThreadProc, 0, nullptr);
 				}
+			default:
+				break;
 			}
 		}
 	default:
@@ -874,23 +538,23 @@ LRESULT CALLBACK ListViewProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				DragQueryFile((HDROP)wParam, i, lpszFileName.get(), nSize);
 				if (PathMatchSpec(lpszFileName.get(), L"*.ttf") || PathMatchSpec(lpszFileName.get(), L"*.ttc") || PathMatchSpec(lpszFileName.get(), L"*.otf"))
 				{
-					lvi.iItem = ListView_GetItemCount(hListViewFontList);
+					lvi.iItem = ListView_GetItemCount(hWndListViewFontList);
 					lvi.iSubItem = 0;
 					lvi.pszText = lpszFileName.get();
-					ListView_InsertItem(hListViewFontList, &lvi);
+					ListView_InsertItem(hWndListViewFontList, &lvi);
 					lvi.iSubItem = 1;
 					lvi.pszText = NULL;
-					ListView_SetItem(hListViewFontList, &lvi);
+					ListView_SetItem(hWndListViewFontList, &lvi);
 					FontList.push_back(lpszFileName.get());
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					Edit_ReplaceSel(hEditMessage, lpszFileName.get());
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
-					Edit_ReplaceSel(hEditMessage, L" successfully opened\r\n");
-					Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
+					Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
+					Edit_ReplaceSel(hWndEditMessage, lpszFileName.get());
+					Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
+					Edit_ReplaceSel(hWndEditMessage, L" successfully opened\r\n");
+					Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
 				}
 			}
-			Edit_ReplaceSel(hEditMessage, L"\r\n");
-			Edit_SetSel(hEditMessage, Edit_GetTextLength(hEditMessage), Edit_GetTextLength(hEditMessage));
+			Edit_ReplaceSel(hWndEditMessage, L"\r\n");
+			Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
 			DragFinish((HDROP)wParam);
 
 			ret = 0;
@@ -905,26 +569,30 @@ LRESULT CALLBACK ListViewProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	return ret;
 }
 
-void DoEvents()
+void EnableAllButtons()
 {
-	MSG msg{};
-	BOOL ret{};
-	while (PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE))
-	{
-		ret = GetMessage(&msg, NULL, 0, 0);
-		if (ret == 0)
-		{
-			PostQuitMessage((int)msg.wParam);
-			break;
-		}
-		else if (ret == -1)
-		{
-			TerminateProcess(GetCurrentProcess(), -1);
-		}
-		else
-		{
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-		}
-	}
+	EnableWindow(hWndButtonOpen, TRUE);
+	EnableWindow(hWndButtonClose, TRUE);
+	EnableWindow(hWndButtonCloseAll, TRUE);
+	EnableWindow(hWndButtonLoad, TRUE);
+	EnableWindow(hWndButtonLoadAll, TRUE);
+	EnableWindow(hWndButtonUnload, TRUE);
+	EnableWindow(hWndButtonUnloadAll, TRUE);
+	EnableWindow(hWndButtonBroadcastWM_FONTCHANGE, TRUE);
+	EnableWindow(hWndListViewFontList, TRUE);
+	EnableMenuItem(GetSystemMenu(hWndMainWindow, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+}
+
+void DisableAllButtons()
+{
+	EnableWindow(hWndButtonOpen, FALSE);
+	EnableWindow(hWndButtonClose, FALSE);
+	EnableWindow(hWndButtonCloseAll, FALSE);
+	EnableWindow(hWndButtonLoad, FALSE);
+	EnableWindow(hWndButtonLoadAll, FALSE);
+	EnableWindow(hWndButtonUnload, FALSE);
+	EnableWindow(hWndButtonUnloadAll, FALSE);
+	EnableWindow(hWndButtonBroadcastWM_FONTCHANGE, FALSE);
+	EnableWindow(hWndListViewFontList, FALSE);
+	EnableMenuItem(GetSystemMenu(hWndMainWindow, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 }
