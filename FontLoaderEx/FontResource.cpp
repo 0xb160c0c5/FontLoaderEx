@@ -12,7 +12,7 @@ FontResource::~FontResource()
 {
 	if (bIsLoaded_)
 	{
-		RemoveFontResource(strFontPath_.c_str());
+		RemoveFontResourceEx(strFontPath_.c_str(), 0, NULL);
 	}
 }
 
@@ -22,7 +22,7 @@ bool FontResource::Load()
 	bool bRet;
 	if (!bIsLoaded_)
 	{
-		if (AddFontResource(strFontPath_.c_str()))
+		if (AddFontResourceEx(strFontPath_.c_str(), 0, NULL))
 		{
 			bIsLoaded_ = true;
 			bRet = true;
@@ -50,7 +50,7 @@ bool FontResource::Unload()
 	bool bRet;
 	if (bIsLoaded_)
 	{
-		if (RemoveFontResource(strFontPath_.c_str()))
+		if (RemoveFontResourceEx(strFontPath_.c_str(), 0, NULL))
 		{
 			bIsLoaded_ = false;
 			bRet = true;

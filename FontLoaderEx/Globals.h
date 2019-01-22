@@ -25,3 +25,12 @@ extern const UINT UM_WORKINGTHREADTERMINATED;
 extern const UINT UM_CLOSEWORKINGTHREADTERMINATED;
 
 extern bool DragDropHasFonts;
+
+extern DWORD DragDropWorkingThreadProc(void* lpParameter);
+extern DWORD CloseWorkingThreadProc(void* lpParameter);
+extern DWORD ButtonCloseWorkingThreadProc(void* lpParameter);
+extern DWORD ButtonCloseAllWorkingThreadProc(void* lpParameter);
+extern DWORD ButtonLoadWorkingThreadProc(void* lpParameter);
+extern DWORD ButtonLoadAllWorkingThreadProc(void* lpParameter);
+extern DWORD ButtonUnloadWorkingThreadProc(void* lpParameter);
+extern DWORD ButtonUnloadAllWorkingThreadProc(void* lpParameter);

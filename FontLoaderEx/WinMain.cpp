@@ -9,6 +9,8 @@
 #include <process.h>
 #include <string>
 #include <cstring>
+#include <sstream>
+#include <climits>
 #include <list>
 #include <vector>
 #include <memory>
@@ -21,7 +23,7 @@ std::list<FontResource> FontList{};
 
 HWND hWndMainWindow{};
 CRITICAL_SECTION CriticalSection{};
-bool DragDropHasFonts = false;
+bool DragDropHasFonts{ false };
 
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
@@ -123,15 +125,6 @@ LRESULT ButtonUnloadProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 LRESULT ButtonUnloadAllProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 LRESULT CALLBACK ListViewProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-extern DWORD DragDropWorkingThreadProc(void* lpParameter);
-extern DWORD CloseWorkingThreadProc(void* lpParameter);
-extern DWORD ButtonCloseWorkingThreadProc(void* lpParameter);
-extern DWORD ButtonCloseAllWorkingThreadProc(void* lpParameter);
-extern DWORD ButtonLoadWorkingThreadProc(void* lpParameter);
-extern DWORD ButtonLoadAllWorkingThreadProc(void* lpParameter);
-extern DWORD ButtonUnloadWorkingThreadProc(void* lpParameter);
-extern DWORD ButtonUnloadAllWorkingThreadProc(void* lpParameter);
-
 LONG_PTR OldListViewProc;
 
 void EnableAllButtons();
@@ -198,7 +191,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			hWndEditMessage = CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_READONLY | ES_LEFT | ES_MULTILINE, 0, 350, rectClient.right - rectClient.left, rectClient.bottom - rectClient.top - 350, hWnd, (HMENU)(idEditMessage | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 			SetWindowFont(hWndEditMessage, hFont, TRUE);
 			Edit_SetText(hWndEditMessage,
-				L"Temporary load and unload fonts to system font table.\r\n"
+				L"Temporary load fonts to system font table.\r\n"
 				"\r\n"
 				"How to load fonts:\r\n"
 				"1.Drag-drop font files onto the icon of this application.\r\n"
@@ -217,7 +210,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				"\"Unload All\": Remove all fonts from system font table.\r\n"
 				"\"Broadcast WM_FONTCHANGE\": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.\r\n"
 				"\"Font Name\": Names of the fonts added to the list.\r\n"
-				"\"State\": State of the font. There are four states, \"Loaded\", \"Load failed\", \"Unloaded\" and \"Unload failed\".\r\n"
+				"\"State\": State of the font. There are five states, \"Not loaded\", \"Loaded\", \"Load failed\", \"Unloaded\" and \"Unload failed\".\r\n"
 				"\r\n"
 			);
 			ret = 0;
@@ -233,17 +226,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 				ret = 0;
 			}
-		}
-		break;
-	case WM_COMMAND:
-		{
-			ret = ButtonOpenProc(hWnd, msg, wParam, lParam);
-			ret = ButtonCloseProc(hWnd, msg, wParam, lParam);
-			ret = ButtonCloseAllProc(hWnd, msg, wParam, lParam);
-			ret = ButtonLoadProc(hWnd, msg, wParam, lParam);
-			ret = ButtonLoadAllProc(hWnd, msg, wParam, lParam);
-			ret = ButtonUnloadProc(hWnd, msg, wParam, lParam);
-			ret = ButtonUnloadAllProc(hWnd, msg, wParam, lParam);
 		}
 		break;
 	case WM_CLOSE:
@@ -294,6 +276,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		break;
 	default:
 		{
+			ret = ButtonOpenProc(hWnd, msg, wParam, lParam);
+			ret = ButtonCloseProc(hWnd, msg, wParam, lParam);
+			ret = ButtonCloseAllProc(hWnd, msg, wParam, lParam);
+			ret = ButtonLoadProc(hWnd, msg, wParam, lParam);
+			ret = ButtonLoadAllProc(hWnd, msg, wParam, lParam);
+			ret = ButtonUnloadProc(hWnd, msg, wParam, lParam);
+			ret = ButtonUnloadAllProc(hWnd, msg, wParam, lParam);
+
 			ret = DefWindowProc(hWnd, msg, wParam, lParam);
 		}
 		break;
@@ -335,25 +325,28 @@ LRESULT ButtonOpenProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 						}
 
 						//Insert items to lstFontList
-						LVITEM lvi{ LVIF_TEXT };
+						LVITEM lvi{ LVIF_TEXT, ListView_GetItemCount(hWndListViewFontList) };
+						std::wstringstream Message{};
+						int iMessageLenth{};
 						for (int i = 0; i < (int)NewFontList.size(); i++)
 						{
-							lvi.iItem = ListView_GetItemCount(hWndListViewFontList);
 							lvi.iSubItem = 0;
 							lvi.pszText = (LPWSTR)(NewFontList[i].c_str());
 							ListView_InsertItem(hWndListViewFontList, &lvi);
 							lvi.iSubItem = 1;
-							lvi.pszText = NULL;
+							lvi.pszText = (LPWSTR)L"Not loaded";
 							ListView_SetItem(hWndListViewFontList, &lvi);
+							lvi.iItem++;
 							FontList.push_back(NewFontList[i]);
-							Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
-							Edit_ReplaceSel(hWndEditMessage, NewFontList[i].c_str());
-							Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
-							Edit_ReplaceSel(hWndEditMessage, L" successfully opened\r\n");
-							Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
+							Message.str(L"");
+							Message << NewFontList[i] << L" successfully opened\r\n";
+							iMessageLenth = Edit_GetTextLength(hWndEditMessage);
+							Edit_SetSel(hWndEditMessage, iMessageLenth, iMessageLenth);
+							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 						}
+						iMessageLenth = Edit_GetTextLength(hWndEditMessage);
+						Edit_SetSel(hWndEditMessage, iMessageLenth, iMessageLenth);
 						Edit_ReplaceSel(hWndEditMessage, L"\r\n");
-						Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
 					}
 				}
 				break;
@@ -529,8 +522,10 @@ LRESULT CALLBACK ListViewProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_DROPFILES:
 		{
 			//Process drag-drop and open fonts
-			LVITEM lvi{ LVIF_TEXT };
+			LVITEM lvi{ LVIF_TEXT, ListView_GetItemCount(hWndListViewFontList) };
 			UINT nFileCount{ DragQueryFile((HDROP)wParam, 0xFFFFFFFF, NULL, 0) };
+			std::wstringstream Message{};
+			int iMessageLength{};
 			for (UINT i = 0; i < nFileCount; i++)
 			{
 				UINT nSize = DragQueryFile((HDROP)wParam, i, NULL, 0) + 1;
@@ -538,23 +533,24 @@ LRESULT CALLBACK ListViewProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				DragQueryFile((HDROP)wParam, i, lpszFileName.get(), nSize);
 				if (PathMatchSpec(lpszFileName.get(), L"*.ttf") || PathMatchSpec(lpszFileName.get(), L"*.ttc") || PathMatchSpec(lpszFileName.get(), L"*.otf"))
 				{
-					lvi.iItem = ListView_GetItemCount(hWndListViewFontList);
 					lvi.iSubItem = 0;
 					lvi.pszText = lpszFileName.get();
 					ListView_InsertItem(hWndListViewFontList, &lvi);
 					lvi.iSubItem = 1;
-					lvi.pszText = NULL;
+					lvi.pszText = (LPWSTR)L"Not loaded";
 					ListView_SetItem(hWndListViewFontList, &lvi);
+					lvi.iItem++;
 					FontList.push_back(lpszFileName.get());
-					Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
-					Edit_ReplaceSel(hWndEditMessage, lpszFileName.get());
-					Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
-					Edit_ReplaceSel(hWndEditMessage, L" successfully opened\r\n");
-					Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
+					Message.str(L"");
+					Message << lpszFileName.get() << L" successfully opened\r\n";
+					iMessageLength = Edit_GetTextLength(hWndEditMessage);
+					Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+					Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 				}
 			}
+			iMessageLength = Edit_GetTextLength(hWndEditMessage);
+			Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 			Edit_ReplaceSel(hWndEditMessage, L"\r\n");
-			Edit_SetSel(hWndEditMessage, Edit_GetTextLength(hWndEditMessage), Edit_GetTextLength(hWndEditMessage));
 			DragFinish((HDROP)wParam);
 
 			ret = 0;
