@@ -5,6 +5,8 @@ VisualStudioVersion = 15.0.28307.271
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FontLoaderEx", "FontLoaderEx\FontLoaderEx.vcxproj", "{5E687536-9693-427B-848A-BD6CCBE6A164}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FontLoaderExInjectionDll", "FontLoaderExInjectionDll\FontLoaderExInjectionDll.vcxproj", "{9394B2B2-5466-42D4-A32A-01851FCD3B86}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,6 +23,14 @@ Global
 		{5E687536-9693-427B-848A-BD6CCBE6A164}.Release|x64.Build.0 = Release|x64
 		{5E687536-9693-427B-848A-BD6CCBE6A164}.Release|x86.ActiveCfg = Release|Win32
 		{5E687536-9693-427B-848A-BD6CCBE6A164}.Release|x86.Build.0 = Release|Win32
+		{9394B2B2-5466-42D4-A32A-01851FCD3B86}.Debug|x64.ActiveCfg = Debug|x64
+		{9394B2B2-5466-42D4-A32A-01851FCD3B86}.Debug|x64.Build.0 = Debug|x64
+		{9394B2B2-5466-42D4-A32A-01851FCD3B86}.Debug|x86.ActiveCfg = Debug|Win32
+		{9394B2B2-5466-42D4-A32A-01851FCD3B86}.Debug|x86.Build.0 = Debug|Win32
+		{9394B2B2-5466-42D4-A32A-01851FCD3B86}.Release|x64.ActiveCfg = Release|x64
+		{9394B2B2-5466-42D4-A32A-01851FCD3B86}.Release|x64.Build.0 = Release|x64
+		{9394B2B2-5466-42D4-A32A-01851FCD3B86}.Release|x86.ActiveCfg = Release|Win32
+		{9394B2B2-5466-42D4-A32A-01851FCD3B86}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

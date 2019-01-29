@@ -4,11 +4,7 @@
 #include <list>
 #include "FontResource.h"
 
-extern CRITICAL_SECTION CriticalSection;
-
 extern std::list<FontResource> FontList;
-
-extern HWND hWndMainWindow;
 
 extern HWND hWndButtonOpen;
 extern HWND hWndButtonClose;
@@ -18,19 +14,46 @@ extern HWND hWndButtonLoadAll;
 extern HWND hWndButtonUnload;
 extern HWND hWndButtonUnloadAll;
 extern HWND hWndButtonBroadcastWM_FONTCHANGE;
+extern HWND hWndButtonSelectProcess;
 extern HWND hWndListViewFontList;
 extern HWND hWndEditMessage;
 
-extern const UINT UM_WORKINGTHREADTERMINATED;
-extern const UINT UM_CLOSEWORKINGTHREADTERMINATED;
+const UINT UM_WORKINGTHREADTERMINATED{ WM_USER + 0x100 };
+const UINT UM_CLOSEWORKINGTHREADTERMINATED{ WM_USER + 0x101 };
+const UINT UM_DESELECTPROCESS{ WM_USER + 0x102 };
+const UINT UM_TERMINATEWATCHPROCESS{ WM_USER + 0x103 };
+const UINT UM_WATCHPROCESSTERMINATED{ WM_USER + 0x104 };
 
 extern bool DragDropHasFonts;
 
-extern DWORD DragDropWorkingThreadProc(void* lpParameter);
-extern DWORD CloseWorkingThreadProc(void* lpParameter);
-extern DWORD ButtonCloseWorkingThreadProc(void* lpParameter);
-extern DWORD ButtonCloseAllWorkingThreadProc(void* lpParameter);
-extern DWORD ButtonLoadWorkingThreadProc(void* lpParameter);
-extern DWORD ButtonLoadAllWorkingThreadProc(void* lpParameter);
-extern DWORD ButtonUnloadWorkingThreadProc(void* lpParameter);
-extern DWORD ButtonUnloadAllWorkingThreadProc(void* lpParameter);
+extern void DragDropWorkingThreadProc(void* lpParameter);
+extern void CloseWorkingThreadProc(void* lpParameter);
+extern void ButtonCloseWorkingThreadProc(void* lpParameter);
+extern void ButtonCloseAllWorkingThreadProc(void* lpParameter);
+extern void ButtonLoadWorkingThreadProc(void* lpParameter);
+extern void ButtonLoadAllWorkingThreadProc(void* lpParameter);
+extern void ButtonUnloadWorkingThreadProc(void* lpParameter);
+extern void ButtonUnloadAllWorkingThreadProc(void* lpParameter);
+extern void TargetProcessWatchThreadProc(void* lpParameter);
+
+extern void EnableAllButtons();
+extern void DisableAllButtons();
+
+struct ProcessInfo
+{
+	std::wstring ProcessName;
+	std::uint32_t ProcessID;
+};
+
+extern ProcessInfo pi;
+extern HANDLE hTargetProcess;
+extern void* lpRemoteAddFontProc;
+extern void* lpRemoteRemoveFontProc;
+extern HANDLE hTargetProcessWatchThread;
+
+extern bool DefaultAddFontProc(const wchar_t* lpFontName);
+extern bool DefaultRemoveFontProc(const wchar_t* lpFontName);
+extern bool RemoteAddFontProc(const wchar_t* lpFontName);
+extern bool RemoteRemoveFontProc(const wchar_t* lpFontName);
+extern bool NullAddFontProc(const wchar_t* lpFontName);
+extern bool NullRemoveFontProc(const wchar_t* lpFontName);
