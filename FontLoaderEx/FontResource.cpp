@@ -25,12 +25,16 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 		return false;
 	}
-	WaitForSingleObject(hRemoteThread, INFINITE);
+	if (WaitForSingleObject(hRemoteThread, 5000) == WAIT_TIMEOUT)
+	{
+		return false;
+	}
 	VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
 	DWORD dwRemoteThreadExitCode{};
 	if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
 	{
+		CloseHandle(hRemoteThread);
 		return false;
 	}
 
@@ -104,6 +108,7 @@ void FontResource::RegisterAddRemoveFontProc(pfnAddFontProc AddFontProc, pfnRemo
 
 bool FontResource::Load()
 {
+#ifndef _DEBUG
 	bool bRet;
 	if (!bIsLoaded_)
 	{
@@ -121,12 +126,17 @@ bool FontResource::Load()
 	{
 		bRet = true;
 	}
-	Sleep(300);
 	return bRet;
+#else
+	Sleep(300);
+	bIsLoaded_ = true;
+	return true;
+#endif // !_DEBUG
 }
 
 bool FontResource::Unload()
 {
+#ifndef _DEBUG
 	bool bRet;
 	if (bIsLoaded_)
 	{
@@ -144,8 +154,12 @@ bool FontResource::Unload()
 	{
 		bRet = true;
 	}
-	Sleep(300);
 	return bRet;
+#else
+	Sleep(300);
+	bIsLoaded_ = false;
+	return true;
+#endif // !_DEBUG
 }
 
 const std::wstring & FontResource::GetFontPath()

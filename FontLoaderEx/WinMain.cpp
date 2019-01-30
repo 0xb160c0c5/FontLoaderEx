@@ -191,9 +191,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			SetWindowFont(hWndButtonBroadcastWM_FONTCHANGE, hFont, TRUE);
 
 			//Initialize ButtonSelectProcess
-			hWndButtonSelectProcess = CreateWindow(WC_BUTTON, NULL, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 350, 29, rectClient.right - rectClient.left - 350, 21, hWnd, (HMENU)(idButtonSelectProcess | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			hWndButtonSelectProcess = CreateWindow(WC_BUTTON, L"Click to select process", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 350, 29, rectClient.right - rectClient.left - 350, 21, hWnd, (HMENU)(idButtonSelectProcess | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 			SetWindowFont(hWndButtonSelectProcess, hFont, TRUE);
-			Edit_SetText(hWndButtonSelectProcess, L"Click to select process");
 
 			//Initialize ListViewFontList
 			hWndListViewFontList = CreateWindow(WC_LISTVIEW, L"FontList", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_GROUP | LVS_REPORT, 0, 50, rectClient.right - rectClient.left, 300, hWnd, (HMENU)(idListViewFontList | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
