@@ -6,6 +6,7 @@
 
 extern std::list<FontResource> FontList;
 
+extern HWND hWndMainWindow;
 extern HWND hWndButtonOpen;
 extern HWND hWndButtonClose;
 extern HWND hWndButtonCloseAll;
@@ -20,9 +21,8 @@ extern HWND hWndEditMessage;
 
 const UINT UM_WORKINGTHREADTERMINATED{ WM_USER + 0x100 };
 const UINT UM_CLOSEWORKINGTHREADTERMINATED{ WM_USER + 0x101 };
-const UINT UM_DESELECTPROCESS{ WM_USER + 0x102 };
-const UINT UM_TERMINATEWATCHPROCESS{ WM_USER + 0x103 };
-const UINT UM_WATCHPROCESSTERMINATED{ WM_USER + 0x104 };
+const UINT UM_TERMINATEWATCHPROCESS{ WM_USER + 0x102 };
+const UINT UM_WATCHPROCESSTERMINATED{ WM_USER + 0x103 };
 
 extern bool DragDropHasFonts;
 
@@ -41,12 +41,12 @@ extern void DisableAllButtons();
 
 struct ProcessInfo
 {
+	HANDLE hProcess;
 	std::wstring ProcessName;
 	std::uint32_t ProcessID;
 };
 
-extern ProcessInfo pi;
-extern HANDLE hTargetProcess;
+extern ProcessInfo TargetProcessInfo;
 extern void* lpRemoteAddFontProc;
 extern void* lpRemoteRemoveFontProc;
 extern HANDLE hTargetProcessWatchThread;

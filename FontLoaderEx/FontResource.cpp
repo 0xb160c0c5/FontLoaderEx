@@ -45,11 +45,13 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 #ifdef _DEBUG
 bool DefaultAddFontProc(const wchar_t* lpFontName)
 {
+	Sleep(300);
 	return true;
 }
 
 bool DefaultRemoveFontProc(const wchar_t* lpFontName)
 {
+	Sleep(300);
 	return true;
 }
 #else
@@ -66,12 +68,12 @@ bool DefaultRemoveFontProc(const wchar_t* lpFontName)
 
 bool RemoteAddFontProc(const wchar_t* lpFontName)
 {
-	return CallRemoteProc(hTargetProcess, lpRemoteAddFontProc, (void*)lpFontName, (std::wcslen(lpFontName) + 1) * sizeof(wchar_t));
+	return CallRemoteProc(TargetProcessInfo.hProcess, lpRemoteAddFontProc, (void*)lpFontName, (std::wcslen(lpFontName) + 1) * sizeof(wchar_t));
 }
 
 bool RemoteRemoveFontProc(const wchar_t* lpFontName)
 {
-	return CallRemoteProc(hTargetProcess, lpRemoteRemoveFontProc, (void*)lpFontName, (std::wcslen(lpFontName) + 1) * sizeof(wchar_t));
+	return CallRemoteProc(TargetProcessInfo.hProcess, lpRemoteRemoveFontProc, (void*)lpFontName, (std::wcslen(lpFontName) + 1) * sizeof(wchar_t));
 }
 
 bool NullAddFontProc(const wchar_t* lpFontName)
@@ -108,7 +110,6 @@ void FontResource::RegisterAddRemoveFontProc(pfnAddFontProc AddFontProc, pfnRemo
 
 bool FontResource::Load()
 {
-#ifndef _DEBUG
 	bool bRet;
 	if (!bIsLoaded_)
 	{
@@ -127,16 +128,10 @@ bool FontResource::Load()
 		bRet = true;
 	}
 	return bRet;
-#else
-	Sleep(300);
-	bIsLoaded_ = true;
-	return true;
-#endif // !_DEBUG
 }
 
 bool FontResource::Unload()
 {
-#ifndef _DEBUG
 	bool bRet;
 	if (bIsLoaded_)
 	{
@@ -155,11 +150,6 @@ bool FontResource::Unload()
 		bRet = true;
 	}
 	return bRet;
-#else
-	Sleep(300);
-	bIsLoaded_ = false;
-	return true;
-#endif // !_DEBUG
 }
 
 const std::wstring & FontResource::GetFontPath()
