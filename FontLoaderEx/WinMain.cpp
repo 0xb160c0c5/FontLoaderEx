@@ -214,7 +214,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			hWndEditMessage = CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_READONLY | ES_LEFT | ES_MULTILINE, 0, 350, rectClient.right - rectClient.left, rectClient.bottom - rectClient.top - 350, hWnd, (HMENU)(idEditMessage | (UINT_PTR)0), ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 			SetWindowFont(hWndEditMessage, hFont, TRUE);
 			Edit_SetText(hWndEditMessage,
-				L"Temporary load fonts to system font table.\r\n"
+				L"Temporary load fonts to Windows or specific process.\r\n"
 				"\r\n"
 				"How to load fonts:\r\n"
 				"1.Drag-drop font files onto the icon of this application.\r\n"
@@ -232,12 +232,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				"\r\n"
 				"UI description:\r\n"
 				"\"Open\": Add fonts to the list.\r\n"
-				"\"Close\": Remove selected fonts from system font table or target process and the list.\r\n"
-				"\"Close All\": Remove all fonts from system font table or target process and the list.\r\n"
-				"\"Load\": Add selected fonts to system font table or target process.\r\n"
-				"\"Load All\": Add all fonts to system font table or target process.\r\n"
-				"\"Unload\": Remove selected fonts from system font table or target process.\r\n"
-				"\"Unload All\": Remove all fonts from system font table or target process.\r\n"
+				"\"Close\": Remove selected fonts from Windows or target process and the list.\r\n"
+				"\"Close All\": Remove all fonts from Windows or target process and the list.\r\n"
+				"\"Load\": Add selected fonts to Windows or target process.\r\n"
+				"\"Load All\": Add all fonts to Windows or target process.\r\n"
+				"\"Unload\": Remove selected fonts from Windows or target process.\r\n"
+				"\"Unload All\": Remove all fonts from Windows or target process.\r\n"
 				"\"Broadcast WM_FONTCHANGE\": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.\r\n"
 				"\"Click to select process\": click and select a process to only load fonts into selected process.\r\n"
 				"\"Font Name\": Names of the fonts added to the list.\r\n"
