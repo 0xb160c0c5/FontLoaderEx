@@ -1,4 +1,4 @@
-#pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+﻿#pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #pragma comment(lib, "ComCtl32.lib")
 #pragma comment(lib, "Shlwapi.lib")
 
@@ -377,9 +377,9 @@ LRESULT ButtonOpenProc(HWND hWndParent, UINT Message, WPARAM wParam, LPARAM lPar
 			case BN_CLICKED:
 				{
 					//Open Dialog
-					std::unique_ptr<WCHAR[]> lpszOpenFileNames{ new WCHAR[MAX_PATH * MAX_PATH]{} };
+					WCHAR lpszOpenFileNames[32768]{};
 					std::vector<std::wstring> NewFontList;
-					OPENFILENAME ofn{ sizeof(ofn), hWndParent, NULL, L"Font Files(*.ttf;*.ttc;*.otf)\0*.ttf;*.ttc;*.otf\0", NULL, 0, 0, lpszOpenFileNames.get(), MAX_PATH * MAX_PATH, NULL, 0, NULL, NULL, OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT, 0, 0, NULL, NULL, NULL, NULL, nullptr, 0, 0 };
+					OPENFILENAME ofn{ sizeof(ofn), hWndParent, NULL, L"Font Files(*.ttf;*.ttc;*.otf)\0*.ttf;*.ttc;*.otf\0", NULL, 0, 0, lpszOpenFileNames, MAX_PATH * MAX_PATH, NULL, 0, NULL, NULL, OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT, 0, 0, NULL, NULL, NULL, NULL, nullptr, 0, 0 };
 					if (GetOpenFileName(&ofn))
 					{
 						if (PathIsDirectory(ofn.lpstrFile))
@@ -1168,16 +1168,16 @@ bool EnableDebugPrivilege()
 bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 {
 	//Inject dll into target process
-	std::unique_ptr<WCHAR[]> szDllPath{ new WCHAR[MAX_PATH * MAX_PATH]{} };
-	GetModuleFileName(NULL, szDllPath.get(), MAX_PATH);
-	PathRemoveFileSpec(szDllPath.get());
-	PathAppend(szDllPath.get(), szModuleName);
-	LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, (std::wcslen(szDllPath.get()) + 1) * sizeof(WCHAR), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
+	WCHAR szDllPath[MAX_PATH]{};
+	GetModuleFileName(NULL, szDllPath, MAX_PATH);
+	PathRemoveFileSpec(szDllPath);
+	PathAppend(szDllPath, szModuleName);
+	LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
 	if (!lpRemoteBuffer)
 	{
 		return false;
 	}
-	if (!WriteProcessMemory(hProcess, lpRemoteBuffer, (LPVOID)szDllPath.get(), (std::wcslen(szDllPath.get()) + 1) * sizeof(WCHAR), NULL))
+	if (!WriteProcessMemory(hProcess, lpRemoteBuffer, (LPVOID)szDllPath, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), NULL))
 	{
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 		return false;
