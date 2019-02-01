@@ -1,2 +1,2 @@
 # FontLoaderEx
-Temporary load fonts to windows or specific process
+Temporary load fonts to Windows or specific process
