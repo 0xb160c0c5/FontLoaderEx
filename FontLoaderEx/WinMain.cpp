@@ -511,7 +511,7 @@ LRESULT ButtonSelectProcessProc(HWND hWndParent, UINT Message, WPARAM wParam, LP
 
 					std::wstringstream Message{};
 					int iMessageLength{};
-					
+
 					static bool bIsSeDebugPrivilegeGranted{ false };
 
 					//Elevate privilege
@@ -534,7 +534,7 @@ LRESULT ButtonSelectProcessProc(HWND hWndParent, UINT Message, WPARAM wParam, LP
 
 					//Select process
 					ProcessInfo* p{ (ProcessInfo*)DialogBox(NULL, MAKEINTRESOURCE(IDD_DIALOG1), hWndParent, DialogProc) };
-					
+
 					//If p != nullptr, select it
 					if (p)
 					{
@@ -841,43 +841,19 @@ LRESULT CALLBACK ListViewProc(HWND hWndParent, UINT Message, WPARAM wParam, LPAR
 	return ret;
 }
 
-bool CompareByProcessNameAscending(const ProcessInfo& value1, const ProcessInfo& value2)
-{
-	std::wstring s1(value1.ProcessName.size(), L'\0'), s2(value2.ProcessName.size(), L'\0');
-	std::transform(value1.ProcessName.begin(), value1.ProcessName.end(), s1.begin(), std::tolower);
-	std::transform(value2.ProcessName.begin(), value2.ProcessName.end(), s2.begin(), std::tolower);
-	return s1 < s2;
-}
-
-bool CompareByProcessNameDescending(const ProcessInfo& value1, const ProcessInfo& value2)
-{
-	std::wstring s1(value1.ProcessName.size(), L'\0'), s2(value2.ProcessName.size(), L'\0');
-	std::transform(value1.ProcessName.begin(), value1.ProcessName.end(), s1.begin(), std::tolower);
-	std::transform(value2.ProcessName.begin(), value2.ProcessName.end(), s2.begin(), std::tolower);
-	return s1 > s2;
-}
-
-bool CompareByProcessIDAscending(const ProcessInfo& value1, const ProcessInfo& value2)
-{
-	return value1.ProcessID < value2.ProcessID;
-}
-
-bool CompareByProcessIDDescending(const ProcessInfo& value1, const ProcessInfo& value2)
-{
-	return value1.ProcessID > value2.ProcessID;
-}
-
 INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM lParam)
 {
 	INT_PTR ret{};
 	static std::vector<ProcessInfo> ProcessList{};
-	static bool bOrder{ true };
+	static bool bOrderFileName{ true };
+	static bool bOrderPID{ true };
 
 	switch (Message)
 	{
 	case WM_INITDIALOG:
 		{
-			bOrder = true;
+			bOrderFileName = true;
+			bOrderPID = true;
 			NONCLIENTMETRICS ncm{ sizeof(NONCLIENTMETRICS) };
 			SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
 			HFONT hFont{ CreateFontIndirect(&ncm.lfMessageFont) };
@@ -961,14 +937,52 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM
 							{
 							case 0:
 								{
-									bOrder ? std::sort(ProcessList.begin(), ProcessList.end(), CompareByProcessNameAscending) : std::sort(ProcessList.begin(), ProcessList.end(), CompareByProcessNameDescending);
-									bOrder = !bOrder;
+									bOrderFileName ?
+										std::sort
+										(	
+											ProcessList.begin(), ProcessList.end(),
+											[](const ProcessInfo& value1, const ProcessInfo& value2)
+											{
+												std::wstring s1(value1.ProcessName.size(), L'\0'), s2(value2.ProcessName.size(), L'\0');
+												std::transform(value1.ProcessName.begin(), value1.ProcessName.end(), s1.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
+												std::transform(value2.ProcessName.begin(), value2.ProcessName.end(), s2.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
+												return s1 < s2;
+											}
+										) :
+										std::sort
+										(
+											ProcessList.begin(), ProcessList.end(),
+											[](const ProcessInfo& value1, const ProcessInfo& value2)
+											{
+												std::wstring s1(value1.ProcessName.size(), L'\0'), s2(value2.ProcessName.size(), L'\0');
+												std::transform(value1.ProcessName.begin(), value1.ProcessName.end(), s1.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
+												std::transform(value2.ProcessName.begin(), value2.ProcessName.end(), s2.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
+												return s1 > s2;
+											}
+										);
+									bOrderFileName = !bOrderFileName;
 								}
 								break;
 							case 1:
 								{
-									bOrder ? std::sort(ProcessList.begin(), ProcessList.end(), CompareByProcessIDAscending) : std::sort(ProcessList.begin(), ProcessList.end(), CompareByProcessIDDescending);
-									bOrder = !bOrder;
+									bOrderPID ?
+										std::sort
+										(
+											ProcessList.begin(), ProcessList.end(),
+											[](const ProcessInfo& value1, const ProcessInfo& value2)
+											{
+												return value1.ProcessID < value2.ProcessID;
+											}
+										) :
+										std::sort
+										(
+											ProcessList.begin(), ProcessList.end(),
+											[](const ProcessInfo& value1, const ProcessInfo& value2)
+											{
+												return value1.ProcessID > value2.ProcessID;
+											}
+										);
+									bOrderPID = !bOrderPID;
 								}
 								break;
 							default:
