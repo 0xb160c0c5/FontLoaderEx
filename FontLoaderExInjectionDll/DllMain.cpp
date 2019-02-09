@@ -1,11 +1,6 @@
-#include <Windows.h>
+﻿#include <Windows.h>
 
 #define EXPORT_FUNCTION comment(linker, "/EXPORT:" __FUNCTION__ "=" __FUNCDNAME__)	//Export function and avoid name mangling with __stdcall
-
-BOOL WINAPI DllMain(_In_ HINSTANCE hinstDLL, _In_ DWORD fdwReason, _In_ LPVOID lpvReserved)
-{
-	return TRUE;
-}
 
 DWORD WINAPI AddFont(_In_ LPVOID lpParameter)
 {

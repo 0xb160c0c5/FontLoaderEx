@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <windows.h>
 #include <list>
@@ -9,11 +9,8 @@ extern std::list<FontResource> FontList;
 extern HWND hWndMainWindow;
 extern HWND hWndButtonOpen;
 extern HWND hWndButtonClose;
-extern HWND hWndButtonCloseAll;
 extern HWND hWndButtonLoad;
-extern HWND hWndButtonLoadAll;
 extern HWND hWndButtonUnload;
-extern HWND hWndButtonUnloadAll;
 extern HWND hWndButtonBroadcastWM_FONTCHANGE;
 extern HWND hWndButtonSelectProcess;
 extern HWND hWndListViewFontList;
@@ -29,11 +26,8 @@ extern bool DragDropHasFonts;
 extern void DragDropWorkingThreadProc(void* lpParameter);
 extern void CloseWorkingThreadProc(void* lpParameter);
 extern void ButtonCloseWorkingThreadProc(void* lpParameter);
-extern void ButtonCloseAllWorkingThreadProc(void* lpParameter);
 extern void ButtonLoadWorkingThreadProc(void* lpParameter);
-extern void ButtonLoadAllWorkingThreadProc(void* lpParameter);
 extern void ButtonUnloadWorkingThreadProc(void* lpParameter);
-extern void ButtonUnloadAllWorkingThreadProc(void* lpParameter);
 extern void TargetProcessWatchThreadProc(void* lpParameter);
 
 extern void EnableAllButtons();
@@ -47,8 +41,8 @@ struct ProcessInfo
 };
 
 extern ProcessInfo TargetProcessInfo;
-extern void* lpRemoteAddFontProc;
-extern void* lpRemoteRemoveFontProc;
+extern void* pfnRemoteAddFontProc;
+extern void* pfnRemoteRemoveFontProc;
 extern HANDLE hTargetProcessWatchThread;
 
 extern bool DefaultAddFontProc(const wchar_t* lpFontName);

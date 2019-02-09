@@ -1,4 +1,4 @@
-#include <windows.h>
+﻿#include <windows.h>
 #include <windowsx.h>
 #include <CommCtrl.h>
 #include <process.h>
@@ -25,6 +25,7 @@ void DragDropWorkingThreadProc(void* lpParameter)
 		{
 			lvi.pszText = (LPWSTR)L"Loaded";
 			ListView_SetItem(hWndListViewFontList, &lvi);
+			ListView_SetItemState(hWndListViewFontList, i, LVIS_SELECTED, LVIS_SELECTED);
 			Message.str(L"");
 			Message << iter->GetFontPath() << L" successfully opened and loaded\r\n";
 			iMessageLength = Edit_GetTextLength(hWndEditMessage);
@@ -118,8 +119,9 @@ void CloseWorkingThreadProc(void* lpParameter)
 	//If some fonts are not unloaded, prompt user whether inisit to exit.
 	if (bIsUnloadSuccessful)
 	{
-		if (!hTargetProcessWatchThread)
+		if (hTargetProcessWatchThread)
 		{
+#pragma warning(suppress: 6387)
 			PostThreadMessage(GetThreadId(hTargetProcessWatchThread), UM_TERMINATEWATCHPROCESS, NULL, NULL);
 			WaitForSingleObject(hTargetProcessWatchThread, INFINITE);
 		}

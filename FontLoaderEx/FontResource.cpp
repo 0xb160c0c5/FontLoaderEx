@@ -1,4 +1,4 @@
-#include <cstring>
+﻿#include <cstring>
 #include "FontResource.h"
 #include "Globals.h"
 
@@ -68,12 +68,12 @@ bool DefaultRemoveFontProc(const wchar_t* lpFontName)
 
 bool RemoteAddFontProc(const wchar_t* lpFontName)
 {
-	return CallRemoteProc(TargetProcessInfo.hProcess, lpRemoteAddFontProc, (void*)lpFontName, (std::wcslen(lpFontName) + 1) * sizeof(wchar_t));
+	return CallRemoteProc(TargetProcessInfo.hProcess, pfnRemoteAddFontProc, (void*)lpFontName, (std::wcslen(lpFontName) + 1) * sizeof(wchar_t));
 }
 
 bool RemoteRemoveFontProc(const wchar_t* lpFontName)
 {
-	return CallRemoteProc(TargetProcessInfo.hProcess, lpRemoteRemoveFontProc, (void*)lpFontName, (std::wcslen(lpFontName) + 1) * sizeof(wchar_t));
+	return CallRemoteProc(TargetProcessInfo.hProcess, pfnRemoteRemoveFontProc, (void*)lpFontName, (std::wcslen(lpFontName) + 1) * sizeof(wchar_t));
 }
 
 bool NullAddFontProc(const wchar_t* lpFontName)
