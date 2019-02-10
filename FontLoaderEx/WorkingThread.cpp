@@ -121,7 +121,6 @@ void CloseWorkingThreadProc(void* lpParameter)
 	{
 		if (hTargetProcessWatchThread)
 		{
-#pragma warning(suppress: 6387)
 			PostThreadMessage(GetThreadId(hTargetProcessWatchThread), UM_TERMINATEWATCHPROCESS, NULL, NULL);
 			WaitForSingleObject(hTargetProcessWatchThread, INFINITE);
 		}
