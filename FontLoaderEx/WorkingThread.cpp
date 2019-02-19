@@ -47,9 +47,9 @@ void DragDropWorkingThreadProc(void* lpParameter)
 	iMessageLength = Edit_GetTextLength(hWndEditMessage);
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, L"\r\n");
-	DragDropHasFonts = false;
+	bDragDropHasFonts = false;
 
-	PostMessage(hWndMainWindow, UM_WORKINGTHREADTERMINATED, NULL, NULL);
+	PostMessage(hWndMainWindow, (UINT)USERMESSAGE::WORKINGTHREADTERMINATED, NULL, NULL);
 }
 
 //Unload all fonts working thread
@@ -119,16 +119,11 @@ void CloseWorkingThreadProc(void* lpParameter)
 	//If some fonts are not unloaded, prompt user whether inisit to exit.
 	if (bIsUnloadSuccessful)
 	{
-		if (hTargetProcessWatchThread)
-		{
-			PostThreadMessage(GetThreadId(hTargetProcessWatchThread), UM_TERMINATEWATCHPROCESS, NULL, NULL);
-			WaitForSingleObject(hTargetProcessWatchThread, INFINITE);
-		}
-		PostMessage(hWndMainWindow, UM_CLOSEWORKINGTHREADTERMINATED, (WPARAM)TRUE, NULL);
+		PostMessage(hWndMainWindow, (UINT)USERMESSAGE::CLOSEWORKINGTHREADTERMINATED, (WPARAM)TRUE, NULL);
 	}
 	else
 	{
-		PostMessage(hWndMainWindow, UM_CLOSEWORKINGTHREADTERMINATED, (WPARAM)FALSE, NULL);
+		PostMessage(hWndMainWindow, (UINT)USERMESSAGE::CLOSEWORKINGTHREADTERMINATED, (WPARAM)FALSE, NULL);
 	}
 }
 
@@ -197,7 +192,7 @@ void ButtonCloseWorkingThreadProc(void* lpParameter)
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-	PostMessage(hWndMainWindow, UM_WORKINGTHREADTERMINATED, NULL, NULL);
+	PostMessage(hWndMainWindow, (UINT)USERMESSAGE::WORKINGTHREADTERMINATED, NULL, NULL);
 }
 
 //Load selected fonts working thread
@@ -249,7 +244,7 @@ void ButtonLoadWorkingThreadProc(void* lpParameter)
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-	PostMessage(hWndMainWindow, UM_WORKINGTHREADTERMINATED, NULL, NULL);
+	PostMessage(hWndMainWindow, (UINT)USERMESSAGE::WORKINGTHREADTERMINATED, NULL, NULL);
 }
 
 //Unload selected fonts working thread
@@ -300,52 +295,27 @@ void ButtonUnloadWorkingThreadProc(void* lpParameter)
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-	PostMessage(hWndMainWindow, UM_WORKINGTHREADTERMINATED, NULL, NULL);
+	PostMessage(hWndMainWindow, (UINT)USERMESSAGE::WORKINGTHREADTERMINATED, NULL, NULL);
 }
 
 //Target process watch thread
 void TargetProcessWatchThreadProc(void* lpParameter)
 {
-	//Force create message queue for current thread
-	MSG message;
-	PeekMessage(&message, NULL, WM_USER, WM_USER, PM_NOREMOVE);
-
-	//Wait for target process or termination message
-	try
+	//Wait for target process or termination event
+	HANDLE handles[]{ TargetProcessInfo.hProcess, hEventTerminateWatchThread };
+	switch (WaitForMultipleObjects(2, handles, FALSE, INFINITE))
 	{
-		while (true)
+	case WAIT_OBJECT_0:
+		break;
+	case WAIT_OBJECT_0 + 1:
 		{
-			switch (MsgWaitForMultipleObjects(1, &TargetProcessInfo.hProcess, FALSE, INFINITE, QS_ALLPOSTMESSAGE))
-			{
-			case WAIT_OBJECT_0:
-				throw 1;
-				break;
-			case WAIT_OBJECT_0 + 1:
-				{
-					while (PeekMessage(&message, NULL, WM_USER + 0x100, WM_USER + 0x105, PM_REMOVE))
-					{
-						switch (message.message)
-						{
-						case UM_TERMINATEWATCHPROCESS:
-							{
-								_endthread();
-							}
-							break;
-						default:
-							break;
-						}
-					}
-				}
-				break;
-			default:
-				break;
-			}
+			_endthread();
 		}
+		break;
+	default:
+		break;
 	}
-	catch (const int)
-	{
-	}
-	
+
 	//If target process terminates, clear FontList and ListViewFontList
 	EnableMenuItem(GetSystemMenu(hWndMainWindow, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 	DisableAllButtons();
@@ -362,12 +332,206 @@ void TargetProcessWatchThreadProc(void* lpParameter)
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 
+	//Register default AddFont() and RemoveFont() procedure
 	FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
+
+	//Revert to default caption
 	Button_SetText(hWndButtonSelectProcess, L"Click to select process");
-	
-	//Close TargetProcessInfo.hProcess
+
+	//Close handle to target process
 	CloseHandle(TargetProcessInfo.hProcess);
 	TargetProcessInfo.hProcess = NULL;
 
-	SendMessage(hWndMainWindow, UM_WATCHPROCESSTERMINATED, NULL, NULL);
+	SendMessage(hWndMainWindow, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, NULL, NULL);
+}
+
+//Proxy and target process watch thread
+void ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
+{
+	//Wait for proxy process or target process or termination event
+	bool bProxyOrTarget{};
+	HANDLE handles[]{ piProxyProcess.hProcess, TargetProcessInfo.hProcess, hEventTerminateWatchThread };
+	switch (WaitForMultipleObjects(3, handles, FALSE, INFINITE))
+	{
+	case WAIT_OBJECT_0:
+		{
+			bProxyOrTarget = false;
+		}
+		break;
+	case WAIT_OBJECT_0 + 1:
+		{
+			bProxyOrTarget = true;
+		}
+		break;
+	case WAIT_OBJECT_0 + 2:
+		{
+			_endthread();
+		}
+		break;
+	default:
+		break;
+	}
+
+	//Clear FontList and ListViewFontList
+	EnableMenuItem(GetSystemMenu(hWndMainWindow, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+	DisableAllButtons();
+
+	FontResource::RegisterAddRemoveFontProc(NullAddFontProc, NullRemoveFontProc);
+	FontList.clear();
+	ListView_DeleteAllItems(hWndListViewFontList);
+
+	std::wstringstream Message{};
+	int iMessageLength{};
+
+	//If proxy process terminates, just print message
+	if (!bProxyOrTarget)
+	{
+		Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") terminated.\r\n\r\n";
+		iMessageLength = Edit_GetTextLength(hWndEditMessage);
+		Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+		Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+	}
+	//If target process termiantes, print message and terminate proxy process
+	else
+	{
+		Message << L"Target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L") terminated.\r\n\r\n";
+		iMessageLength = Edit_GetTextLength(hWndEditMessage);
+		Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+		Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+		Message.str(L"");
+
+		COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
+		FORWARD_WM_COPYDATA(hWndProxy, hWndMainWindow, &cds, SendMessage);
+		WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
+		Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
+		iMessageLength = Edit_GetTextLength(hWndEditMessage);
+		Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+		Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+	}
+	
+	//Terminate message thread
+	SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+	WaitForSingleObject(hMessageThread, INFINITE);
+
+	//Register default AddFont() and RemoveFont() procedure
+	FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
+	
+	//Revert to default caption
+	Button_SetText(hWndButtonSelectProcess, L"Click to select process");
+
+	//Close handles to proxy and target process and synchronization objects
+	CloseHandle(piProxyProcess.hThread);
+	CloseHandle(piProxyProcess.hProcess);
+	CloseHandle(TargetProcessInfo.hProcess);
+	CloseHandle(hCurrentProcessDuplicated);
+	CloseHandle(hTargetProcessDuplicated);
+	piProxyProcess.hProcess = NULL;
+	TargetProcessInfo.hProcess = NULL;
+	CloseHandle(hEventProxyAddFontFinished);
+	CloseHandle(hEventProxyRemoveFontFinished);
+
+	SendMessage(hWndMainWindow, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, NULL, NULL);
+}
+
+LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam);
+
+HWND hWndMessage{};
+
+//Message thread
+void MessageThreadProc(void* lpParameter)
+{
+	//Create message-only window
+	WNDCLASS wndclass{ 0, MsgWndProc, 0, 0, (HINSTANCE)lpParameter, NULL, NULL, NULL, NULL, L"FontLoaderExMessage" };
+
+	if (!RegisterClass(&wndclass))
+	{
+		return;
+	}
+
+	if (!(hWndMessage = CreateWindow(L"FontLoaderExMessage", L"FontLoaderExMessage", NULL, 0, 0, 0, 0, HWND_MESSAGE, NULL, (HINSTANCE)lpParameter, NULL)))
+	{
+		return;
+	}
+
+	SetEvent(hEventMessageThreadReady);
+
+	MSG Msg{};
+	BOOL bRet{};
+	while (true)
+	{
+		bRet = GetMessage(&Msg, NULL, 0, 0);
+		if (bRet == 0)
+		{
+			BOOL b = UnregisterClass(L"FontLoaderExMessage", (HINSTANCE)lpParameter);
+			break;
+		}
+		else if (bRet == -1)
+		{
+			break;
+		}
+		else
+		{
+			DispatchMessage(&Msg);
+		}
+	}
+}
+
+LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
+{
+	LRESULT ret{};
+	switch (Message)
+	{
+	case WM_COPYDATA:
+		{
+			COPYDATASTRUCT* pcds{ (PCOPYDATASTRUCT)lParam };
+			//Recieve HWND to proxy process
+			if (pcds->dwData == (ULONG_PTR)COPYDATA::PROXYPROCESSHWNDSENT)
+			{
+				hWndProxy = *(HWND*)pcds->lpData;
+				SetEvent(hEventProxyProcessHWNDRevieved);
+			}
+			//Get proxy dll injection result
+			if (pcds->dwData == (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED)
+			{
+				ProxyDllInjectionResult = *(int*)pcds->lpData;
+				SetEvent(hEventProxyDllInjectionFinished);
+			}
+			//Get proxy dll pull result
+			if (pcds->dwData == (ULONG_PTR)COPYDATA::DLLPULLFINISHED)
+			{
+				ProxyDllPullResult = *(int*)pcds->lpData;
+				SetEvent(hEventProxyDllPullFinished);
+			}
+			//Get add font result
+			if (pcds->dwData == (ULONG_PTR)COPYDATA::ADDFONTFINISHED)
+			{
+				ProxyAddFontResult = *(int*)pcds->lpData;
+				SetEvent(hEventProxyAddFontFinished);
+			}
+			//Get remove font result
+			if (pcds->dwData == (ULONG_PTR)COPYDATA::REMOVEFONTFINISHED)
+			{
+				ProxyRemoveFontResult = *(int*)pcds->lpData;
+				SetEvent(hEventProxyRemoveFontFinished);
+			}
+		}
+		break;
+	case WM_DESTROY:
+		{
+			PostQuitMessage(0);
+		}
+		break;
+	case (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD:
+		{
+			DestroyWindow(hWnd);
+		}
+		break;
+	default:
+		{
+			ret = DefWindowProc(hWnd, Message, wParam, lParam);
+		}
+		break;
+	}
+
+	return ret;
 }

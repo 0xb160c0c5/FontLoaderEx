@@ -1,11 +1,18 @@
-﻿#include <cstring>
+﻿#include <windowsx.h>
+#include <cstring>
 #include "FontResource.h"
 #include "Globals.h"
 
 FontResource::pfnAddFontProc FontResource::AddFontProc_{};
 FontResource::pfnRemoveFontProc FontResource::RemoveFontProc_{};
 
-DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, size_t nParamSize)
+HANDLE hEventProxyAddFontFinished{};
+HANDLE hEventProxyRemoveFontFinished{};
+
+bool ProxyAddFontResult{};
+bool ProxyRemoveFontResult{};
+
+DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, size_t nParamSize, DWORD Timeout)
 {
 	LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, nParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
 	if (!lpRemoteBuffer)
@@ -25,7 +32,7 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 		return false;
 	}
-	if (WaitForSingleObject(hRemoteThread, 5000) == WAIT_TIMEOUT)
+	if (WaitForSingleObject(hRemoteThread, Timeout) == WAIT_TIMEOUT)
 	{
 		return false;
 	}
@@ -43,45 +50,63 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 }
 
 #ifdef _DEBUG
-bool DefaultAddFontProc(const wchar_t* lpFontName)
+bool DefaultAddFontProc(const wchar_t* lpszFontName)
 {
 	Sleep(300);
 	return true;
 }
 
-bool DefaultRemoveFontProc(const wchar_t* lpFontName)
+bool DefaultRemoveFontProc(const wchar_t* lpszFontName)
 {
 	Sleep(300);
 	return true;
 }
 #else
-bool DefaultAddFontProc(const wchar_t* lpFontName)
+bool DefaultAddFontProc(const wchar_t* lpszFontName)
 {
-	return AddFontResourceEx(lpFontName, 0, NULL);
+	return AddFontResourceEx(lpszFontName, 0, NULL);
 }
 
-bool DefaultRemoveFontProc(const wchar_t* lpFontName)
+bool DefaultRemoveFontProc(const wchar_t* lpszFontName)
 {
-	return RemoveFontResourceEx(lpFontName, 0, NULL);
+	return RemoveFontResourceEx(lpszFontName, 0, NULL);
 }
 #endif // _DEBUG
 
-bool RemoteAddFontProc(const wchar_t* lpFontName)
+bool RemoteAddFontProc(const wchar_t* lpszFontName)
 {
-	return CallRemoteProc(TargetProcessInfo.hProcess, pfnRemoteAddFontProc, (void*)lpFontName, (std::wcslen(lpFontName) + 1) * sizeof(wchar_t));
+	return CallRemoteProc(TargetProcessInfo.hProcess, pfnRemoteAddFontProc, (void*)lpszFontName, (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), 5000);
 }
 
-bool RemoteRemoveFontProc(const wchar_t* lpFontName)
+bool RemoteRemoveFontProc(const wchar_t* lpszFontName)
 {
-	return CallRemoteProc(TargetProcessInfo.hProcess, pfnRemoteRemoveFontProc, (void*)lpFontName, (std::wcslen(lpFontName) + 1) * sizeof(wchar_t));
+	return CallRemoteProc(TargetProcessInfo.hProcess, pfnRemoteRemoveFontProc, (void*)lpszFontName, (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), 5000);
 }
 
-bool NullAddFontProc(const wchar_t* lpFontName)
+bool ProxyAddFontProc(const wchar_t* lpszFontName)
+{
+	COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::ADDFONT, (DWORD)(std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), (void*)lpszFontName };
+	FORWARD_WM_COPYDATA(hWndProxy, hWndMainWindow, &cds, SendMessage);
+	WaitForSingleObject(hEventProxyAddFontFinished, INFINITE);
+	ResetEvent(hEventProxyAddFontFinished);
+	return ProxyAddFontResult;
+}
+
+bool ProxyRemoveFontProc(const wchar_t* lpszFontName)
+{
+	COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::REMOVEFONT, (DWORD)(std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), (void*)lpszFontName };
+	FORWARD_WM_COPYDATA(hWndProxy, hWndMainWindow, &cds, SendMessage);
+	WaitForSingleObject(hEventProxyRemoveFontFinished, INFINITE);
+	ResetEvent(hEventProxyRemoveFontFinished);
+	return ProxyRemoveFontResult;
+}
+
+bool NullAddFontProc(const wchar_t* lpszFontName)
 {
 	return true;
 }
 
-bool NullRemoveFontProc(const wchar_t* lpFontName)
+bool NullRemoveFontProc(const wchar_t* lpszFontName)
 {
 	return true;
 }
