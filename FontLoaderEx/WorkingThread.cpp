@@ -49,7 +49,7 @@ void DragDropWorkingThreadProc(void* lpParameter)
 	Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 	bDragDropHasFonts = false;
 
-	PostMessage(hWndMainWindow, (UINT)USERMESSAGE::WORKINGTHREADTERMINATED, NULL, NULL);
+	PostMessage(hWndMain, (UINT)USERMESSAGE::WORKINGTHREADTERMINATED, NULL, NULL);
 }
 
 //Unload all fonts working thread
@@ -119,11 +119,11 @@ void CloseWorkingThreadProc(void* lpParameter)
 	//If some fonts are not unloaded, prompt user whether inisit to exit.
 	if (bIsUnloadSuccessful)
 	{
-		PostMessage(hWndMainWindow, (UINT)USERMESSAGE::CLOSEWORKINGTHREADTERMINATED, (WPARAM)TRUE, NULL);
+		PostMessage(hWndMain, (UINT)USERMESSAGE::CLOSEWORKINGTHREADTERMINATED, (WPARAM)TRUE, NULL);
 	}
 	else
 	{
-		PostMessage(hWndMainWindow, (UINT)USERMESSAGE::CLOSEWORKINGTHREADTERMINATED, (WPARAM)FALSE, NULL);
+		PostMessage(hWndMain, (UINT)USERMESSAGE::CLOSEWORKINGTHREADTERMINATED, (WPARAM)FALSE, NULL);
 	}
 }
 
@@ -192,7 +192,7 @@ void ButtonCloseWorkingThreadProc(void* lpParameter)
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-	PostMessage(hWndMainWindow, (UINT)USERMESSAGE::WORKINGTHREADTERMINATED, NULL, NULL);
+	PostMessage(hWndMain, (UINT)USERMESSAGE::WORKINGTHREADTERMINATED, NULL, NULL);
 }
 
 //Load selected fonts working thread
@@ -244,7 +244,7 @@ void ButtonLoadWorkingThreadProc(void* lpParameter)
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-	PostMessage(hWndMainWindow, (UINT)USERMESSAGE::WORKINGTHREADTERMINATED, NULL, NULL);
+	PostMessage(hWndMain, (UINT)USERMESSAGE::WORKINGTHREADTERMINATED, NULL, NULL);
 }
 
 //Unload selected fonts working thread
@@ -295,7 +295,7 @@ void ButtonUnloadWorkingThreadProc(void* lpParameter)
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-	PostMessage(hWndMainWindow, (UINT)USERMESSAGE::WORKINGTHREADTERMINATED, NULL, NULL);
+	PostMessage(hWndMain, (UINT)USERMESSAGE::WORKINGTHREADTERMINATED, NULL, NULL);
 }
 
 //Target process watch thread
@@ -317,7 +317,7 @@ void TargetProcessWatchThreadProc(void* lpParameter)
 	}
 
 	//If target process terminates, clear FontList and ListViewFontList
-	EnableMenuItem(GetSystemMenu(hWndMainWindow, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+	EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 	DisableAllButtons();
 
 	FontResource::RegisterAddRemoveFontProc(NullAddFontProc, NullRemoveFontProc);
@@ -342,7 +342,7 @@ void TargetProcessWatchThreadProc(void* lpParameter)
 	CloseHandle(TargetProcessInfo.hProcess);
 	TargetProcessInfo.hProcess = NULL;
 
-	SendMessage(hWndMainWindow, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, NULL, NULL);
+	SendMessage(hWndMain, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, NULL, NULL);
 }
 
 //Proxy and target process watch thread
@@ -373,7 +373,7 @@ void ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	}
 
 	//Clear FontList and ListViewFontList
-	EnableMenuItem(GetSystemMenu(hWndMainWindow, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+	EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 	DisableAllButtons();
 
 	FontResource::RegisterAddRemoveFontProc(NullAddFontProc, NullRemoveFontProc);
@@ -401,7 +401,7 @@ void ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 		Message.str(L"");
 
 		COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
-		FORWARD_WM_COPYDATA(hWndProxy, hWndMainWindow, &cds, SendMessage);
+		FORWARD_WM_COPYDATA(hWndProxy, hWndMain, &cds, SendMessage);
 		WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
 		Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
 		iMessageLength = Edit_GetTextLength(hWndEditMessage);
@@ -430,7 +430,7 @@ void ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	CloseHandle(hEventProxyAddFontFinished);
 	CloseHandle(hEventProxyRemoveFontFinished);
 
-	SendMessage(hWndMainWindow, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, NULL, NULL);
+	SendMessage(hWndMain, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, NULL, NULL);
 }
 
 LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);

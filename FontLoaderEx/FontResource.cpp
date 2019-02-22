@@ -83,7 +83,7 @@ bool RemoteRemoveFontProc(const wchar_t* lpszFontName)
 bool ProxyAddFontProc(const wchar_t* lpszFontName)
 {
 	COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::ADDFONT, (DWORD)(std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), (void*)lpszFontName };
-	FORWARD_WM_COPYDATA(hWndProxy, hWndMainWindow, &cds, SendMessage);
+	FORWARD_WM_COPYDATA(hWndProxy, hWndMain, &cds, SendMessage);
 	WaitForSingleObject(hEventProxyAddFontFinished, INFINITE);
 	ResetEvent(hEventProxyAddFontFinished);
 	return ProxyAddFontResult;
@@ -92,7 +92,7 @@ bool ProxyAddFontProc(const wchar_t* lpszFontName)
 bool ProxyRemoveFontProc(const wchar_t* lpszFontName)
 {
 	COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::REMOVEFONT, (DWORD)(std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), (void*)lpszFontName };
-	FORWARD_WM_COPYDATA(hWndProxy, hWndMainWindow, &cds, SendMessage);
+	FORWARD_WM_COPYDATA(hWndProxy, hWndMain, &cds, SendMessage);
 	WaitForSingleObject(hEventProxyRemoveFontFinished, INFINITE);
 	ResetEvent(hEventProxyRemoveFontFinished);
 	return ProxyRemoveFontResult;

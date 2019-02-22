@@ -25,7 +25,7 @@
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 
 std::list<FontResource> FontList{};
-HWND hWndMainWindow{};
+HWND hWndMain{};
 bool bDragDropHasFonts{ false };
 
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
@@ -59,17 +59,17 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		return -1;
 	}
 
-	if (!(hWndMainWindow = CreateWindow(L"FontLoaderEx", L"FontLoaderEx", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_BORDER | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, 700, 700, NULL, NULL, hInstance, NULL)))
+	if (!(hWndMain = CreateWindow(L"FontLoaderEx", L"FontLoaderEx", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_BORDER | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, 700, 700, NULL, NULL, hInstance, NULL)))
 	{
 		return -1;
 	}
 
-	ShowWindow(hWndMainWindow, nShowCmd);
-	UpdateWindow(hWndMainWindow);
+	ShowWindow(hWndMain, nShowCmd);
+	UpdateWindow(hWndMain);
 
 	MSG Msg{};
 	BOOL bRet{};
-	while ((bRet = GetMessage(&Msg, hWndMainWindow, 0, 0)) != 0)
+	while ((bRet = GetMessage(&Msg, hWndMain, 0, 0)) != 0)
 	{
 		if (bRet == -1)
 		{
@@ -78,7 +78,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		}
 		else
 		{
-			if (!IsDialogMessage(hWndMainWindow, &Msg))
+			if (!IsDialogMessage(hWndMain, &Msg))
 			{
 				TranslateMessage(&Msg);
 				DispatchMessage(&Msg);
@@ -264,45 +264,53 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					{
 					case BN_CLICKED:
 						{
-							//Open Dialog
-							WCHAR lpszOpenFileNames[32768]{};
+							//Open dialog and add fonts to list view
+							WCHAR szOpenFileNames[32768]{};
 							std::vector<std::wstring> NewFontList;
-							OPENFILENAME ofn{ sizeof(ofn), hWnd, NULL, L"Font Files(*.ttf;*.ttc;*.otf)\0*.ttf;*.ttc;*.otf\0", NULL, 0, 0, lpszOpenFileNames, 32768, NULL, 0, NULL, NULL, OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT, 0, 0, NULL, NULL, NULL, NULL, nullptr, 0, 0 };
+							OPENFILENAME ofn{ sizeof(ofn), hWnd, NULL, L"Font Files(*.ttf;*.ttc;*.otf)\0*.ttf;*.ttc;*.otf\0", NULL, 0, 0, szOpenFileNames, 32768, NULL, 0, NULL, NULL, OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT, 0, 0, NULL, NULL, NULL, NULL, nullptr, 0, 0 };
 							if (GetOpenFileName(&ofn))
 							{
+								LVITEM lvi{ LVIF_TEXT, ListView_GetItemCount(hWndListViewFontList) };
+								std::wstringstream Message{};
+								int iMessageLenth{};
 								if (PathIsDirectory(ofn.lpstrFile))
 								{
 									WCHAR* lpszFileName{ ofn.lpstrFile + ofn.nFileOffset };
 									do
 									{
-										std::unique_ptr<WCHAR[]> lpszPath{ new WCHAR[std::wcslen(ofn.lpstrFile) + std::wcslen(lpszFileName) + 2]{} };
-										PathCombine(lpszPath.get(), ofn.lpstrFile, lpszFileName);
-										NewFontList.push_back(lpszPath.get());
+										WCHAR lpszPath[MAX_PATH]{};
+										PathCombine(lpszPath, ofn.lpstrFile, lpszFileName);
+										NewFontList.push_back(lpszPath);
 										lpszFileName += std::wcslen(lpszFileName) + 1;
+										FontList.push_back(lpszPath);
+										lvi.iSubItem = 0;
+										lvi.pszText = (LPWSTR)lpszPath;
+										ListView_InsertItem(hWndListViewFontList, &lvi);
+										lvi.iSubItem = 1;
+										lvi.pszText = (LPWSTR)L"Not loaded";
+										ListView_SetItem(hWndListViewFontList, &lvi);
+										ListView_SetItemState(hWndListViewFontList, lvi.iItem, LVIS_SELECTED, LVIS_SELECTED);
+										lvi.iItem++;
+										Message.str(L"");
+										Message << lpszPath << L" opened\r\n";
+										iMessageLenth = Edit_GetTextLength(hWndEditMessage);
+										Edit_SetSel(hWndEditMessage, iMessageLenth, iMessageLenth);
+										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+										
 									} while (*lpszFileName);
 								}
 								else
 								{
-									NewFontList.push_back(ofn.lpstrFile);
-								}
-
-								//Insert items to ListViewFontList
-								LVITEM lvi{ LVIF_TEXT, ListView_GetItemCount(hWndListViewFontList) };
-								std::wstringstream Message{};
-								int iMessageLenth{};
-								for (int i = 0; i < (int)NewFontList.size(); i++)
-								{
-									FontList.push_back(NewFontList[i]);
+									FontList.push_back(ofn.lpstrFile);
 									lvi.iSubItem = 0;
-									lvi.pszText = (LPWSTR)(NewFontList[i].c_str());
+									lvi.pszText = (LPWSTR)ofn.lpstrFile;
 									ListView_InsertItem(hWndListViewFontList, &lvi);
 									lvi.iSubItem = 1;
 									lvi.pszText = (LPWSTR)L"Not loaded";
 									ListView_SetItem(hWndListViewFontList, &lvi);
 									ListView_SetItemState(hWndListViewFontList, lvi.iItem, LVIS_SELECTED, LVIS_SELECTED);
-									lvi.iItem++;
 									Message.str(L"");
-									Message << NewFontList[i] << L" opened\r\n";
+									Message << ofn.lpstrFile << L" opened\r\n";
 									iMessageLenth = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, iMessageLenth, iMessageLenth);
 									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());

@@ -6,7 +6,7 @@
 
 extern std::list<FontResource> FontList;
 
-extern HWND hWndMainWindow;
+extern HWND hWndMain;
 extern HWND hWndButtonOpen;
 extern HWND hWndButtonClose;
 extern HWND hWndButtonLoad;
