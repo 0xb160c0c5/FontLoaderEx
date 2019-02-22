@@ -87,7 +87,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			//Get handles to parent process and target process and message window from command line
 			int argc{};
 			LPWSTR* argv = CommandLineToArgvW(GetCommandLine(), &argc);
-			if (argc < 2)
+			if (argc < 1)
 			{
 				ret = -1;
 				break;
