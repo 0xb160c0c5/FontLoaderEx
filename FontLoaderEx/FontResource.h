@@ -1,7 +1,7 @@
-#pragma once
+﻿#pragma once
 
-#include <string>
 #include <Windows.h>
+#include <string>
 
 class FontResource
 {
@@ -13,12 +13,12 @@ public:
 	FontResource(const wchar_t* FontName);
 	bool Load();
 	bool Unload();
-	const std::wstring& GetFontPath();
+	const std::wstring& GetFontName();
 	bool IsLoaded();
 	~FontResource();
 private:
 	static pfnAddFontProc AddFontProc_;
 	static pfnRemoveFontProc RemoveFontProc_;
-	std::wstring strFontPath_;
+	std::wstring strFontName_;
 	bool bIsLoaded_ = FALSE;
 };

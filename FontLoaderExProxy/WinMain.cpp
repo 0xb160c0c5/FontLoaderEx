@@ -21,7 +21,6 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	}
 
 	//Create window
-	MSG Msg{};
 	WNDCLASS wndclass{ 0, WndProc, 0, 0, hInstance, NULL, NULL, NULL, NULL, L"FontLoaderExProxy" };
 
 	if (!RegisterClass(&wndclass))
@@ -29,35 +28,28 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		return -1;
 	}
 
-	HWND hWndMainWindow{};
-	if (!(hWndMainWindow = CreateWindow(L"FontLoaderExProxy", L"FontLoaderExProxy", NULL, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInstance, NULL)))
+	HWND hWnd{};
+	if (!(hWnd = CreateWindow(L"FontLoaderExProxy", L"FontLoaderExProxy", NULL, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInstance, NULL)))
 	{
 		return -1;
 	}
 
+	MSG Msg{};
 	BOOL bRet{};
-	int ret{};
-	while (true)
+	while ((bRet = GetMessage(&Msg, NULL, 0, 0)) != 0)
 	{
-		bRet = GetMessage(&Msg, NULL, 0, 0);
-		if (bRet == 0)
+		if (bRet == -1)
 		{
-			ret = (int)Msg.wParam;
-			break;
-		}
-		else if (ret == -1)
-		{
-			ret = (int)GetLastError();
+			return (int)GetLastError();
 			break;
 		}
 		else
 		{
 			DispatchMessage(&Msg);
 		}
-
 	}
 
-	return ret;
+	return (int)Msg.wParam;
 }
 
 HANDLE hParentProcess{};
@@ -126,142 +118,152 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 	case WM_COPYDATA:
 		{
 			COPYDATASTRUCT* pcds{ (PCOPYDATASTRUCT)lParam };
-			//Inject dll
-			if (pcds->dwData == (ULONG_PTR)COPYDATA::INJECTDLL)
+			switch (pcds->dwData)
 			{
-				//Check whether target process loads gdi32.dll as AddFontResourceEx() and RemoveFontResourceEx() are in it
-				HANDLE hModuleSnapshot1{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetThreadId(hTargetProcess)) };
-				MODULEENTRY32 me321{ sizeof(MODULEENTRY32) };
-				bool bIsGDI32Loaded{ false };
-				if (!Module32First(hModuleSnapshot1, &me321))
+				//Inject dll
+			case (ULONG_PTR)COPYDATA::INJECTDLL:
 				{
-					CloseHandle(hModuleSnapshot1);
-					int i{ (int)PROXYDLLINJECTION::FAILEDTOENUMERATEMODULES };
-					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(int), (void*)&i };
-					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
-					break;
-				}
-				do
-				{
-					if (!lstrcmpi(me321.szModule, L"gdi32.dll"))
+					//Check whether target process loads gdi32.dll as AddFontResourceEx() and RemoveFontResourceEx() are in it
+					HANDLE hModuleSnapshot1{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetThreadId(hTargetProcess)) };
+					MODULEENTRY32 me321{ sizeof(MODULEENTRY32) };
+					bool bIsGDI32Loaded{ false };
+					if (!Module32First(hModuleSnapshot1, &me321))
 					{
-						bIsGDI32Loaded = true;
+						CloseHandle(hModuleSnapshot1);
+						int i{ (int)PROXYDLLINJECTION::FAILEDTOENUMERATEMODULES };
+						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(int), (void*)&i };
+						FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
 						break;
 					}
-				} while (Module32Next(hModuleSnapshot1, &me321));
-				if (!bIsGDI32Loaded)
-				{
-					CloseHandle(hModuleSnapshot1);
-					int i{ (int)PROXYDLLINJECTION::GDI32NOTLOADED };
-					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(int), (void*)&i };
-					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
-					break;
-				}
-				CloseHandle(hModuleSnapshot1);
-
-				//Inject FontLoaderExInjectionDll(64).dll into target process
-				if (!InjectModule(hTargetProcess, szInjectionDllName, 5000))
-				{
-					int i{ (int)PROXYDLLINJECTION::FAILED };
-					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(int), (void*)&i };
-					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
-					break;
-				}
-
-				//Get base address of FontLoaderExInjectionDll(64).dll in target process
-				HANDLE hModuleSnapshot{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetProcessId(hTargetProcess)) };
-				MODULEENTRY32 me32{ sizeof(MODULEENTRY32) };
-				BYTE* pModBaseAddr{};
-				if (!Module32First(hModuleSnapshot, &me32))
-				{
-					CloseHandle(hModuleSnapshot);
-					int i{ (int)PROXYDLLINJECTION::MODULENOTFOUND };
-					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(int), (void*)&i };
-					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
-					break;
-				}
-				do
-				{
-					if (!lstrcmpi(me32.szModule, szInjectionDllName))
+					do
 					{
-						pModBaseAddr = me32.modBaseAddr;
+						if (!lstrcmpi(me321.szModule, L"gdi32.dll"))
+						{
+							bIsGDI32Loaded = true;
+							break;
+						}
+					} while (Module32Next(hModuleSnapshot1, &me321));
+					if (!bIsGDI32Loaded)
+					{
+						CloseHandle(hModuleSnapshot1);
+						int i{ (int)PROXYDLLINJECTION::GDI32NOTLOADED };
+						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(int), (void*)&i };
+						FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
 						break;
 					}
-				} while (Module32Next(hModuleSnapshot, &me32));
-				if (!pModBaseAddr)
-				{
+					CloseHandle(hModuleSnapshot1);
+
+					//Inject FontLoaderExInjectionDll(64).dll into target process
+					if (!InjectModule(hTargetProcess, szInjectionDllName, 5000))
+					{
+						int i{ (int)PROXYDLLINJECTION::FAILED };
+						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(int), (void*)&i };
+						FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+						break;
+					}
+
+					//Get base address of FontLoaderExInjectionDll(64).dll in target process
+					HANDLE hModuleSnapshot{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetProcessId(hTargetProcess)) };
+					MODULEENTRY32 me32{ sizeof(MODULEENTRY32) };
+					BYTE* pModBaseAddr{};
+					if (!Module32First(hModuleSnapshot, &me32))
+					{
+						CloseHandle(hModuleSnapshot);
+						int i{ (int)PROXYDLLINJECTION::MODULENOTFOUND };
+						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(int), (void*)&i };
+						FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+						break;
+					}
+					do
+					{
+						if (!lstrcmpi(me32.szModule, szInjectionDllName))
+						{
+							pModBaseAddr = me32.modBaseAddr;
+							break;
+						}
+					} while (Module32Next(hModuleSnapshot, &me32));
+					if (!pModBaseAddr)
+					{
+						CloseHandle(hModuleSnapshot);
+						int i{ (int)PROXYDLLINJECTION::MODULENOTFOUND };
+						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(int), (void*)&i };
+						FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+						break;
+					}
 					CloseHandle(hModuleSnapshot);
-					int i{ (int)PROXYDLLINJECTION::MODULENOTFOUND };
+
+					//Calculate addresses of AddFont() and RemoveFont() in target process
+					HMODULE hModInjectionDll{ LoadLibrary(szInjectionDllName) };
+					void* pLocalAddFontProcAddr{ GetProcAddress(hModInjectionDll, "AddFont") };
+					void* pLocalRemoveFontProcAddr{ GetProcAddress(hModInjectionDll, "RemoveFont") };
+					INT_PTR AddFontProcOffset{ (INT_PTR)pLocalAddFontProcAddr - (INT_PTR)hModInjectionDll };
+					INT_PTR RemoveFontProcOffset{ (INT_PTR)pLocalRemoveFontProcAddr - (INT_PTR)hModInjectionDll };
+					FreeLibrary(hModInjectionDll);
+					pfnRemoteAddFontProc = pModBaseAddr + AddFontProcOffset;
+					pfnRemoteRemoveFontProc = pModBaseAddr + RemoveFontProcOffset;
+
+					//Send success messsage to parent process
+					int i{ (int)PROXYDLLINJECTION::SUCCESSFUL };
 					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(int), (void*)&i };
 					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
-					break;
 				}
-				CloseHandle(hModuleSnapshot);
+				break;
+				//Pull dll
+			case (ULONG_PTR)COPYDATA::PULLDLL:
+				{
+					int i{};
+					if (!PullModule(hTargetProcess, szInjectionDllName, 5000))
+					{
+						i = (int)PROXYDLLPULL::FAILED;
+					}
+					else
+					{
+						i = (int)PROXYDLLPULL::SUCCESSFUL;
+					}
+					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLPULLFINISHED, sizeof(int), (void*)&i };
+					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+				}
+				break;
+				//Load font
+			case (ULONG_PTR)COPYDATA::ADDFONT:
+				{
+					bool b{};
+					if (!CallRemoteProc(hTargetProcess, pfnRemoteAddFontProc, pcds->lpData, (std::wcslen((LPWSTR)pcds->lpData) + 1) * sizeof(wchar_t), 5000))
+					{
+						b = false;
+					}
+					else
+					{
+						b = true;
+					}
+					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::ADDFONTFINISHED, sizeof(int), (void*)&b };
+					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+				}
+				break;
+				//Unload font
+			case (ULONG_PTR)COPYDATA::REMOVEFONT:
+				{
+					bool b{};
+					if (!CallRemoteProc(hTargetProcess, pfnRemoteRemoveFontProc, pcds->lpData, (std::wcslen((LPWSTR)pcds->lpData) + 1) * sizeof(wchar_t), 5000))
+					{
+						b = false;
+					}
+					else
+					{
+						b = true;
+					}
+					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::REMOVEFONTFINISHED, sizeof(int), (void*)&b };
+					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+				}
+				break;
+				//Terminate self
+			case (ULONG_PTR)COPYDATA::TERMINATE:
+				{
+					DestroyWindow(hWnd);
+				}
+			default:
+				break;
 
-				//Calculate addresses of AddFont() and RemoveFont() in target process
-				HMODULE hModInjectionDll{ LoadLibrary(szInjectionDllName) };
-				void* pLocalAddFontProcAddr{ GetProcAddress(hModInjectionDll, "AddFont") };
-				void* pLocalRemoveFontProcAddr{ GetProcAddress(hModInjectionDll, "RemoveFont") };
-				INT_PTR AddFontProcOffset{ (INT_PTR)pLocalAddFontProcAddr - (INT_PTR)hModInjectionDll };
-				INT_PTR RemoveFontProcOffset{ (INT_PTR)pLocalRemoveFontProcAddr - (INT_PTR)hModInjectionDll };
-				FreeLibrary(hModInjectionDll);
-				pfnRemoteAddFontProc = pModBaseAddr + AddFontProcOffset;
-				pfnRemoteRemoveFontProc = pModBaseAddr + RemoveFontProcOffset;
-
-				//Send success messsage to parent process
-				int i{ (int)PROXYDLLINJECTION::SUCCESSFUL };
-				COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(int), (void*)&i };
-				FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
-			}
-			//Pull dll
-			if (pcds->dwData == (ULONG_PTR)COPYDATA::PULLDLL)
-			{
-				int i{};
-				if (!PullModule(hTargetProcess, szInjectionDllName, 5000))
-				{
-					i = (int)PROXYDLLPULL::FAILED;
-				}
-				else
-				{
-					i = (int)PROXYDLLPULL::SUCCESSFUL;
-				}
-				COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLPULLFINISHED, sizeof(int), (void*)&i };
-				FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
-			}
-			//Load font
-			if (pcds->dwData == (ULONG_PTR)COPYDATA::ADDFONT)
-			{
-				bool b{};
-				if (!CallRemoteProc(hTargetProcess, pfnRemoteAddFontProc, pcds->lpData, (std::wcslen((LPWSTR)pcds->lpData) + 1) * sizeof(wchar_t), 5000))
-				{
-					b = false;
-				}
-				else
-				{
-					b = true;
-				}
-				COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::ADDFONTFINISHED, sizeof(int), (void*)&b };
-				FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
-			}
-			//Unload font
-			if (pcds->dwData == (ULONG_PTR)COPYDATA::REMOVEFONT)
-			{
-				bool b{};
-				if (!CallRemoteProc(hTargetProcess, pfnRemoteRemoveFontProc, pcds->lpData, (std::wcslen((LPWSTR)pcds->lpData) + 1) * sizeof(wchar_t), 5000))
-				{
-					b = false;
-				}
-				else
-				{
-					b = true;
-				}
-				COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::REMOVEFONTFINISHED, sizeof(int), (void*)&b };
-				FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
-			}
-			//Terminate self
-			if (pcds->dwData == (ULONG_PTR)COPYDATA::TERMINATE)
-			{
-				DestroyWindow(hWnd);
 			}
 		}
 		break;

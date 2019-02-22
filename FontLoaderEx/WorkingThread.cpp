@@ -18,7 +18,7 @@ void DragDropWorkingThreadProc(void* lpParameter)
 	{
 		lvi.iItem = i;
 		lvi.iSubItem = 0;
-		lvi.pszText = (LPWSTR)(iter->GetFontPath().c_str());
+		lvi.pszText = (LPWSTR)(iter->GetFontName().c_str());
 		ListView_InsertItem(hWndListViewFontList, &lvi);
 		lvi.iSubItem = 1;
 		if (iter->Load())
@@ -27,7 +27,7 @@ void DragDropWorkingThreadProc(void* lpParameter)
 			ListView_SetItem(hWndListViewFontList, &lvi);
 			ListView_SetItemState(hWndListViewFontList, i, LVIS_SELECTED, LVIS_SELECTED);
 			Message.str(L"");
-			Message << iter->GetFontPath() << L" successfully opened and loaded\r\n";
+			Message << iter->GetFontName() << L" opened and loaded\r\n";
 			iMessageLength = Edit_GetTextLength(hWndEditMessage);
 			Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 			Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -37,7 +37,7 @@ void DragDropWorkingThreadProc(void* lpParameter)
 			lvi.pszText = (LPWSTR)L"Load failed";
 			ListView_SetItem(hWndListViewFontList, &lvi);
 			Message.str(L"");
-			Message << L"Failed to load " << iter->GetFontPath() << L"\r\n";
+			Message << L"Failed to load " << iter->GetFontName() << L"\r\n";
 			iMessageLength = Edit_GetTextLength(hWndEditMessage);
 			Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 			Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -71,7 +71,7 @@ void CloseWorkingThreadProc(void* lpParameter)
 				bIsFontListChanged = true;
 				ListView_DeleteItem(hWndListViewFontList, i);
 				Message.str(L"");
-				Message << iter->GetFontPath() << L" successfully unloaded and closed\r\n";
+				Message << iter->GetFontName() << L" successfully unloaded and closed\r\n";
 				iMessageLength = Edit_GetTextLength(hWndEditMessage);
 				Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 				Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -85,7 +85,7 @@ void CloseWorkingThreadProc(void* lpParameter)
 				lvi.pszText = (LPWSTR)L"Unload failed";
 				ListView_SetItem(hWndListViewFontList, &lvi);
 				Message.str(L"");
-				Message << L"Failed to unload " << iter->GetFontPath() << L"\r\n";
+				Message << L"Failed to unload " << iter->GetFontName() << L"\r\n";
 				iMessageLength = Edit_GetTextLength(hWndEditMessage);
 				Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 				Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -95,7 +95,7 @@ void CloseWorkingThreadProc(void* lpParameter)
 		{
 			ListView_DeleteItem(hWndListViewFontList, i);
 			Message.str(L"");
-			Message << iter->GetFontPath() << L" successfully closed\r\n";
+			Message << iter->GetFontName() << L" closed\r\n";
 			iMessageLength = Edit_GetTextLength(hWndEditMessage);
 			Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 			Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -147,7 +147,7 @@ void ButtonCloseWorkingThreadProc(void* lpParameter)
 					bIsFontListChanged = true;
 					ListView_DeleteItem(hWndListViewFontList, i);
 					Message.str(L"");
-					Message << iter->GetFontPath() << L" successfully unloaded and closed\r\n";
+					Message << iter->GetFontName() << L" successfully unloaded and closed\r\n";
 					iMessageLength = Edit_GetTextLength(hWndEditMessage);
 					Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 					Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -160,7 +160,7 @@ void ButtonCloseWorkingThreadProc(void* lpParameter)
 					lvi.pszText = (LPWSTR)L"Unload failed";
 					ListView_SetItem(hWndListViewFontList, &lvi);
 					Message.str(L"");
-					Message << L"Failed to unload " << iter->GetFontPath() << L"\r\n";
+					Message << L"Failed to unload " << iter->GetFontName() << L"\r\n";
 					iMessageLength = Edit_GetTextLength(hWndEditMessage);
 					Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 					Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -170,7 +170,7 @@ void ButtonCloseWorkingThreadProc(void* lpParameter)
 			{
 				ListView_DeleteItem(hWndListViewFontList, i);
 				Message.str(L"");
-				Message << iter->GetFontPath() << L" successfully closed\r\n";
+				Message << iter->GetFontName() << L" closed\r\n";
 				iMessageLength = Edit_GetTextLength(hWndEditMessage);
 				Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 				Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -214,7 +214,7 @@ void ButtonLoadWorkingThreadProc(void* lpParameter)
 				lvi.pszText = (LPWSTR)L"Loaded";
 				ListView_SetItem(hWndListViewFontList, &lvi);
 				Message.str(L"");
-				Message << iter->GetFontPath() << L" successfully loaded\r\n";
+				Message << iter->GetFontName() << L" successfully loaded\r\n";
 				iMessageLength = Edit_GetTextLength(hWndEditMessage);
 				Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 				Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -224,7 +224,7 @@ void ButtonLoadWorkingThreadProc(void* lpParameter)
 				lvi.pszText = (LPWSTR)L"Load failed";
 				ListView_SetItem(hWndListViewFontList, &lvi);
 				Message.str(L"");
-				Message << L"Failed to load " << iter->GetFontPath() << L"\r\n";
+				Message << L"Failed to load " << iter->GetFontName() << L"\r\n";
 				iMessageLength = Edit_GetTextLength(hWndEditMessage);
 				Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 				Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -266,7 +266,7 @@ void ButtonUnloadWorkingThreadProc(void* lpParameter)
 				lvi.pszText = (LPWSTR)L"Unloaded";
 				ListView_SetItem(hWndListViewFontList, &lvi);
 				Message.str(L"");
-				Message << iter->GetFontPath() << L" successfully unloaded\r\n";
+				Message << iter->GetFontName() << L" successfully unloaded\r\n";
 				iMessageLength = Edit_GetTextLength(hWndEditMessage);
 				Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 				Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -276,7 +276,7 @@ void ButtonUnloadWorkingThreadProc(void* lpParameter)
 				lvi.pszText = (LPWSTR)L"Unload failed";
 				ListView_SetItem(hWndListViewFontList, &lvi);
 				Message.str(L"");
-				Message << L"Failed to unload " << iter->GetFontPath() << L"\r\n";
+				Message << L"Failed to unload " << iter->GetFontName() << L"\r\n";
 				iMessageLength = Edit_GetTextLength(hWndEditMessage);
 				Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 				Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -408,14 +408,14 @@ void ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 		Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 		Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 	}
-	
+
 	//Terminate message thread
 	SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 	WaitForSingleObject(hMessageThread, INFINITE);
 
 	//Register default AddFont() and RemoveFont() procedure
 	FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
-	
+
 	//Revert to default caption
 	Button_SetText(hWndButtonSelectProcess, L"Click to select process");
 
@@ -433,7 +433,7 @@ void ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	SendMessage(hWndMainWindow, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, NULL, NULL);
 }
 
-LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 
 HWND hWndMessage{};
 
@@ -457,15 +457,9 @@ void MessageThreadProc(void* lpParameter)
 
 	MSG Msg{};
 	BOOL bRet{};
-	while (true)
+	while ((bRet = GetMessage(&Msg, hWndMessage, 0, 0)) != 0)
 	{
-		bRet = GetMessage(&Msg, NULL, 0, 0);
-		if (bRet == 0)
-		{
-			BOOL b = UnregisterClass(L"FontLoaderExMessage", (HINSTANCE)lpParameter);
-			break;
-		}
-		else if (bRet == -1)
+		if (bRet == -1)
 		{
 			break;
 		}
@@ -474,45 +468,56 @@ void MessageThreadProc(void* lpParameter)
 			DispatchMessage(&Msg);
 		}
 	}
+	UnregisterClass(L"FontLoaderExMessage", (HINSTANCE)lpParameter);
 }
 
-LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	LRESULT ret{};
-	switch (Message)
+	switch (Msg)
 	{
 	case WM_COPYDATA:
 		{
 			COPYDATASTRUCT* pcds{ (PCOPYDATASTRUCT)lParam };
-			//Recieve HWND to proxy process
-			if (pcds->dwData == (ULONG_PTR)COPYDATA::PROXYPROCESSHWNDSENT)
+			switch (pcds->dwData)
 			{
-				hWndProxy = *(HWND*)pcds->lpData;
-				SetEvent(hEventProxyProcessHWNDRevieved);
-			}
-			//Get proxy dll injection result
-			if (pcds->dwData == (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED)
-			{
-				ProxyDllInjectionResult = *(int*)pcds->lpData;
-				SetEvent(hEventProxyDllInjectionFinished);
-			}
-			//Get proxy dll pull result
-			if (pcds->dwData == (ULONG_PTR)COPYDATA::DLLPULLFINISHED)
-			{
-				ProxyDllPullResult = *(int*)pcds->lpData;
-				SetEvent(hEventProxyDllPullFinished);
-			}
-			//Get add font result
-			if (pcds->dwData == (ULONG_PTR)COPYDATA::ADDFONTFINISHED)
-			{
-				ProxyAddFontResult = *(int*)pcds->lpData;
-				SetEvent(hEventProxyAddFontFinished);
-			}
-			//Get remove font result
-			if (pcds->dwData == (ULONG_PTR)COPYDATA::REMOVEFONTFINISHED)
-			{
-				ProxyRemoveFontResult = *(int*)pcds->lpData;
-				SetEvent(hEventProxyRemoveFontFinished);
+				//Recieve HWND to proxy process
+			case (ULONG_PTR)COPYDATA::PROXYPROCESSHWNDSENT:
+				{
+					hWndProxy = *(HWND*)pcds->lpData;
+					SetEvent(hEventProxyProcessHWNDRevieved);
+				}
+				break;
+				//Get proxy dll injection result
+			case (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED:
+				{
+					ProxyDllInjectionResult = *(int*)pcds->lpData;
+					SetEvent(hEventProxyDllInjectionFinished);
+				}
+				break;
+				//Get proxy dll pull result
+			case  (ULONG_PTR)COPYDATA::DLLPULLFINISHED:
+				{
+					ProxyDllPullResult = *(int*)pcds->lpData;
+					SetEvent(hEventProxyDllPullFinished);
+				}
+				break;
+				//Get add font result
+			case (ULONG_PTR)COPYDATA::ADDFONTFINISHED:
+				{
+					ProxyAddFontResult = *(int*)pcds->lpData;
+					SetEvent(hEventProxyAddFontFinished);
+				}
+				break;
+				//Get remove font result
+			case (ULONG_PTR)COPYDATA::REMOVEFONTFINISHED:
+				{
+					ProxyRemoveFontResult = *(int*)pcds->lpData;
+					SetEvent(hEventProxyRemoveFontFinished);
+				}
+				break;
+			default:
+				break;
 			}
 		}
 		break;
@@ -528,7 +533,7 @@ LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lPara
 		break;
 	default:
 		{
-			ret = DefWindowProc(hWnd, Message, wParam, lParam);
+			ret = DefWindowProc(hWnd, Msg, wParam, lParam);
 		}
 		break;
 	}
