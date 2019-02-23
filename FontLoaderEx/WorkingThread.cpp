@@ -441,9 +441,9 @@ HWND hWndMessage{};
 void MessageThreadProc(void* lpParameter)
 {
 	//Create message-only window
-	WNDCLASS wndclass{ 0, MsgWndProc, 0, 0, (HINSTANCE)lpParameter, NULL, NULL, NULL, NULL, L"FontLoaderExMessage" };
+	WNDCLASS wc{ 0, MsgWndProc, 0, 0, (HINSTANCE)lpParameter, NULL, NULL, NULL, NULL, L"FontLoaderExMessage" };
 
-	if (!RegisterClass(&wndclass))
+	if (!RegisterClass(&wc))
 	{
 		return;
 	}

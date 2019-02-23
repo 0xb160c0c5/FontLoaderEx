@@ -1,4 +1,5 @@
-﻿#include <windowsx.h>
+﻿#include <Windows.h>
+#include <windowsx.h>
 #include <cstring>
 #include "FontResource.h"
 #include "Globals.h"
@@ -41,8 +42,8 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 		CloseHandle(hRemoteThread);
 		return false;
 	}
-
 	CloseHandle(hRemoteThread);
+
 	return dwRemoteThreadExitCode;
 }
 

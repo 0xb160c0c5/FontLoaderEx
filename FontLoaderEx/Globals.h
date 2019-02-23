@@ -61,13 +61,13 @@ extern HANDLE hCurrentProcessDuplicated;
 extern HANDLE hTargetProcessDuplicated;
 
 enum class COPYDATA : ULONG_PTR { PROXYPROCESSHWNDSENT, INJECTDLL, DLLINJECTIONFINISHED, PULLDLL, DLLPULLFINISHED, ADDFONT, ADDFONTFINISHED, REMOVEFONT, REMOVEFONTFINISHED, TERMINATE };
+enum class PROXYDLLINJECTION : int { SUCCESSFUL, FAILED, FAILEDTOENUMERATEMODULES, GDI32NOTLOADED, MODULENOTFOUND };
+enum class PROXYDLLPULL : int { SUCCESSFUL, FAILED };
 
 extern int ProxyDllInjectionResult;
 extern int ProxyDllPullResult;
 extern bool ProxyAddFontResult;
 extern bool ProxyRemoveFontResult;
-enum class PROXYDLLINJECTION : int { SUCCESSFUL, FAILED, FAILEDTOENUMERATEMODULES, GDI32NOTLOADED, MODULENOTFOUND };
-enum class PROXYDLLPULL : int { SUCCESSFUL, FAILED };
 
 extern bool DefaultAddFontProc(const wchar_t* lpFontName);
 extern bool DefaultRemoveFontProc(const wchar_t* lpFontName);

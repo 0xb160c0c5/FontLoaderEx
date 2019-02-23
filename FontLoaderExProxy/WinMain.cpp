@@ -11,8 +11,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam);
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
 #ifdef _DEBUG
+	//Wait for debugger to attach
 	MessageBox(NULL, L"", L"", NULL);
 #endif
+
 	//Detect whether FontLoaderEx launchs FontloaderExProxy
 	HANDLE hEventParentProcessRunning{ OpenEvent(EVENT_ALL_ACCESS, FALSE, L"FontLoaderEx_EventParentProcessRunning") };
 	if (!hEventParentProcessRunning)
@@ -22,7 +24,6 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 	//Create window
 	WNDCLASS wndclass{ 0, WndProc, 0, 0, hInstance, NULL, NULL, NULL, NULL, L"FontLoaderExProxy" };
-
 	if (!RegisterClass(&wndclass))
 	{
 		return -1;
@@ -36,7 +37,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 	MSG Msg{};
 	BOOL bRet{};
-	while ((bRet = GetMessage(&Msg, NULL, 0, 0)) != 0)
+	while ((bRet = GetMessage(&Msg, hWnd, 0, 0)) != 0)
 	{
 		if (bRet == -1)
 		{
@@ -59,8 +60,9 @@ HWND hWndParentProcessMessage{};
 HANDLE hEventMessageThreadReady{};
 HANDLE hEventProxyProcessReady{};
 
-enum class COPYDATA : ULONG_PTR { PROXYPROCESSHWNDSENT, INJECTDLL, DLLINJECTIONFINISHED, PULLDLL, DLLPULLFINISHED, ADDFONT, ADDFONTFINISHED, REMOVEFONT, REMOVEFONTFINISHED, TERMINATE };
+enum class USERMESSAGE : UINT { TERMINATE = WM_USER + 0x100 };
 
+enum class COPYDATA : ULONG_PTR { PROXYPROCESSHWNDSENT, INJECTDLL, DLLINJECTIONFINISHED, PULLDLL, DLLPULLFINISHED, ADDFONT, ADDFONTFINISHED, REMOVEFONT, REMOVEFONTFINISHED, TERMINATE };
 enum class PROXYDLLINJECTION : int { SUCCESSFUL, FAILED, FAILEDTOENUMERATEMODULES, GDI32NOTLOADED, MODULENOTFOUND };
 enum class PROXYDLLPULL : int { SUCCESSFUL, FAILED };
 
@@ -87,11 +89,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			//Get handles to parent process and target process and message window from command line
 			int argc{};
 			LPWSTR* argv = CommandLineToArgvW(GetCommandLine(), &argc);
-			if (argc < 1)
-			{
-				ret = -1;
-				break;
-			}
 
 #pragma warning(push)
 #pragma warning(disable:4312)
@@ -259,17 +256,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				//Terminate self
 			case (ULONG_PTR)COPYDATA::TERMINATE:
 				{
-					DestroyWindow(hWnd);
+					PostMessage(hWnd, (UINT)USERMESSAGE::TERMINATE, NULL, NULL);
 				}
 			default:
 				break;
-
 			}
 		}
 		break;
 	case WM_DESTROY:
 		{
 			PostQuitMessage(0);
+		}
+		break;
+	case (UINT)USERMESSAGE::TERMINATE:
+		{
+			DestroyWindow(hWnd);
 		}
 		break;
 	default:

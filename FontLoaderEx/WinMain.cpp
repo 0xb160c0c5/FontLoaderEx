@@ -25,7 +25,9 @@
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 
 std::list<FontResource> FontList{};
+
 HWND hWndMain{};
+
 bool bDragDropHasFonts{ false };
 
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
@@ -49,12 +51,13 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	}
 	LocalFree(argv);
 
+	//Initialize common controls
 	InitCommonControls();
 
 	//Create window
-	WNDCLASS wndclass{ CS_HREDRAW | CS_VREDRAW, WndProc, 0, 0, hInstance, LoadIcon(NULL, IDI_APPLICATION), LoadCursor(NULL, IDC_ARROW), GetSysColorBrush(COLOR_WINDOW), NULL, L"FontLoaderEx" };
+	WNDCLASS wc{ CS_HREDRAW | CS_VREDRAW, WndProc, 0, 0, hInstance, LoadIcon(NULL, IDI_APPLICATION), LoadCursor(NULL, IDC_ARROW), GetSysColorBrush(COLOR_WINDOW), NULL, L"FontLoaderEx" };
 
-	if (!RegisterClass(&wndclass))
+	if (!RegisterClass(&wc))
 	{
 		return -1;
 	}
@@ -266,7 +269,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 						{
 							//Open dialog and add fonts to list view
 							WCHAR szOpenFileNames[32768]{};
-							std::vector<std::wstring> NewFontList;
 							OPENFILENAME ofn{ sizeof(ofn), hWnd, NULL, L"Font Files(*.ttf;*.ttc;*.otf)\0*.ttf;*.ttc;*.otf\0", NULL, 0, 0, szOpenFileNames, 32768, NULL, 0, NULL, NULL, OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT, 0, 0, NULL, NULL, NULL, NULL, nullptr, 0, 0 };
 							if (GetOpenFileName(&ofn))
 							{
@@ -280,7 +282,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									{
 										WCHAR lpszPath[MAX_PATH]{};
 										PathCombine(lpszPath, ofn.lpstrFile, lpszFileName);
-										NewFontList.push_back(lpszPath);
 										lpszFileName += std::wcslen(lpszFileName) + 1;
 										FontList.push_back(lpszPath);
 										lvi.iSubItem = 0;
@@ -295,8 +296,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										Message << lpszPath << L" opened\r\n";
 										iMessageLenth = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, iMessageLenth, iMessageLenth);
-										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-										
+										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());				
 									} while (*lpszFileName);
 								}
 								else
@@ -309,7 +309,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									lvi.pszText = (LPWSTR)L"Not loaded";
 									ListView_SetItem(hWndListViewFontList, &lvi);
 									ListView_SetItemState(hWndListViewFontList, lvi.iItem, LVIS_SELECTED, LVIS_SELECTED);
-									Message.str(L"");
 									Message << ofn.lpstrFile << L" opened\r\n";
 									iMessageLenth = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, iMessageLenth, iMessageLenth);
