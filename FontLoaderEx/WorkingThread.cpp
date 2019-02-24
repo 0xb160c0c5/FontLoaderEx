@@ -461,7 +461,7 @@ void MessageThreadProc(void* lpParameter)
 	{
 		if (bRet == -1)
 		{
-			break;
+			return;
 		}
 		else
 		{

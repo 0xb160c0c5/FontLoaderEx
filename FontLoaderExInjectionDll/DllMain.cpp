@@ -6,7 +6,14 @@ DWORD WINAPI AddFont(_In_ LPVOID lpParameter)
 {
 #pragma EXPORT_FUNCTION
 #ifdef _DEBUG
-	MessageBox(NULL, L"AddFont() called!", L"Test", NULL);
+	WCHAR szMessage[512]{ L"AddFont() called!\r\nFontName: " };
+	WCHAR* lpszMessage = &szMessage[29];
+	WCHAR* lpszFontName = (WCHAR*)lpParameter;
+	while (*lpszFontName)
+	{
+		*lpszMessage++ = *lpszFontName++;
+	};
+	MessageBox(NULL, szMessage, L"Test", NULL);
 	return 1;
 #else
 	return AddFontResourceEx((LPCWSTR)lpParameter, FR_PRIVATE, NULL);
@@ -17,7 +24,14 @@ DWORD WINAPI RemoveFont(_In_ LPVOID lpParameter)
 {
 #pragma EXPORT_FUNCTION
 #ifdef _DEBUG
-	MessageBox(NULL, L"RemoveFont() called!", L"Test", NULL);
+	WCHAR szMessage[512]{ L"RemoveFont() called!\r\nFontName: " };
+	WCHAR* lpszMessage = &szMessage[32];
+	WCHAR* lpszFontName = (WCHAR*)lpParameter;
+	while (*lpszFontName)
+	{
+		*lpszMessage++ = *lpszFontName++;
+	};
+	MessageBox(NULL, szMessage, L"Test", NULL);
 	return 1;
 #else
 	return RemoveFontResourceEx((LPCWSTR)lpParameter, FR_PRIVATE, NULL);

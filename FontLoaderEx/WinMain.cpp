@@ -15,7 +15,6 @@
 #include <sstream>
 #include <list>
 #include <vector>
-#include <memory>
 #include <algorithm>
 #include <cctype>
 #include "FontResource.h"
@@ -77,7 +76,6 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		if (bRet == -1)
 		{
 			return (int)GetLastError();
-			break;
 		}
 		else
 		{
@@ -100,7 +98,7 @@ HWND hWndButtonBroadcastWM_FONTCHANGE{};
 HWND hWndButtonSelectProcess{};
 HWND hWndListViewFontList{};
 HWND hWndEditMessage{};
-enum class ID : WORD { ButtonOpen, ButtonClose, ButtonLoad, ButtonUnload, ButtonBroadcastWM_FONTCHANGE, ButtonSelectProcess, ListViewFontList, EditMessage };
+enum class ID : WORD { ButtonOpen = 20, ButtonClose, ButtonLoad, ButtonUnload, ButtonBroadcastWM_FONTCHANGE, ButtonSelectProcess, ListViewFontList, EditMessage };
 
 LRESULT CALLBACK ListViewProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM IParam);
@@ -152,46 +150,48 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	{
 	case WM_CREATE:
 		{
-			RECT rectClient{};
-			GetClientRect(hWnd, &rectClient);
+			RECT rectClientMain{};
+			GetClientRect(hWnd, &rectClientMain);
 			NONCLIENTMETRICS ncm{ sizeof(NONCLIENTMETRICS) };
 			SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
 			HFONT hFont{ CreateFontIndirect(&ncm.lfMessageFont) };
 
 			//Initialize ButtonOpen
-			hWndButtonOpen = CreateWindow(WC_BUTTON, L"Open", WS_CHILD | WS_VISIBLE | WS_GROUP | WS_TABSTOP | BS_PUSHBUTTON | BS_DEFPUSHBUTTON, 0, 0, 50, 50, hWnd, (HMENU)ID::ButtonOpen, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			hWndButtonOpen = CreateWindow(WC_BUTTON, L"Open", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 0, 50, 50, hWnd, (HMENU)ID::ButtonOpen, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 			SetWindowFont(hWndButtonOpen, hFont, TRUE);
 
 			//Initialize ButtonClose
-			hWndButtonClose = CreateWindow(WC_BUTTON, L"Close", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 50, 0, 50, 50, hWnd, (HMENU)ID::ButtonClose, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			hWndButtonClose = CreateWindow(WC_BUTTON, L"Close", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 50, 0, 50, 50, hWnd, (HMENU)ID::ButtonClose, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 			SetWindowFont(hWndButtonClose, hFont, TRUE);
 
 			//Initialize ButtonLoad
-			hWndButtonLoad = CreateWindow(WC_BUTTON, L"Load", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 100, 0, 50, 50, hWnd, (HMENU)ID::ButtonLoad, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			hWndButtonLoad = CreateWindow(WC_BUTTON, L"Load", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 100, 0, 50, 50, hWnd, (HMENU)ID::ButtonLoad, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 			SetWindowFont(hWndButtonLoad, hFont, TRUE);
 
 			//Initialize ButtonUnload
-			hWndButtonUnload = CreateWindow(WC_BUTTON, L"Unload", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 150, 0, 50, 50, hWnd, (HMENU)ID::ButtonUnload, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			hWndButtonUnload = CreateWindow(WC_BUTTON, L"Unload", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 150, 0, 50, 50, hWnd, (HMENU)ID::ButtonUnload, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 			SetWindowFont(hWndButtonUnload, hFont, TRUE);
 
-			//Initialize ButtonBroadcastWM_FONTCHANGE
-			hWndButtonBroadcastWM_FONTCHANGE = CreateWindow(WC_BUTTON, L"Broadcast WM_FONTCHANGE", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, 200, 0, 250, 21, hWnd, (HMENU)ID::ButtonBroadcastWM_FONTCHANGE, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-			SetWindowFont(hWndButtonBroadcastWM_FONTCHANGE, hFont, TRUE);
-
 			//Initialize ButtonSelectProcess
-			hWndButtonSelectProcess = CreateWindow(WC_BUTTON, L"Click to select process", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 200, 29, 250, 21, hWnd, (HMENU)ID::ButtonSelectProcess, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			hWndButtonSelectProcess = CreateWindow(WC_BUTTON, L"Click to select process", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 200, 29, 250, 21, hWnd, (HMENU)ID::ButtonSelectProcess, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 			SetWindowFont(hWndButtonSelectProcess, hFont, TRUE);
 
+			//Initialize ButtonBroadcastWM_FONTCHANGE
+			hWndButtonBroadcastWM_FONTCHANGE = CreateWindow(WC_BUTTON, L"Broadcast WM_FONTCHANGE", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 200, 0, 250, 21, hWnd, (HMENU)ID::ButtonBroadcastWM_FONTCHANGE, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			SetWindowFont(hWndButtonBroadcastWM_FONTCHANGE, hFont, TRUE);
+
 			//Initialize ListViewFontList
-			hWndListViewFontList = CreateWindow(WC_LISTVIEW, L"FontList", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_GROUP | LVS_REPORT | LVS_SHOWSELALWAYS, 0, 50, rectClient.right - rectClient.left, 300, hWnd, (HMENU)ID::ListViewFontList, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			hWndListViewFontList = CreateWindow(WC_LISTVIEW, L"FontList", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | LVS_REPORT | LVS_SHOWSELALWAYS, 0, 50, rectClientMain.right - rectClientMain.left, 300, hWnd, (HMENU)ID::ListViewFontList, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 			SetWindowFont(hWndListViewFontList, hFont, TRUE);
 			DragAcceptFiles(hWndListViewFontList, TRUE);
 			OldListViewProc = GetWindowLongPtr(hWndListViewFontList, GWLP_WNDPROC);
 			SetWindowLongPtr(hWndListViewFontList, GWLP_WNDPROC, (LONG_PTR)ListViewProc);
-			LVCOLUMN lvcolumn1{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectClient.right - rectClient.left) * 4 / 5 , (LPWSTR)L"Font Name" };
-			ListView_InsertColumn(hWndListViewFontList, 0, &lvcolumn1);
-			LVCOLUMN lvcolumn2{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectClient.right - rectClient.left) * 1 / 5 , (LPWSTR)L"State" };
-			ListView_InsertColumn(hWndListViewFontList, 1, &lvcolumn2);
+			RECT rectClientListViewFontList{};
+			GetClientRect(hWndListViewFontList, &rectClientListViewFontList);
+			LVCOLUMN lvc1{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectClientListViewFontList.right - rectClientListViewFontList.left) * 4 / 5 , (LPWSTR)L"Font Name" };
+			LVCOLUMN lvc2{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectClientListViewFontList.right - rectClientListViewFontList.left) * 1 / 5 , (LPWSTR)L"State" };
+			ListView_InsertColumn(hWndListViewFontList, 0, &lvc1);
+			ListView_InsertColumn(hWndListViewFontList, 1, &lvc2);
 			ListView_SetExtendedListViewStyle(hWndListViewFontList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 			CHANGEFILTERSTRUCT cfs{ sizeof(CHANGEFILTERSTRUCT) };
 			ChangeWindowMessageFilterEx(hWndListViewFontList, WM_DROPFILES, MSGFLT_ALLOW, &cfs);
@@ -199,7 +199,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			ChangeWindowMessageFilterEx(hWndListViewFontList, 0x0049, MSGFLT_ALLOW, &cfs);	//WM_COPYGLOBALDATA
 
 			//Initialize EditMessage
-			hWndEditMessage = CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_READONLY | ES_LEFT | ES_MULTILINE, 0, 350, rectClient.right - rectClient.left, rectClient.bottom - rectClient.top - 350, hWnd, (HMENU)ID::EditMessage, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			hWndEditMessage = CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_READONLY | ES_LEFT | ES_MULTILINE, 0, 350, rectClientMain.right - rectClientMain.left, rectClientMain.bottom - rectClientMain.top - 350, hWnd, (HMENU)ID::EditMessage, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 			SetWindowFont(hWndEditMessage, hFont, TRUE);
 			Edit_SetText(hWndEditMessage,
 				L"Temporarily load fonts to Windows or specific process.\r\n"
@@ -1201,6 +1201,8 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 		{
 			bOrderFileName = true;
 			bOrderPID = true;
+			
+			//Initialize controls
 			NONCLIENTMETRICS ncm{ sizeof(NONCLIENTMETRICS) };
 			SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
 			HFONT hFont{ CreateFontIndirect(&ncm.lfMessageFont) };
@@ -1210,15 +1212,16 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 			SetWindowFont(hWndListViewProcessList, hFont, TRUE);
 			SetWindowFont(hWndOK, hFont, TRUE);
 			SetWindowFont(hWndCancel, hFont, TRUE);
+			SetWindowLongPtr(hWndListViewProcessList, GWL_STYLE, GetWindowLongPtr(hWndListViewProcessList, GWL_STYLE) | LVS_REPORT | LVS_SINGLESEL);
 			RECT rectListViewClient{};
 			GetClientRect(hWndListViewProcessList, &rectListViewClient);
-			SetWindowLongPtr(hWndListViewProcessList, GWL_STYLE, GetWindowLongPtr(hWndListViewProcessList, GWL_STYLE) | LVS_REPORT | LVS_SINGLESEL);
-			LVCOLUMN lvcolumn1{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectListViewClient.right - rectListViewClient.left) * 4 / 5 , (LPWSTR)L"Process" };
-			ListView_InsertColumn(hWndListViewProcessList, 0, &lvcolumn1);
-			LVCOLUMN lvcolumn2{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectListViewClient.right - rectListViewClient.left) * 1 / 5 , (LPWSTR)L"PID" };
-			ListView_InsertColumn(hWndListViewProcessList, 1, &lvcolumn2);
+			LVCOLUMN lvc1{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectListViewClient.right - rectListViewClient.left) * 4 / 5 , (LPWSTR)L"Process" };
+			LVCOLUMN lvc2{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectListViewClient.right - rectListViewClient.left) * 1 / 5 , (LPWSTR)L"PID" };
+			ListView_InsertColumn(hWndListViewProcessList, 0, &lvc1);
+			ListView_InsertColumn(hWndListViewProcessList, 1, &lvc2);
 			ListView_SetExtendedListViewStyle(hWndListViewProcessList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 
+			//Fill ProcessList
 			ProcessList.clear();
 			PROCESSENTRY32 pe32{ sizeof(PROCESSENTRY32) };
 			HANDLE hProcessSnapshot{ CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
@@ -1242,31 +1245,33 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 		}
 		break;
 	case WM_COMMAND:
-		switch (LOWORD(wParam))
 		{
-		case IDOK:
+			switch (LOWORD(wParam))
 			{
-				int iSelected{ ListView_GetSelectionMark(GetDlgItem(hWndDialog, IDC_LIST1)) };
-				if (iSelected == -1)
+			case IDOK:
+				{
+					int iSelected{ ListView_GetSelectionMark(GetDlgItem(hWndDialog, IDC_LIST1)) };
+					if (iSelected == -1)
+					{
+						EndDialog(hWndDialog, NULL);
+					}
+					else
+					{
+						ProcessInfo* TargetProcessInfo = new ProcessInfo{ ProcessList[iSelected] };
+						EndDialog(hWndDialog, (INT_PTR)TargetProcessInfo);
+					}
+					ret = (INT_PTR)TRUE;
+				}
+				break;
+			case IDCANCEL:
 				{
 					EndDialog(hWndDialog, NULL);
+					ret = (INT_PTR)TRUE;
 				}
-				else
-				{
-					ProcessInfo* TargetProcessInfo = new ProcessInfo{ ProcessList[iSelected] };
-					EndDialog(hWndDialog, (INT_PTR)TargetProcessInfo);
-				}
-				ret = (INT_PTR)TRUE;
+				break;
+			default:
+				break;
 			}
-			break;
-		case IDCANCEL:
-			{
-				EndDialog(hWndDialog, NULL);
-				ret = (INT_PTR)TRUE;
-			}
-			break;
-		default:
-			break;
 		}
 		break;
 	case WM_NOTIFY:
@@ -1279,7 +1284,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 					{
 					case LVN_COLUMNCLICK:
 						{
-							// Sort item by Process or PID
+							// Sort item by Process or by PID
 							switch (((LPNMLISTVIEW)lParam)->iSubItem)
 							{
 							case 0:
@@ -1335,6 +1340,8 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 							default:
 								break;
 							}
+
+							//Reset contents of list view
 							LVITEM lvi{ LVIF_TEXT, 0 };
 							HWND hWndListViewProcessList{ GetDlgItem(hWndDialog, IDC_LIST1) };
 							for (auto& i : ProcessList)
@@ -1369,7 +1376,6 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 	default:
 		break;
 	}
-	ret = (INT_PTR)FALSE;
 
 	return ret;
 }
@@ -1438,11 +1444,13 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 		return false;
 	}
+
 	HMODULE hModule{ GetModuleHandle(L"Kernel32") };
 	if (!hModule)
 	{
 		return false;
 	}
+
 	LPTHREAD_START_ROUTINE addr{ (LPTHREAD_START_ROUTINE)GetProcAddress(hModule, "LoadLibraryW") };
 	HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, addr, lpRemoteBuffer, 0, NULL) };
 	if (!hRemoteThread)
@@ -1450,6 +1458,7 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 		return false;
 	}
+
 	if (WaitForSingleObject(hRemoteThread, Timeout) == WAIT_TIMEOUT)
 	{
 		CloseHandle(hRemoteThread);
@@ -1465,6 +1474,7 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 		CloseHandle(hRemoteThread);
 		return false;
 	}
+
 	if (!dwRemoteThreadExitCode)
 	{
 		CloseHandle(hRemoteThread);

@@ -42,7 +42,6 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		if (bRet == -1)
 		{
 			return (int)GetLastError();
-			break;
 		}
 		else
 		{
@@ -295,16 +294,19 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 		DWORD dw = GetLastError();
 		return false;
 	}
+
 	if (!WriteProcessMemory(hProcess, lpRemoteBuffer, (LPVOID)szDllPath, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), NULL))
 	{
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 		return false;
 	}
+
 	HMODULE hModule{ GetModuleHandle(L"Kernel32") };
 	if (!hModule)
 	{
 		return false;
 	}
+
 	LPTHREAD_START_ROUTINE addr{ (LPTHREAD_START_ROUTINE)GetProcAddress(hModule, "LoadLibraryW") };
 	HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, addr, lpRemoteBuffer, 0, NULL) };
 	if (!hRemoteThread)
@@ -312,6 +314,7 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 		return false;
 	}
+
 	if (WaitForSingleObject(hRemoteThread, Timeout) == WAIT_TIMEOUT)
 	{
 		CloseHandle(hRemoteThread);
@@ -327,6 +330,7 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 		CloseHandle(hRemoteThread);
 		return false;
 	}
+
 	if (!dwRemoteThreadExitCode)
 	{
 		CloseHandle(hRemoteThread);
