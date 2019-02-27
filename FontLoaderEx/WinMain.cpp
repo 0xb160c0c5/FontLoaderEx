@@ -79,7 +79,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		}
 		else
 		{
-			if (!IsDialogMessage(hWndMain, &Msg))
+			if (!(IsDialogMessage(hWndMain, &Msg)))
 			{
 				TranslateMessage(&Msg);
 				DispatchMessage(&Msg);
@@ -173,7 +173,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			SetWindowFont(hWndButtonUnload, hFont, TRUE);
 
 			//Initialize ButtonSelectProcess
-			hWndButtonSelectProcess = CreateWindow(WC_BUTTON, L"Click to select process", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 200, 29, 250, 21, hWnd, (HMENU)ID::ButtonSelectProcess, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			hWndButtonSelectProcess = CreateWindow(WC_BUTTON, L"Select process", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 200, 29, 250, 21, hWnd, (HMENU)ID::ButtonSelectProcess, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 			SetWindowFont(hWndButtonSelectProcess, hFont, TRUE);
 
 			//Initialize ButtonBroadcastWM_FONTCHANGE
@@ -224,10 +224,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				"\"Load\": Add selected fonts to Windows or target process.\r\n"
 				"\"Unload\": Remove selected fonts from Windows or target process.\r\n"
 				"\"Broadcast WM_FONTCHANGE\": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.\r\n"
-				"\"Click to select process\": click and select a process to only load fonts into selected process.\r\n"
+				"\"Select process\": Select a process to only load fonts to selected process.\r\n"
 				"\"Font Name\": Names of the fonts added to the list view.\r\n"
 				"\"State\": State of the font. There are five states, \"Not loaded\", \"Loaded\", \"Load failed\", \"Unloaded\" and \"Unload failed\".\r\n"
-				"Click any header of the list view to select all items.\r\n"
 				"\r\n"
 			);
 		}
@@ -269,7 +268,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 						{
 							//Open dialog and add fonts to list view
 							WCHAR szOpenFileNames[32768]{};
-							OPENFILENAME ofn{ sizeof(ofn), hWnd, NULL, L"Font Files(*.ttf;*.ttc;*.otf)\0*.ttf;*.ttc;*.otf\0", NULL, 0, 0, szOpenFileNames, 32768, NULL, 0, NULL, NULL, OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT, 0, 0, NULL, NULL, NULL, NULL, nullptr, 0, 0 };
+							OPENFILENAME ofn{ sizeof(ofn), hWnd, NULL, L"Font Files(*.ttf;*.ttc;*.otf)\0*.ttf;*.ttc;*.otf\0", NULL, 0, 0, szOpenFileNames, sizeof(szOpenFileNames), NULL, 0, NULL, NULL, OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT };
 							if (GetOpenFileName(&ofn))
 							{
 								LVITEM lvi{ LVIF_TEXT, ListView_GetItemCount(hWndListViewFontList) };
@@ -296,7 +295,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										Message << lpszPath << L" opened\r\n";
 										iMessageLenth = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, iMessageLenth, iMessageLenth);
-										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());				
+										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 									} while (*lpszFileName);
 								}
 								else
@@ -426,6 +425,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									SetEvent(hEventTerminateWatchThread);
 									WaitForSingleObject(hWatchThread, INFINITE);
 									CloseHandle(hEventTerminateWatchThread);
+									CloseHandle(hWatchThread);
 
 									//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
 									COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
@@ -473,6 +473,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									//Terminate message thread
 									SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 									WaitForSingleObject(hMessageThread, INFINITE);
+									CloseHandle(hMessageThread);
 
 									//Close handle to target process and duplicated handles and synchronization objects
 									CloseHandle(TargetProcessInfo.hProcess);
@@ -492,6 +493,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										SetEvent(hEventTerminateWatchThread);
 										WaitForSingleObject(hWatchThread, INFINITE);
 										CloseHandle(hEventTerminateWatchThread);
+										CloseHandle(hWatchThread);
 									}
 
 									//Unload FontLoaderExInjectionDll(64).dll from target process
@@ -541,7 +543,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									hEventProxyProcessHWNDRevieved = CreateEvent(NULL, TRUE, FALSE, NULL);
 									hEventProxyDllInjectionFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
 									hEventProxyDllPullFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
-									hMessageThread = (HANDLE)_beginthread(MessageThreadProc, 0, (void*)GetWindowLongPtr(hWnd, GWLP_HINSTANCE));
+									hMessageThread = (HANDLE)_beginthreadex(nullptr, 0, MessageThreadProc, (void*)GetWindowLongPtr(hWnd, GWLP_HINSTANCE), 0, nullptr);
 									WaitForSingleObject(hEventMessageThreadReady, INFINITE);
 
 									//Run proxy process, send handle to current process and target process, HWND to message window, handle to synchronization objects as arguments to proxy process
@@ -615,8 +617,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											TargetProcessInfo = SelectedProcessInfo;
 
 											//Start watch thread and create synchronization object
-											hWatchThread = (HANDLE)_beginthread(ProxyAndTargetProcessWatchThreadProc, 0, nullptr);
 											hEventTerminateWatchThread = CreateEvent(NULL, TRUE, FALSE, NULL);
+											hWatchThread = (HANDLE)_beginthreadex(nullptr, 0, ProxyAndTargetProcessWatchThreadProc, nullptr, 0, nullptr);
 										}
 										break;
 									case (int)PROXYDLLINJECTION::FAILED:
@@ -761,8 +763,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									TargetProcessInfo = SelectedProcessInfo;
 
 									//Start watch thread and create synchronization object
-									hWatchThread = (HANDLE)_beginthread(TargetProcessWatchThreadProc, 0, nullptr);
-									hEventTerminateWatchThread = CreateEvent(NULL, TRUE, FALSE, L"FontLoaderEx_EventTerminateWatchThread");
+									hEventTerminateWatchThread = CreateEvent(NULL, TRUE, FALSE, NULL);
+									hWatchThread = (HANDLE)_beginthreadex(nullptr, 0, TargetProcessWatchThreadProc, nullptr, 0, nullptr);
 								}
 							}
 							//If p == nullptr, clear selected process
@@ -775,6 +777,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									SetEvent(hEventTerminateWatchThread);
 									WaitForSingleObject(hWatchThread, INFINITE);
 									CloseHandle(hEventTerminateWatchThread);
+									CloseHandle(hWatchThread);
 
 									//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
 									COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
@@ -822,6 +825,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									//Terminate message thread
 									SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 									WaitForSingleObject(hMessageThread, INFINITE);
+									CloseHandle(hMessageThread);
 
 									//Close handle to target process and duplicated handles and synchronization objects
 									CloseHandle(TargetProcessInfo.hProcess);
@@ -845,6 +849,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									SetEvent(hEventTerminateWatchThread);
 									WaitForSingleObject(hWatchThread, INFINITE);
 									CloseHandle(hEventTerminateWatchThread);
+									CloseHandle(hWatchThread);
 
 									//Unload FontLoaderExInjectionDll(64).dll from target process
 									if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, 5000))
@@ -878,6 +883,40 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					}
 				}
 				break;
+				//"Load" menu item
+			case ID_MENU_LOAD:
+				{
+					//Load selected fonts
+					EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+					DisableAllButtons();
+					_beginthread(ButtonLoadWorkingThreadProc, 0, nullptr);
+				}
+				break;
+				//"Unload" menu item
+			case ID_MENU_UNLOAD:
+				{
+					//Unload selected fonts;
+					EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+					DisableAllButtons();
+					_beginthread(ButtonUnloadWorkingThreadProc, 0, nullptr);
+				}
+				break;
+				//"Close" menu item
+			case ID_MENU_CLOSE:
+				{
+					//Unload and close selected fonts
+					//Won't close those failed to unload
+					EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+					DisableAllButtons();
+					_beginthread(ButtonCloseWorkingThreadProc, 0, nullptr);
+				}
+				break;
+				//"Select All" menu item
+			case ID_MENU_SELECTALL:
+				{
+					ListView_SetItemState(hWndListViewFontList, -1, LVIS_SELECTED, LVIS_SELECTED);
+				}
+				break;
 			default:
 				break;
 			}
@@ -887,19 +926,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		{
 			switch (wParam)
 			{
-				//Click headers of list view
+				//Show shortcut menu
 			case (WORD)ID::ListViewFontList:
 				{
 					switch (((LPNMHDR)lParam)->code)
 					{
-					case LVN_COLUMNCLICK:
+					case NM_RCLICK:
 						{
-							ListView_SetItemState(hWndListViewFontList, -1, LVIS_SELECTED, LVIS_SELECTED);
+							POINT ptCursor{};
+							GetCursorPos(&ptCursor);
+							TrackPopupMenu((HMENU)GetSubMenu(LoadMenu((HINSTANCE)GetWindowLongPtr(hWnd, GWLP_HINSTANCE), MAKEINTRESOURCE(IDR_CONTEXTMENU1)), 0), TPM_LEFTALIGN | TPM_RIGHTBUTTON, ptCursor.x, ptCursor.y, 0, hWnd, NULL);
 						}
+						break;
 					default:
 						break;
 					}
 				}
+				break;
 			default:
 				break;
 			}
@@ -925,6 +968,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					SetEvent(hEventTerminateWatchThread);
 					WaitForSingleObject(hWatchThread, INFINITE);
 					CloseHandle(hEventTerminateWatchThread);
+					CloseHandle(hWatchThread);
 
 					//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
 					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
@@ -972,6 +1016,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					//Terminate message thread
 					SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 					WaitForSingleObject(hMessageThread, INFINITE);
+					CloseHandle(hMessageThread);
 
 					//Close handle to target process and duplicated handles
 					CloseHandle(TargetProcessInfo.hProcess);
@@ -987,6 +1032,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					SetEvent(hEventTerminateWatchThread);
 					WaitForSingleObject(hWatchThread, INFINITE);
 					CloseHandle(hEventTerminateWatchThread);
+					CloseHandle(hWatchThread);
 
 					//Unload FontLoaderExInjectionDll(64).dll from target process
 					if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, 5000))
@@ -1024,6 +1070,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							SetEvent(hEventTerminateWatchThread);
 							WaitForSingleObject(hWatchThread, INFINITE);
 							CloseHandle(hEventTerminateWatchThread);
+							CloseHandle(hWatchThread);
 
 							//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
 							COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
@@ -1071,6 +1118,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							//Terminate message thread
 							SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 							WaitForSingleObject(hMessageThread, INFINITE);
+							CloseHandle(hMessageThread);
 
 							//Close handle to target process and duplicated handles
 							CloseHandle(TargetProcessInfo.hProcess);
@@ -1086,6 +1134,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							SetEvent(hEventTerminateWatchThread);
 							WaitForSingleObject(hWatchThread, INFINITE);
 							CloseHandle(hEventTerminateWatchThread);
+							CloseHandle(hWatchThread);
 
 							//Unload FontLoaderExInjectionDll(64).dll from target process
 							if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, 5000))
@@ -1175,8 +1224,6 @@ LRESULT CALLBACK ListViewProc(HWND hWndListView, UINT Msg, WPARAM wParam, LPARAM
 			Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 			Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 			DragFinish(hdrop);
-
-			ret = 0;
 		}
 		break;
 	default:
@@ -1201,7 +1248,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 		{
 			bOrderFileName = true;
 			bOrderPID = true;
-			
+
 			//Initialize controls
 			NONCLIENTMETRICS ncm{ sizeof(NONCLIENTMETRICS) };
 			SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
@@ -1241,6 +1288,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 					ProcessList.push_back({ NULL, pe32.szExeFile, pe32.th32ProcessID });
 				} while (Process32Next(hProcessSnapshot, &pe32));
 			}
+
 			ret = (INT_PTR)TRUE;
 		}
 		break;
@@ -1260,12 +1308,14 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 						ProcessInfo* TargetProcessInfo = new ProcessInfo{ ProcessList[iSelected] };
 						EndDialog(hWndDialog, (INT_PTR)TargetProcessInfo);
 					}
+
 					ret = (INT_PTR)TRUE;
 				}
 				break;
 			case IDCANCEL:
 				{
 					EndDialog(hWndDialog, NULL);
+
 					ret = (INT_PTR)TRUE;
 				}
 				break;
@@ -1284,33 +1334,33 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 					{
 					case LVN_COLUMNCLICK:
 						{
-							// Sort item by Process or by PID
+							//Sort item by Process or by PID
 							switch (((LPNMLISTVIEW)lParam)->iSubItem)
 							{
 							case 0:
 								{
 									bOrderFileName ?
-									std::sort
-									(
-										ProcessList.begin(), ProcessList.end(),
-										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-										{
-											std::wstring s1(value1.ProcessName.size(), L'\0'), s2(value2.ProcessName.size(), L'\0');
-											std::transform(value1.ProcessName.begin(), value1.ProcessName.end(), s1.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
-											std::transform(value2.ProcessName.begin(), value2.ProcessName.end(), s2.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
-											return s1 < s2;
-										}
-									) :
-									std::sort
-									(
-										ProcessList.begin(), ProcessList.end(),
-										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-										{
-											std::wstring s1(value1.ProcessName.size(), L'\0'), s2(value2.ProcessName.size(), L'\0');
-											std::transform(value1.ProcessName.begin(), value1.ProcessName.end(), s1.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
-											std::transform(value2.ProcessName.begin(), value2.ProcessName.end(), s2.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
-											return s1 > s2;
-										}
+										std::sort
+										(
+											ProcessList.begin(), ProcessList.end(),
+											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
+									{
+										std::wstring s1(value1.ProcessName.size(), L'\0'), s2(value2.ProcessName.size(), L'\0');
+										std::transform(value1.ProcessName.begin(), value1.ProcessName.end(), s1.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
+										std::transform(value2.ProcessName.begin(), value2.ProcessName.end(), s2.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
+										return s1 < s2;
+									}
+										) :
+										std::sort
+										(
+											ProcessList.begin(), ProcessList.end(),
+											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
+									{
+										std::wstring s1(value1.ProcessName.size(), L'\0'), s2(value2.ProcessName.size(), L'\0');
+										std::transform(value1.ProcessName.begin(), value1.ProcessName.end(), s1.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
+										std::transform(value2.ProcessName.begin(), value2.ProcessName.end(), s2.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
+										return s1 > s2;
+									}
 									);
 									bOrderFileName = !bOrderFileName;
 								}
@@ -1318,21 +1368,21 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 							case 1:
 								{
 									bOrderPID ?
-									std::sort
-									(
-										ProcessList.begin(), ProcessList.end(),
-										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-										{
-											return value1.ProcessID < value2.ProcessID;
-										}
-									) :
-									std::sort
-									(
-										ProcessList.begin(), ProcessList.end(),
-										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-										{
-											return value1.ProcessID > value2.ProcessID;
-										}
+										std::sort
+										(
+											ProcessList.begin(), ProcessList.end(),
+											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
+									{
+										return value1.ProcessID < value2.ProcessID;
+									}
+										) :
+										std::sort
+										(
+											ProcessList.begin(), ProcessList.end(),
+											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
+									{
+										return value1.ProcessID > value2.ProcessID;
+									}
 									);
 									bOrderPID = !bOrderPID;
 								}
@@ -1355,12 +1405,16 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 								ListView_SetItem(hWndListViewProcessList, &lvi);
 								lvi.iItem++;
 							}
+
+							ret = (INT_PTR)TRUE;
 						}
 						break;
 					case NM_DBLCLK:
 						{
 							//Select double-clicked item
 							SendMessage(GetDlgItem(hWndDialog, IDOK), BM_CLICK, NULL, NULL);
+
+							ret = (INT_PTR)TRUE;
 						}
 						break;
 					default:

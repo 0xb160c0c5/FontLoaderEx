@@ -299,7 +299,7 @@ void ButtonUnloadWorkingThreadProc(void* lpParameter)
 }
 
 //Target process watch thread
-void TargetProcessWatchThreadProc(void* lpParameter)
+unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 {
 	//Wait for target process or termination event
 	HANDLE handles[]{ TargetProcessInfo.hProcess, hEventTerminateWatchThread };
@@ -342,11 +342,13 @@ void TargetProcessWatchThreadProc(void* lpParameter)
 	CloseHandle(TargetProcessInfo.hProcess);
 	TargetProcessInfo.hProcess = NULL;
 
-	SendMessage(hWndMain, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, NULL, NULL);
+	PostMessage(hWndMain, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, NULL, NULL);
+
+	return 0;
 }
 
 //Proxy and target process watch thread
-void ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
+unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 {
 	//Wait for proxy process or target process or termination event
 	bool bProxyOrTarget{};
@@ -430,7 +432,9 @@ void ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	CloseHandle(hEventProxyAddFontFinished);
 	CloseHandle(hEventProxyRemoveFontFinished);
 
-	SendMessage(hWndMain, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, NULL, NULL);
+	PostMessage(hWndMain, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, NULL, NULL);
+
+	return 0;
 }
 
 LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
@@ -438,19 +442,19 @@ LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 HWND hWndMessage{};
 
 //Message thread
-void MessageThreadProc(void* lpParameter)
+unsigned int __stdcall MessageThreadProc(void* lpParameter)
 {
 	//Create message-only window
 	WNDCLASS wc{ 0, MsgWndProc, 0, 0, (HINSTANCE)lpParameter, NULL, NULL, NULL, NULL, L"FontLoaderExMessage" };
 
 	if (!RegisterClass(&wc))
 	{
-		return;
+		return 0;
 	}
 
 	if (!(hWndMessage = CreateWindow(L"FontLoaderExMessage", L"FontLoaderExMessage", NULL, 0, 0, 0, 0, HWND_MESSAGE, NULL, (HINSTANCE)lpParameter, NULL)))
 	{
-		return;
+		return 0;
 	}
 
 	SetEvent(hEventMessageThreadReady);
@@ -461,7 +465,7 @@ void MessageThreadProc(void* lpParameter)
 	{
 		if (bRet == -1)
 		{
-			return;
+			return 0;
 		}
 		else
 		{
@@ -469,6 +473,8 @@ void MessageThreadProc(void* lpParameter)
 		}
 	}
 	UnregisterClass(L"FontLoaderExMessage", (HINSTANCE)lpParameter);
+
+	return 0;
 }
 
 LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)

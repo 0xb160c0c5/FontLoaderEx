@@ -25,9 +25,9 @@ extern void CloseWorkingThreadProc(void* lpParameter);
 extern void ButtonCloseWorkingThreadProc(void* lpParameter);
 extern void ButtonLoadWorkingThreadProc(void* lpParameter);
 extern void ButtonUnloadWorkingThreadProc(void* lpParameter);
-extern void TargetProcessWatchThreadProc(void* lpParameter);
-extern void ProxyAndTargetProcessWatchThreadProc(void* lpParameter);
-extern void MessageThreadProc(void* lpParameter);
+extern unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter);
+extern unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter);
+extern unsigned int __stdcall MessageThreadProc(void* lpParameter);
 
 extern HANDLE hWatchThread;
 extern HANDLE hMessageThread;
