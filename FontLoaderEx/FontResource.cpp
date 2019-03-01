@@ -10,8 +10,8 @@ FontResource::pfnRemoveFontProc FontResource::RemoveFontProc_{};
 HANDLE hEventProxyAddFontFinished{};
 HANDLE hEventProxyRemoveFontFinished{};
 
-bool ProxyAddFontResult{};
-bool ProxyRemoveFontResult{};
+ADDFONT ProxyAddFontResult{};
+REMOVEFONT ProxyRemoveFontResult{};
 
 DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, size_t nParamSize)
 {
@@ -83,20 +83,50 @@ bool RemoteRemoveFontProc(const wchar_t* lpszFontName)
 
 bool ProxyAddFontProc(const wchar_t* lpszFontName)
 {
+	bool ret{};
 	COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::ADDFONT, (DWORD)(std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), (void*)lpszFontName };
 	FORWARD_WM_COPYDATA(hWndProxy, hWndMain, &cds, SendMessage);
 	WaitForSingleObject(hEventProxyAddFontFinished, INFINITE);
 	ResetEvent(hEventProxyAddFontFinished);
-	return ProxyAddFontResult;
+	switch (ProxyAddFontResult)
+	{
+	case ADDFONT::SUCCESSFUL:
+		{
+			ret = true;
+		}
+		break;
+	case ADDFONT::FAILED:
+		{
+			ret = false;
+		}
+	default:
+		break;
+	}
+	return ret;
 }
 
 bool ProxyRemoveFontProc(const wchar_t* lpszFontName)
 {
+	bool ret{};
 	COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::REMOVEFONT, (DWORD)(std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), (void*)lpszFontName };
 	FORWARD_WM_COPYDATA(hWndProxy, hWndMain, &cds, SendMessage);
 	WaitForSingleObject(hEventProxyRemoveFontFinished, INFINITE);
 	ResetEvent(hEventProxyRemoveFontFinished);
-	return ProxyRemoveFontResult;
+	switch (ProxyRemoveFontResult)
+	{
+	case REMOVEFONT::SUCCESSFUL:
+		{
+			ret = true;
+		}
+		break;
+	case REMOVEFONT::FAILED:
+		{
+			ret = false;
+		}
+	default:
+		break;
+	}
+	return ret;
 }
 
 bool NullAddFontProc(const wchar_t* lpszFontName)

@@ -2,8 +2,6 @@
 #pragma comment(lib, "ComCtl32.lib")
 #pragma comment(lib, "Shlwapi.lib")
 
-#pragma warning (disable: 4996)
-
 #include <windows.h>
 #include <CommCtrl.h>
 #include <shlwapi.h>
@@ -119,12 +117,14 @@ HANDLE hEventParentProcessRunning{};
 HANDLE hEventMessageThreadReady{};
 HANDLE hEventTerminateWatchThread{};
 HANDLE hEventProxyProcessReady{};
+HANDLE hEventProxyProcessDebugPrivilegeEnablingFinished{};
 HANDLE hEventProxyProcessHWNDRevieved{};
 HANDLE hEventProxyDllInjectionFinished{};
 HANDLE hEventProxyDllPullFinished{};
 
-int ProxyDllInjectionResult{};
-int ProxyDllPullResult{};
+PROXYPROCESSDEBUGPRIVILEGEENABLING ProxyDebugPrivilegeEnablingResult{};
+PROXYDLLINJECTION ProxyDllInjectionResult{};
+PROXYDLLPULL ProxyDllPullResult{};
 
 ProcessInfo TargetProcessInfo{};
 PROCESS_INFORMATION piProxyProcess{};
@@ -146,6 +146,236 @@ const WCHAR szInjectionDllNameByProxy[]{ L"FontLoaderExInjectionDll64.dll" };
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	LRESULT ret{};
+	switch ((USERMESSAGE)Msg)
+	{
+	case USERMESSAGE::WORKINGTHREADTERMINATED:
+		{
+			EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+			EnableAllButtons();
+		}
+		break;
+	case USERMESSAGE::CLOSEWORKINGTHREADTERMINATED:
+		{
+			if (wParam)
+			{
+				std::wstringstream Message{};
+				int iMessageLength{};
+
+				//If loaded via proxy
+				if (piProxyProcess.hProcess)
+				{
+					//Terminate watch thread
+					SetEvent(hEventTerminateWatchThread);
+					WaitForSingleObject(hWatchThread, INFINITE);
+					CloseHandle(hEventTerminateWatchThread);
+					CloseHandle(hWatchThread);
+
+					//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
+					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
+					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
+					WaitForSingleObject(hEventProxyDllPullFinished, INFINITE);
+					CloseHandle(hEventProxyDllPullFinished);
+					switch (ProxyDllPullResult)
+					{
+					case PROXYDLLPULL::FAILED:
+						{
+							Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+							iMessageLength = Edit_GetTextLength(hWndEditMessage);
+							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+						}
+						goto break_DAA249E0;
+					case PROXYDLLPULL::SUCCESSFUL:
+						{
+							Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+							iMessageLength = Edit_GetTextLength(hWndEditMessage);
+							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+							Message.str(L"");
+						}
+						goto continue_DAA249E0;
+					default:
+						break;
+					}
+				break_DAA249E0:
+					break;
+				continue_DAA249E0:
+
+					//Terminate proxy process
+					COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
+					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
+					WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
+					Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
+					iMessageLength = Edit_GetTextLength(hWndEditMessage);
+					Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+					Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+					CloseHandle(piProxyProcess.hThread);
+					CloseHandle(piProxyProcess.hProcess);
+					piProxyProcess.hProcess = NULL;
+
+					//Terminate message thread
+					SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+					WaitForSingleObject(hMessageThread, INFINITE);
+					CloseHandle(hMessageThread);
+
+					//Close handle to target process and duplicated handles
+					CloseHandle(TargetProcessInfo.hProcess);
+					TargetProcessInfo.hProcess = NULL;
+					CloseHandle(hCurrentProcessDuplicated);
+					CloseHandle(hTargetProcessDuplicated);
+				}
+
+				//Else DIY
+				if (TargetProcessInfo.hProcess)
+				{
+					//Terminate watch thread
+					SetEvent(hEventTerminateWatchThread);
+					WaitForSingleObject(hWatchThread, INFINITE);
+					CloseHandle(hEventTerminateWatchThread);
+					CloseHandle(hWatchThread);
+
+					//Unload FontLoaderExInjectionDll(64).dll from target process
+					if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, 5000))
+					{
+						Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+						iMessageLength = Edit_GetTextLength(hWndEditMessage);
+						Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+						Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+						break;
+					}
+					Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+					iMessageLength = Edit_GetTextLength(hWndEditMessage);
+					Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+					Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+
+					//Close handle to target process
+					CloseHandle(TargetProcessInfo.hProcess);
+					TargetProcessInfo.hProcess = NULL;
+				}
+				DestroyWindow(hWnd);
+			}
+			else
+			{
+				switch (MessageBox(hWnd, L"Some fonts are not successfully unloaded.\r\n\r\nDo you still want to exit?", L"FontLoaderEx", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1 | MB_APPLMODAL))
+				{
+				case IDYES:
+					{
+						std::wstringstream Message{};
+						int iMessageLength{};
+
+						//If loaded via proxy
+						if (piProxyProcess.hProcess)
+						{
+							//Terminate watch thread
+							SetEvent(hEventTerminateWatchThread);
+							WaitForSingleObject(hWatchThread, INFINITE);
+							CloseHandle(hEventTerminateWatchThread);
+							CloseHandle(hWatchThread);
+
+							//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
+							COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
+							FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
+							WaitForSingleObject(hEventProxyDllPullFinished, INFINITE);
+							CloseHandle(hEventProxyDllPullFinished);
+							switch (ProxyDllPullResult)
+							{
+							case PROXYDLLPULL::FAILED:
+								{
+									Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+									iMessageLength = Edit_GetTextLength(hWndEditMessage);
+									Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+								}
+								goto break_C82EA5C2;
+							case PROXYDLLPULL::SUCCESSFUL:
+								{
+									Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+									iMessageLength = Edit_GetTextLength(hWndEditMessage);
+									Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+									Message.str(L"");
+								}
+								goto continue_C82EA5C2;
+							default:
+								break;
+							}
+						break_C82EA5C2:
+							break;
+						continue_C82EA5C2:
+
+							//Terminate proxy process
+							COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
+							FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
+							WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
+							Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
+							iMessageLength = Edit_GetTextLength(hWndEditMessage);
+							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+							CloseHandle(piProxyProcess.hThread);
+							CloseHandle(piProxyProcess.hProcess);
+							piProxyProcess.hProcess = NULL;
+
+							//Terminate message thread
+							SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+							WaitForSingleObject(hMessageThread, INFINITE);
+							CloseHandle(hMessageThread);
+
+							//Close handle to target process and duplicated handles
+							CloseHandle(TargetProcessInfo.hProcess);
+							TargetProcessInfo.hProcess = NULL;
+							CloseHandle(hCurrentProcessDuplicated);
+							CloseHandle(hTargetProcessDuplicated);
+						}
+
+						//Else DIY
+						if (TargetProcessInfo.hProcess)
+						{
+							//Terminate watch thread
+							SetEvent(hEventTerminateWatchThread);
+							WaitForSingleObject(hWatchThread, INFINITE);
+							CloseHandle(hEventTerminateWatchThread);
+							CloseHandle(hWatchThread);
+
+							//Unload FontLoaderExInjectionDll(64).dll from target process
+							if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, 5000))
+							{
+								Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+								iMessageLength = Edit_GetTextLength(hWndEditMessage);
+								Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+								Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+								break;
+							}
+							Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+							iMessageLength = Edit_GetTextLength(hWndEditMessage);
+							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+
+							//Close handle to target process
+							CloseHandle(TargetProcessInfo.hProcess);
+							TargetProcessInfo.hProcess = NULL;
+						}
+						DestroyWindow(hWnd);
+					}
+					break;
+				case IDNO:
+					{
+						EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+						EnableAllButtons();
+					}
+					break;
+				default:
+					break;
+				}
+			}
+		}
+		break;
+	case USERMESSAGE::WATCHTHREADTERMINATED:
+		{
+			EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+			EnableAllButtons();
+		}
+		break;
+	}
 	switch (Msg)
 	{
 	case WM_CREATE:
@@ -257,10 +487,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_COMMAND:
 		{
-			switch (LOWORD(wParam))
+			switch ((ID)LOWORD(wParam))
 			{
 				//"Open" Button
-			case (WORD)ID::ButtonOpen:
+			case ID::ButtonOpen:
 				{
 					switch (HIWORD(wParam))
 					{
@@ -325,7 +555,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				}
 				break;
 				//"Close" button
-			case (WORD)ID::ButtonClose:
+			case ID::ButtonClose:
 				{
 					switch (HIWORD(wParam))
 					{
@@ -344,7 +574,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				}
 				break;
 				//"Load" button
-			case (WORD)ID::ButtonLoad:
+			case ID::ButtonLoad:
 				{
 					switch (HIWORD(wParam))
 					{
@@ -361,7 +591,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				}
 				break;
 				//"Unload" button
-			case (WORD)ID::ButtonUnload:
+			case ID::ButtonUnload:
 				{
 					switch (HIWORD(wParam))
 					{
@@ -379,7 +609,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				}
 				break;
 				//"Select process" button
-			case (WORD)ID::ButtonSelectProcess:
+			case ID::ButtonSelectProcess:
 				{
 					switch (HIWORD(wParam))
 					{
@@ -395,7 +625,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							{
 								if (!EnableDebugPrivilege())
 								{
-									MessageBox(NULL, L"Failed to enable SeDebugPrivilige for FontLoaderEx .", L"FontLoaderEx", MB_ICONERROR);
+									MessageBox(NULL, L"Failed to enable SeDebugPrivilige for FontLoaderEx.", L"FontLoaderEx", MB_ICONERROR);
 									break;
 								}
 								bIsSeDebugPrivilegeEnabled = true;
@@ -434,15 +664,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hEventProxyDllPullFinished);
 									switch (ProxyDllPullResult)
 									{
-									case (int)PROXYDLLPULL::FAILED:
+									case PROXYDLLPULL::FAILED:
 										{
 											Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 											iMessageLength = Edit_GetTextLength(hWndEditMessage);
 											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 										}
-										goto b;
-									case (int)PROXYDLLPULL::SUCCESSFUL:
+										goto break_B9A25A68;
+									case PROXYDLLPULL::SUCCESSFUL:
 										{
 											Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 											iMessageLength = Edit_GetTextLength(hWndEditMessage);
@@ -450,13 +680,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 											Message.str(L"");
 										}
-										goto c;
+										goto continue_B9A25A68;
 									default:
 										break;
 									}
-								b:
+								break_B9A25A68:
 									break;
-								c:
+								continue_B9A25A68:
 
 									//Terminate proxy process
 									COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
@@ -540,6 +770,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									hEventParentProcessRunning = CreateEvent(NULL, TRUE, FALSE, L"FontLoaderEx_EventParentProcessRunning");
 									hEventMessageThreadReady = CreateEvent(&sa, TRUE, FALSE, NULL);
 									hEventProxyProcessReady = CreateEvent(&sa, TRUE, FALSE, NULL);
+									hEventProxyProcessDebugPrivilegeEnablingFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
 									hEventProxyProcessHWNDRevieved = CreateEvent(NULL, TRUE, FALSE, NULL);
 									hEventProxyDllInjectionFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
 									hEventProxyDllPullFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -550,16 +781,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(), &hCurrentProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
 									DuplicateHandle(GetCurrentProcess(), SelectedProcessInfo.hProcess, GetCurrentProcess(), &hTargetProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
 									std::wstringstream strParams{};
-									strParams << (UINT_PTR)hCurrentProcessDuplicated << L" " << (UINT_PTR)hTargetProcessDuplicated << L" " << (UINT_PTR)hWndMessage << L" " << (UINT_PTR)hEventMessageThreadReady << L" " << (UINT_PTR)hEventProxyProcessReady;
+									strParams << hCurrentProcessDuplicated << L" " << hTargetProcessDuplicated << L" " << hWndMessage << L" " << hEventMessageThreadReady << L" " << hEventProxyProcessReady;
 									WCHAR szParams[64]{};
-									std::wcscpy(szParams, strParams.str().c_str());
+									wcsncpy_s(szParams, sizeof(szParams) / sizeof(WCHAR), strParams.str().c_str(), strParams.str().length());
 									STARTUPINFO si{ sizeof(STARTUPINFO) };
 #ifdef _DEBUG
-#ifdef _WIN64
+	#ifdef _WIN64
 									if (!CreateProcess(L"..\\Debug\\FontLoaderExProxy.exe", szParams, NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
-#else
+	#else
 									if (!CreateProcess(L"..\\x64\\Debug\\FontLoaderExProxy.exe", szParams, NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
-#endif
+	#endif
 #else
 									if (!CreateProcess(L"FontLoaderExProxy.exe", szParams, NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
 #endif
@@ -585,6 +816,42 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 									Message.str(L"");
 
+									//Wait for proxy process to enable SeDebugPrivilege
+									WaitForSingleObject(hEventProxyProcessDebugPrivilegeEnablingFinished, INFINITE);
+									CloseHandle(hEventProxyProcessDebugPrivilegeEnablingFinished);
+									switch (ProxyDebugPrivilegeEnablingResult)
+									{
+									case PROXYPROCESSDEBUGPRIVILEGEENABLING::SUCCESSFUL:
+										goto continue_90567013;
+									case PROXYPROCESSDEBUGPRIVILEGEENABLING::FAILED:
+										{
+											MessageBox(NULL, L"Failed to enable SeDebugPrivilige for FontLoaderExProxy.", L"FontLoaderEx", MB_ICONERROR);
+
+											//Terminate proxy process
+											COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
+											FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
+											WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
+											Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
+											iMessageLength = Edit_GetTextLength(hWndEditMessage);
+											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+											CloseHandle(piProxyProcess.hThread);
+											CloseHandle(piProxyProcess.hProcess);
+											piProxyProcess.hProcess = NULL;
+
+											//Close handles to selected process and duplicated handles
+											CloseHandle(SelectedProcessInfo.hProcess);
+											CloseHandle(hCurrentProcessDuplicated);
+											CloseHandle(hTargetProcessDuplicated);
+										}
+										goto break_90567013;
+									default:
+										break;
+									}
+								break_90567013:
+									break;
+								continue_90567013:
+
 									//Wait for message-only window to recieve HWND to proxy process
 									WaitForSingleObject(hEventProxyProcessHWNDRevieved, INFINITE);
 									CloseHandle(hEventProxyProcessHWNDRevieved);
@@ -598,7 +865,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hEventProxyDllInjectionFinished);
 									switch (ProxyDllInjectionResult)
 									{
-									case (int)PROXYDLLINJECTION::SUCCESSFUL:
+									case PROXYDLLINJECTION::SUCCESSFUL:
 										{
 											Message << szInjectionDllNameByProxy << L" successfully injected into target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
 											iMessageLength = Edit_GetTextLength(hWndEditMessage);
@@ -621,36 +888,49 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											hWatchThread = (HANDLE)_beginthreadex(nullptr, 0, ProxyAndTargetProcessWatchThreadProc, nullptr, 0, nullptr);
 										}
 										break;
-									case (int)PROXYDLLINJECTION::FAILED:
+									case PROXYDLLINJECTION::FAILED:
 										{
 											Message << L"Failed to inject " << szInjectionDllNameByProxy << L" into target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
 										}
-										goto a;
-									case (int)PROXYDLLINJECTION::FAILEDTOENUMERATEMODULES:
+										goto continue_DBEA36FE;
+									case PROXYDLLINJECTION::FAILEDTOENUMERATEMODULES:
 										{
 											Message << L"Failed to enumerate modules in target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
 										}
-										goto a;
-									case (int)PROXYDLLINJECTION::GDI32NOTLOADED:
+										goto continue_DBEA36FE;
+									case PROXYDLLINJECTION::GDI32NOTLOADED:
 										{
 											Message << L"gdi32.dll not loaded by target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
 										}
-										goto a;
-									case (int)PROXYDLLINJECTION::MODULENOTFOUND:
+										goto continue_DBEA36FE;
+									case PROXYDLLINJECTION::MODULENOTFOUND:
 										{
 											Message << L"Failed to enumerate modules in target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
 										}
-										goto a;
-									a:
-										iMessageLength = Edit_GetTextLength(hWndEditMessage);
-										Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-										CloseHandle(SelectedProcessInfo.hProcess);
-										CloseHandle(hCurrentProcessDuplicated);
-										CloseHandle(hTargetProcessDuplicated);
-										CloseHandle(piProxyProcess.hThread);
-										CloseHandle(piProxyProcess.hProcess);
-										piProxyProcess.hProcess = NULL;
+										goto continue_DBEA36FE;
+									continue_DBEA36FE:
+										{
+											iMessageLength = Edit_GetTextLength(hWndEditMessage);
+											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+
+											//Terminate proxy process
+											COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
+											FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
+											WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
+											Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
+											iMessageLength = Edit_GetTextLength(hWndEditMessage);
+											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+											CloseHandle(piProxyProcess.hThread);
+											CloseHandle(piProxyProcess.hProcess);
+											piProxyProcess.hProcess = NULL;
+
+											//Close handles to selected process and duplicated handles
+											CloseHandle(SelectedProcessInfo.hProcess);
+											CloseHandle(hCurrentProcessDuplicated);
+											CloseHandle(hTargetProcessDuplicated);
+										}
 										break;
 									default:
 										break;
@@ -786,15 +1066,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hEventProxyDllPullFinished);
 									switch (ProxyDllPullResult)
 									{
-									case (int)PROXYDLLPULL::FAILED:
+									case PROXYDLLPULL::FAILED:
 										{
 											Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 											iMessageLength = Edit_GetTextLength(hWndEditMessage);
 											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 										}
-										goto d;
-									case (int)PROXYDLLPULL::SUCCESSFUL:
+										goto break_0F70B465;
+									case PROXYDLLPULL::SUCCESSFUL:
 										{
 											Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 											iMessageLength = Edit_GetTextLength(hWndEditMessage);
@@ -802,13 +1082,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 											Message.str(L"");
 										}
-										goto e;
+										goto continue_0F70B465;
 									default:
 										break;
 									}
-								d:
+								break_0F70B465:
 									break;
-								e:
+								continue_0F70B465:
 
 									//Terminate proxy process
 									COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
@@ -883,6 +1163,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					}
 				}
 				break;
+			}
+			switch(LOWORD(wParam))
+			{
 				//"Load" menu item
 			case ID_MENU_LOAD:
 				{
@@ -946,233 +1229,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			default:
 				break;
 			}
-		}
-		break;
-	case (UINT)USERMESSAGE::WORKINGTHREADTERMINATED:
-		{
-			EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-			EnableAllButtons();
-		}
-		break;
-	case (UINT)USERMESSAGE::CLOSEWORKINGTHREADTERMINATED:
-		{
-			if (wParam)
-			{
-				std::wstringstream Message{};
-				int iMessageLength{};
-
-				//If loaded via proxy
-				if (piProxyProcess.hProcess)
-				{
-					//Terminate watch thread
-					SetEvent(hEventTerminateWatchThread);
-					WaitForSingleObject(hWatchThread, INFINITE);
-					CloseHandle(hEventTerminateWatchThread);
-					CloseHandle(hWatchThread);
-
-					//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
-					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
-					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
-					WaitForSingleObject(hEventProxyDllPullFinished, INFINITE);
-					CloseHandle(hEventProxyDllPullFinished);
-					switch (ProxyDllPullResult)
-					{
-					case (int)PROXYDLLPULL::FAILED:
-						{
-							Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-							iMessageLength = Edit_GetTextLength(hWndEditMessage);
-							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-						}
-						goto f;
-					case (int)PROXYDLLPULL::SUCCESSFUL:
-						{
-							Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-							iMessageLength = Edit_GetTextLength(hWndEditMessage);
-							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-							Message.str(L"");
-						}
-						goto g;
-					default:
-						break;
-					}
-				f:
-					break;
-				g:
-
-					//Terminate proxy process
-					COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
-					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
-					WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
-					Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
-					iMessageLength = Edit_GetTextLength(hWndEditMessage);
-					Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-					Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-					CloseHandle(piProxyProcess.hThread);
-					CloseHandle(piProxyProcess.hProcess);
-					piProxyProcess.hProcess = NULL;
-
-					//Terminate message thread
-					SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-					WaitForSingleObject(hMessageThread, INFINITE);
-					CloseHandle(hMessageThread);
-
-					//Close handle to target process and duplicated handles
-					CloseHandle(TargetProcessInfo.hProcess);
-					TargetProcessInfo.hProcess = NULL;
-					CloseHandle(hCurrentProcessDuplicated);
-					CloseHandle(hTargetProcessDuplicated);
-				}
-
-				//Else DIY
-				if (TargetProcessInfo.hProcess)
-				{
-					//Terminate watch thread
-					SetEvent(hEventTerminateWatchThread);
-					WaitForSingleObject(hWatchThread, INFINITE);
-					CloseHandle(hEventTerminateWatchThread);
-					CloseHandle(hWatchThread);
-
-					//Unload FontLoaderExInjectionDll(64).dll from target process
-					if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, 5000))
-					{
-						Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-						iMessageLength = Edit_GetTextLength(hWndEditMessage);
-						Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-						Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-						break;
-					}
-					Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-					iMessageLength = Edit_GetTextLength(hWndEditMessage);
-					Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-					Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-
-					//Close handle to target process
-					CloseHandle(TargetProcessInfo.hProcess);
-					TargetProcessInfo.hProcess = NULL;
-				}
-				DestroyWindow(hWnd);
-			}
-			else
-			{
-				switch (MessageBox(hWnd, L"Some fonts are not successfully unloaded.\r\n\r\nDo you still want to exit?", L"FontLoaderEx", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1 | MB_APPLMODAL))
-				{
-				case IDYES:
-					{
-						std::wstringstream Message{};
-						int iMessageLength{};
-
-						//If loaded via proxy
-						if (piProxyProcess.hProcess)
-						{
-							//Terminate watch thread
-							SetEvent(hEventTerminateWatchThread);
-							WaitForSingleObject(hWatchThread, INFINITE);
-							CloseHandle(hEventTerminateWatchThread);
-							CloseHandle(hWatchThread);
-
-							//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
-							COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
-							FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
-							WaitForSingleObject(hEventProxyDllPullFinished, INFINITE);
-							CloseHandle(hEventProxyDllPullFinished);
-							switch (ProxyDllPullResult)
-							{
-							case (int)PROXYDLLPULL::FAILED:
-								{
-									Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-									iMessageLength = Edit_GetTextLength(hWndEditMessage);
-									Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-								}
-								goto h;
-							case (int)PROXYDLLPULL::SUCCESSFUL:
-								{
-									Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-									iMessageLength = Edit_GetTextLength(hWndEditMessage);
-									Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-									Message.str(L"");
-								}
-								goto i;
-							default:
-								break;
-							}
-						h:
-							break;
-						i:
-
-							//Terminate proxy process
-							COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
-							FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
-							WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
-							Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
-							iMessageLength = Edit_GetTextLength(hWndEditMessage);
-							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-							CloseHandle(piProxyProcess.hThread);
-							CloseHandle(piProxyProcess.hProcess);
-							piProxyProcess.hProcess = NULL;
-
-							//Terminate message thread
-							SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-							WaitForSingleObject(hMessageThread, INFINITE);
-							CloseHandle(hMessageThread);
-
-							//Close handle to target process and duplicated handles
-							CloseHandle(TargetProcessInfo.hProcess);
-							TargetProcessInfo.hProcess = NULL;
-							CloseHandle(hCurrentProcessDuplicated);
-							CloseHandle(hTargetProcessDuplicated);
-						}
-
-						//Else DIY
-						if (TargetProcessInfo.hProcess)
-						{
-							//Terminate watch thread
-							SetEvent(hEventTerminateWatchThread);
-							WaitForSingleObject(hWatchThread, INFINITE);
-							CloseHandle(hEventTerminateWatchThread);
-							CloseHandle(hWatchThread);
-
-							//Unload FontLoaderExInjectionDll(64).dll from target process
-							if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, 5000))
-							{
-								Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-								iMessageLength = Edit_GetTextLength(hWndEditMessage);
-								Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-								Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-								break;
-							}
-							Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-							iMessageLength = Edit_GetTextLength(hWndEditMessage);
-							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-
-							//Close handle to target process
-							CloseHandle(TargetProcessInfo.hProcess);
-							TargetProcessInfo.hProcess = NULL;
-						}
-						DestroyWindow(hWnd);
-					}
-					break;
-				case IDNO:
-					{
-						EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-						EnableAllButtons();
-					}
-					break;
-				default:
-					break;
-				}
-			}
-		}
-		break;
-	case (UINT)USERMESSAGE::WATCHTHREADTERMINATED:
-		{
-			EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-			EnableAllButtons();
 		}
 		break;
 	default:
@@ -1340,27 +1396,27 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 							case 0:
 								{
 									bOrderFileName ?
-										std::sort
-										(
-											ProcessList.begin(), ProcessList.end(),
-											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-									{
-										std::wstring s1(value1.ProcessName.size(), L'\0'), s2(value2.ProcessName.size(), L'\0');
-										std::transform(value1.ProcessName.begin(), value1.ProcessName.end(), s1.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
-										std::transform(value2.ProcessName.begin(), value2.ProcessName.end(), s2.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
-										return s1 < s2;
-									}
-										) :
-										std::sort
-										(
-											ProcessList.begin(), ProcessList.end(),
-											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-									{
-										std::wstring s1(value1.ProcessName.size(), L'\0'), s2(value2.ProcessName.size(), L'\0');
-										std::transform(value1.ProcessName.begin(), value1.ProcessName.end(), s1.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
-										std::transform(value2.ProcessName.begin(), value2.ProcessName.end(), s2.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
-										return s1 > s2;
-									}
+									std::sort
+									(
+										ProcessList.begin(), ProcessList.end(),
+										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
+										{
+											std::wstring s1(value1.ProcessName.size(), L'\0'), s2(value2.ProcessName.size(), L'\0');
+											std::transform(value1.ProcessName.begin(), value1.ProcessName.end(), s1.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
+											std::transform(value2.ProcessName.begin(), value2.ProcessName.end(), s2.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
+											return s1 < s2;
+										}
+									) :
+									std::sort
+									(
+										ProcessList.begin(), ProcessList.end(),
+										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
+										{
+											std::wstring s1(value1.ProcessName.size(), L'\0'), s2(value2.ProcessName.size(), L'\0');
+											std::transform(value1.ProcessName.begin(), value1.ProcessName.end(), s1.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
+											std::transform(value2.ProcessName.begin(), value2.ProcessName.end(), s2.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
+											return s1 > s2;
+										}
 									);
 									bOrderFileName = !bOrderFileName;
 								}
@@ -1368,21 +1424,21 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 							case 1:
 								{
 									bOrderPID ?
-										std::sort
-										(
-											ProcessList.begin(), ProcessList.end(),
-											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-									{
-										return value1.ProcessID < value2.ProcessID;
-									}
+									std::sort
+									(
+										ProcessList.begin(), ProcessList.end(),
+										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
+										{
+											return value1.ProcessID < value2.ProcessID;
+										}
 										) :
-										std::sort
-										(
-											ProcessList.begin(), ProcessList.end(),
-											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-									{
-										return value1.ProcessID > value2.ProcessID;
-									}
+									std::sort
+									(
+										ProcessList.begin(), ProcessList.end(),
+										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
+										{
+											return value1.ProcessID > value2.ProcessID;
+										}
 									);
 									bOrderPID = !bOrderPID;
 								}

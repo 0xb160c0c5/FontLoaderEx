@@ -1,7 +1,6 @@
 ﻿#include <windows.h>
 #include <windowsx.h>
 #include <CommCtrl.h>
-#include <process.h>
 #include <list>
 #include <sstream>
 #include "FontResource.h"
@@ -309,7 +308,7 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 		break;
 	case WAIT_OBJECT_0 + 1:
 		{
-			_endthread();
+			return 0;
 		}
 		break;
 	default:
@@ -367,7 +366,7 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 		break;
 	case WAIT_OBJECT_0 + 2:
 		{
-			_endthread();
+			return 0;
 		}
 		break;
 	default:
@@ -480,45 +479,60 @@ unsigned int __stdcall MessageThreadProc(void* lpParameter)
 LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	LRESULT ret{};
+	switch ((USERMESSAGE)Msg)
+	{
+	case USERMESSAGE::TERMINATEMESSAGETHREAD:
+		{
+			DestroyWindow(hWnd);
+		}
+		break;
+	}
 	switch (Msg)
 	{
 	case WM_COPYDATA:
 		{
 			COPYDATASTRUCT* pcds{ (PCOPYDATASTRUCT)lParam };
-			switch (pcds->dwData)
+			switch ((COPYDATA)pcds->dwData)
 			{
+				//Get proxy SeDebugPrivilege enabling result
+			case COPYDATA::PROXYPROCESSDEBUGPRIVILEGEENABLINGFINISHED:
+				{
+					ProxyDebugPrivilegeEnablingResult = *(PROXYPROCESSDEBUGPRIVILEGEENABLING*)pcds->lpData;
+					SetEvent(hEventProxyProcessDebugPrivilegeEnablingFinished);
+				}
+				break;
 				//Recieve HWND to proxy process
-			case (ULONG_PTR)COPYDATA::PROXYPROCESSHWNDSENT:
+			case COPYDATA::PROXYPROCESSHWNDSENT:
 				{
 					hWndProxy = *(HWND*)pcds->lpData;
 					SetEvent(hEventProxyProcessHWNDRevieved);
 				}
 				break;
 				//Get proxy dll injection result
-			case (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED:
+			case COPYDATA::DLLINJECTIONFINISHED:
 				{
-					ProxyDllInjectionResult = *(int*)pcds->lpData;
+					ProxyDllInjectionResult = *(PROXYDLLINJECTION*)pcds->lpData;
 					SetEvent(hEventProxyDllInjectionFinished);
 				}
 				break;
 				//Get proxy dll pull result
-			case  (ULONG_PTR)COPYDATA::DLLPULLFINISHED:
+			case COPYDATA::DLLPULLFINISHED:
 				{
-					ProxyDllPullResult = *(int*)pcds->lpData;
+					ProxyDllPullResult = *(PROXYDLLPULL*)pcds->lpData;
 					SetEvent(hEventProxyDllPullFinished);
 				}
 				break;
 				//Get add font result
-			case (ULONG_PTR)COPYDATA::ADDFONTFINISHED:
+			case COPYDATA::ADDFONTFINISHED:
 				{
-					ProxyAddFontResult = *(int*)pcds->lpData;
+					ProxyAddFontResult = *(ADDFONT*)pcds->lpData;
 					SetEvent(hEventProxyAddFontFinished);
 				}
 				break;
 				//Get remove font result
-			case (ULONG_PTR)COPYDATA::REMOVEFONTFINISHED:
+			case COPYDATA::REMOVEFONTFINISHED:
 				{
-					ProxyRemoveFontResult = *(int*)pcds->lpData;
+					ProxyRemoveFontResult = *(REMOVEFONT*)pcds->lpData;
 					SetEvent(hEventProxyRemoveFontFinished);
 				}
 				break;
@@ -530,11 +544,6 @@ LRESULT CALLBACK MsgWndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	case WM_DESTROY:
 		{
 			PostQuitMessage(0);
-		}
-		break;
-	case (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD:
-		{
-			DestroyWindow(hWnd);
 		}
 		break;
 	default:

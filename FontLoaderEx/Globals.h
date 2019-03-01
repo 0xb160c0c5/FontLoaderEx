@@ -51,6 +51,7 @@ extern HANDLE hEventParentProcessRunning;
 extern HANDLE hEventMessageThreadReady;
 extern HANDLE hEventTerminateWatchThread;
 extern HANDLE hEventProxyProcessReady;
+extern HANDLE hEventProxyProcessDebugPrivilegeEnablingFinished;
 extern HANDLE hEventProxyProcessHWNDRevieved;
 extern HANDLE hEventProxyDllInjectionFinished;
 extern HANDLE hEventProxyDllPullFinished;
@@ -60,14 +61,18 @@ extern HANDLE hEventProxyRemoveFontFinished;
 extern HANDLE hCurrentProcessDuplicated;
 extern HANDLE hTargetProcessDuplicated;
 
-enum class COPYDATA : ULONG_PTR { PROXYPROCESSHWNDSENT, INJECTDLL, DLLINJECTIONFINISHED, PULLDLL, DLLPULLFINISHED, ADDFONT, ADDFONTFINISHED, REMOVEFONT, REMOVEFONTFINISHED, TERMINATE };
-enum class PROXYDLLINJECTION : int { SUCCESSFUL, FAILED, FAILEDTOENUMERATEMODULES, GDI32NOTLOADED, MODULENOTFOUND };
-enum class PROXYDLLPULL : int { SUCCESSFUL, FAILED };
+enum class COPYDATA : ULONG_PTR { PROXYPROCESSHWNDSENT, PROXYPROCESSDEBUGPRIVILEGEENABLINGFINISHED, INJECTDLL, DLLINJECTIONFINISHED, PULLDLL, DLLPULLFINISHED, ADDFONT, ADDFONTFINISHED, REMOVEFONT, REMOVEFONTFINISHED, TERMINATE };
+enum class PROXYPROCESSDEBUGPRIVILEGEENABLING { SUCCESSFUL, FAILED };
+enum class PROXYDLLINJECTION { SUCCESSFUL, FAILED, FAILEDTOENUMERATEMODULES, GDI32NOTLOADED, MODULENOTFOUND };
+enum class PROXYDLLPULL { SUCCESSFUL, FAILED };
+enum class ADDFONT { SUCCESSFUL, FAILED };
+enum class REMOVEFONT { SUCCESSFUL, FAILED };
 
-extern int ProxyDllInjectionResult;
-extern int ProxyDllPullResult;
-extern bool ProxyAddFontResult;
-extern bool ProxyRemoveFontResult;
+extern PROXYPROCESSDEBUGPRIVILEGEENABLING ProxyDebugPrivilegeEnablingResult;
+extern PROXYDLLINJECTION ProxyDllInjectionResult;
+extern PROXYDLLPULL ProxyDllPullResult;
+extern ADDFONT ProxyAddFontResult;
+extern REMOVEFONT ProxyRemoveFontResult;
 
 extern bool DefaultAddFontProc(const wchar_t* lpFontName);
 extern bool DefaultRemoveFontProc(const wchar_t* lpFontName);
