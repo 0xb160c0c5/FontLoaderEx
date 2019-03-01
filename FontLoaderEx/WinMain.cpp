@@ -69,7 +69,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 	MSG Msg{};
 	BOOL bRet{};
-	while ((bRet = GetMessage(&Msg, hWndMain, 0, 0)) != 0)
+	while ((bRet = GetMessage(&Msg, NULL, 0, 0)) != 0)
 	{
 		if (bRet == -1)
 		{
@@ -475,9 +475,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	case WM_CLOSE:
 		{
 			//Unload all fonts
-			EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-			DisableAllButtons();
-			_beginthread(CloseWorkingThreadProc, 0, nullptr);
+			if (!FontList.empty())
+			{
+				EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+				DisableAllButtons();
+				_beginthread(CloseWorkingThreadProc, 0, nullptr);
+			}
+			DestroyWindow(hWnd);
 		}
 		break;
 	case WM_DESTROY:
@@ -781,7 +785,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(), &hCurrentProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
 									DuplicateHandle(GetCurrentProcess(), SelectedProcessInfo.hProcess, GetCurrentProcess(), &hTargetProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
 									std::wstringstream strParams{};
-									strParams << hCurrentProcessDuplicated << L" " << hTargetProcessDuplicated << L" " << hWndMessage << L" " << hEventMessageThreadReady << L" " << hEventProxyProcessReady;
+									strParams << (UINT_PTR)hCurrentProcessDuplicated << L" " << (UINT_PTR)hTargetProcessDuplicated << L" " << (UINT_PTR)hWndMessage << L" " << (UINT_PTR)hEventMessageThreadReady << L" " << (UINT_PTR)hEventProxyProcessReady;
 									WCHAR szParams[64]{};
 									wcsncpy_s(szParams, sizeof(szParams) / sizeof(WCHAR), strParams.str().c_str(), strParams.str().length());
 									STARTUPINFO si{ sizeof(STARTUPINFO) };
