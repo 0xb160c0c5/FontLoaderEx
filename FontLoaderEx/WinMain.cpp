@@ -481,7 +481,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				DisableAllButtons();
 				_beginthread(CloseWorkingThreadProc, 0, nullptr);
 			}
-			DestroyWindow(hWnd);
+			else
+			{
+				DestroyWindow(hWnd);
+			}
 		}
 		break;
 	case WM_DESTROY:
