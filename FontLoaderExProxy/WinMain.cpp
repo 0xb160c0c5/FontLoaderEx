@@ -293,6 +293,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_DESTROY:
 		{
+			CloseHandle(hParentProcess);
+			CloseHandle(hTargetProcess);
+
 			PostQuitMessage(0);
 		}
 		break;

@@ -424,8 +424,6 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	CloseHandle(piProxyProcess.hThread);
 	CloseHandle(piProxyProcess.hProcess);
 	CloseHandle(TargetProcessInfo.hProcess);
-	CloseHandle(hCurrentProcessDuplicated);
-	CloseHandle(hTargetProcessDuplicated);
 	piProxyProcess.hProcess = NULL;
 	TargetProcessInfo.hProcess = NULL;
 	CloseHandle(hEventProxyAddFontFinished);

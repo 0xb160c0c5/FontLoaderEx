@@ -110,9 +110,6 @@ HANDLE hMessageThread{};
 HANDLE hProxyProcess{};
 HWND hWndProxy{};
 
-HANDLE hCurrentProcessDuplicated{};
-HANDLE hTargetProcessDuplicated{};
-
 HANDLE hEventParentProcessRunning{};
 HANDLE hEventMessageThreadReady{};
 HANDLE hEventTerminateWatchThread{};
@@ -218,11 +215,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					WaitForSingleObject(hMessageThread, INFINITE);
 					CloseHandle(hMessageThread);
 
-					//Close handle to target process and duplicated handles
+					//Close handle to target process
 					CloseHandle(TargetProcessInfo.hProcess);
 					TargetProcessInfo.hProcess = NULL;
-					CloseHandle(hCurrentProcessDuplicated);
-					CloseHandle(hTargetProcessDuplicated);
 				}
 
 				//Else DIY
@@ -320,11 +315,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							WaitForSingleObject(hMessageThread, INFINITE);
 							CloseHandle(hMessageThread);
 
-							//Close handle to target process and duplicated handles
+							//Close handle to target process
 							CloseHandle(TargetProcessInfo.hProcess);
 							TargetProcessInfo.hProcess = NULL;
-							CloseHandle(hCurrentProcessDuplicated);
-							CloseHandle(hTargetProcessDuplicated);
 						}
 
 						//Else DIY
@@ -712,11 +705,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									WaitForSingleObject(hMessageThread, INFINITE);
 									CloseHandle(hMessageThread);
 
-									//Close handle to target process and duplicated handles and synchronization objects
+									//Close handle to target process and synchronization objects
 									CloseHandle(TargetProcessInfo.hProcess);
 									TargetProcessInfo.hProcess = NULL;
-									CloseHandle(hCurrentProcessDuplicated);
-									CloseHandle(hTargetProcessDuplicated);
 									CloseHandle(hEventProxyAddFontFinished);
 									CloseHandle(hEventProxyRemoveFontFinished);
 								}
@@ -785,6 +776,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									WaitForSingleObject(hEventMessageThreadReady, INFINITE);
 
 									//Run proxy process, send handle to current process and target process, HWND to message window, handle to synchronization objects as arguments to proxy process
+									HANDLE hCurrentProcessDuplicated{};
+									HANDLE hTargetProcessDuplicated{};
 									DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(), &hCurrentProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
 									DuplicateHandle(GetCurrentProcess(), SelectedProcessInfo.hProcess, GetCurrentProcess(), &hTargetProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
 									std::wstringstream strParams{};
@@ -1114,11 +1107,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									WaitForSingleObject(hMessageThread, INFINITE);
 									CloseHandle(hMessageThread);
 
-									//Close handle to target process and duplicated handles and synchronization objects
+									//Close handle to target process and synchronization objects
 									CloseHandle(TargetProcessInfo.hProcess);
 									TargetProcessInfo.hProcess = NULL;
-									CloseHandle(hCurrentProcessDuplicated);
-									CloseHandle(hTargetProcessDuplicated);
 									CloseHandle(hEventProxyAddFontFinished);
 									CloseHandle(hEventProxyRemoveFontFinished);
 
