@@ -26,7 +26,7 @@ void DragDropWorkingThreadProc(void* lpParameter)
 			ListView_SetItem(hWndListViewFontList, &lvi);
 			ListView_SetItemState(hWndListViewFontList, i, LVIS_SELECTED, LVIS_SELECTED);
 			Message.str(L"");
-			Message << iter->GetFontName() << L" opened and loaded\r\n";
+			Message << iter->GetFontName() << L" opened and successfully loaded\r\n";
 			iMessageLength = Edit_GetTextLength(hWndEditMessage);
 			Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 			Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -335,7 +335,7 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 	FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
 
 	//Revert to default caption
-	Button_SetText(hWndButtonSelectProcess, L"Click to select process");
+	Button_SetText(hWndButtonSelectProcess, L"Select process");
 
 	//Close handle to target process
 	CloseHandle(TargetProcessInfo.hProcess);

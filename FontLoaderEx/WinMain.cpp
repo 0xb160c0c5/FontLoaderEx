@@ -1117,7 +1117,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
 
 									//Revert to default caption
-									Button_SetText(hWndButtonSelectProcess, L"Click to select process");
+									Button_SetText(hWndButtonSelectProcess, L"Select process");
 								}
 
 								//Else DIY
@@ -1151,7 +1151,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
 
 									//Revert to default caption
-									Button_SetText(hWndButtonSelectProcess, L"Click to select process");
+									Button_SetText(hWndButtonSelectProcess, L"Select process");
 								}
 							}
 						}
