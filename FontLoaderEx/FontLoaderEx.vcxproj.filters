@@ -32,7 +32,7 @@
     <ClCompile Include="WinMain.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="WorkingThread.cpp">
+    <ClCompile Include="WorkingThreads.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

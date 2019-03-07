@@ -1,4 +1,8 @@
-﻿#pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+﻿#if !defined(UNICODE) || !defined(_UNICODE)
+	#error Unicode character set required
+#endif
+
+#pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #pragma comment(lib, "ComCtl32.lib")
 #pragma comment(lib, "Shlwapi.lib")
 
@@ -18,6 +22,8 @@
 #include "FontResource.h"
 #include "Globals.h"
 #include "resource.h"
+
+#pragma warning(disable: 4996)
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 
@@ -782,17 +788,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									DuplicateHandle(GetCurrentProcess(), SelectedProcessInfo.hProcess, GetCurrentProcess(), &hTargetProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
 									std::wstringstream strParams{};
 									strParams << (UINT_PTR)hCurrentProcessDuplicated << L" " << (UINT_PTR)hTargetProcessDuplicated << L" " << (UINT_PTR)hWndMessage << L" " << (UINT_PTR)hEventMessageThreadReady << L" " << (UINT_PTR)hEventProxyProcessReady;
-									WCHAR szParams[64]{};
-									wcsncpy_s(szParams, sizeof(szParams) / sizeof(WCHAR), strParams.str().c_str(), strParams.str().length());
+									std::size_t nParamLength{ strParams.str().length() };
+									std::unique_ptr<WCHAR[]> lpszParams{ new WCHAR[nParamLength + 1]{} };
+									wcsncpy_s(lpszParams.get(), nParamLength + 1, strParams.str().c_str(), nParamLength);
 									STARTUPINFO si{ sizeof(STARTUPINFO) };
 #ifdef _DEBUG
 	#ifdef _WIN64
-									if (!CreateProcess(L"..\\Debug\\FontLoaderExProxy.exe", szParams, NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
+									if (!CreateProcess(L"..\\Debug\\FontLoaderExProxy.exe", lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
 	#else
-									if (!CreateProcess(L"..\\x64\\Debug\\FontLoaderExProxy.exe", szParams, NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
+									if (!CreateProcess(L"..\\x64\\Debug\\FontLoaderExProxy.exe", lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
 	#endif
 #else
-									if (!CreateProcess(L"FontLoaderExProxy.exe", szParams, NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
+									if (!CreateProcess(L"FontLoaderExProxy.exe", lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
 #endif
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
@@ -860,7 +867,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::INJECTDLL, 0, NULL };
 									FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
 
-									//Wait for proxy process to inject dll to target process
+									//Wait for proxy process to inject dll into target process
 									WaitForSingleObject(hEventProxyDllInjectionFinished, INFINITE);
 									CloseHandle(hEventProxyDllInjectionFinished);
 									switch (ProxyDllInjectionResult)
@@ -973,7 +980,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									}
 									CloseHandle(hModuleSnapshot1);
 
-									//Inject FontLoaderExInjectionDll(64).dll to target process
+									//Inject FontLoaderExInjectionDll(64).dll into target process
 									if (!InjectModule(SelectedProcessInfo.hProcess, szInjectionDllName, 5000))
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
@@ -1027,9 +1034,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									HMODULE hModInjectionDll{ LoadLibrary(szInjectionDllName) };
 									void* pLocalAddFontProcAddr{ GetProcAddress(hModInjectionDll, "AddFont") };
 									void* pLocalRemoveFontProcAddr{ GetProcAddress(hModInjectionDll, "RemoveFont") };
+									FreeLibrary(hModInjectionDll);
 									UINT_PTR AddFontProcOffset{ (UINT_PTR)pLocalAddFontProcAddr - (UINT_PTR)hModInjectionDll };
 									UINT_PTR RemoveFontProcOffset{ (UINT_PTR)pLocalRemoveFontProcAddr - (UINT_PTR)hModInjectionDll };
-									FreeLibrary(hModInjectionDll);
 									pfnRemoteAddFontProc = (void*)(pModBaseAddr + AddFontProcOffset);
 									pfnRemoteRemoveFontProc = (void*)(pModBaseAddr + RemoveFontProcOffset);
 
@@ -1537,7 +1544,7 @@ bool EnableDebugPrivilege()
 
 bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 {
-	//Inject dll to target process
+	//Inject dll into target process
 	WCHAR szDllPath[MAX_PATH]{};
 	GetModuleFileName(NULL, szDllPath, MAX_PATH);
 	PathRemoveFileSpec(szDllPath);

@@ -221,9 +221,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					HMODULE hModInjectionDll{ LoadLibrary(szInjectionDllName) };
 					void* pLocalAddFontProcAddr{ GetProcAddress(hModInjectionDll, "AddFont") };
 					void* pLocalRemoveFontProcAddr{ GetProcAddress(hModInjectionDll, "RemoveFont") };
+					FreeLibrary(hModInjectionDll);
 					INT_PTR AddFontProcOffset{ (INT_PTR)pLocalAddFontProcAddr - (INT_PTR)hModInjectionDll };
 					INT_PTR RemoveFontProcOffset{ (INT_PTR)pLocalRemoveFontProcAddr - (INT_PTR)hModInjectionDll };
-					FreeLibrary(hModInjectionDll);
 					pfnRemoteAddFontProc = pModBaseAddr + AddFontProcOffset;
 					pfnRemoteRemoveFontProc = pModBaseAddr + RemoveFontProcOffset;
 
@@ -310,7 +310,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 {
-	//Inject dll to target process
+	//Inject dll into target process
 	WCHAR szDllPath[MAX_PATH]{};
 	GetModuleFileName(NULL, szDllPath, MAX_PATH);
 	PathRemoveFileSpec(szDllPath);

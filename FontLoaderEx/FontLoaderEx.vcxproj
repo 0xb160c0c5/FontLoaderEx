@@ -127,7 +127,7 @@
   <ItemGroup>
     <ClCompile Include="FontResource.cpp" />
     <ClCompile Include="WinMain.cpp" />
-    <ClCompile Include="WorkingThread.cpp" />
+    <ClCompile Include="WorkingThreads.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Resource.rc" />

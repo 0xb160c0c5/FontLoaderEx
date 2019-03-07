@@ -346,7 +346,7 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 	return 0;
 }
 
-//Proxy and target process watch thread
+//Proxy process and target process watch thread
 unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 {
 	//Wait for proxy process or target process or termination event
