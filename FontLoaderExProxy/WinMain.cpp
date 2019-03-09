@@ -60,6 +60,8 @@ HWND hWndParentProcessMessage{};
 HANDLE hEventMessageThreadReady{};
 HANDLE hEventProxyProcessReady{};
 
+DWORD dwTimeout{};
+
 enum class USERMESSAGE : UINT { TERMINATE = WM_USER + 0x100 };
 
 enum class COPYDATA : ULONG_PTR { PROXYPROCESSHWNDSENT, PROXYPROCESSDEBUGPRIVILEGEENABLEFINISHED, INJECTDLL, DLLINJECTIONFINISHED, PULLDLL, DLLPULLFINISHED, ADDFONT, ADDFONTFINISHED, REMOVEFONT, REMOVEFONTFINISHED, TERMINATE };
@@ -98,12 +100,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	{
 	case WM_CREATE:
 		{
-			//Get handles to parent process and target process and message window from command line
+			//Get information from command line
 			int argc{};
 			LPWSTR* argv = CommandLineToArgvW(GetCommandLine(), &argc);
 
 #pragma warning(push)
 #pragma warning(disable:4312)
+			//Get handles to parent process and message window
 			hParentProcess = (HANDLE)std::wcstoul(argv[0], nullptr, 10);
 			hTargetProcess = (HANDLE)std::wcstoul(argv[1], nullptr, 10);
 			hWndParentProcessMessage = (HWND)std::wcstoul(argv[2], nullptr, 10);
@@ -111,6 +114,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			//Get handles to synchronization objects from command line
 			hEventMessageThreadReady = (HANDLE)std::wcstoul(argv[3], nullptr, 10);
 			hEventProxyProcessReady = (HANDLE)std::wcstoul(argv[4], nullptr, 10);
+
+			//Get timeout
+			dwTimeout = (DWORD)std::wcstoul(argv[5], nullptr, 10);
 #pragma warning(pop)
 
 			//Wait for message thread to ready
@@ -179,7 +185,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					CloseHandle(hModuleSnapshot1);
 
 					//Inject FontLoaderExInjectionDll(64).dll into target process
-					if (!InjectModule(hTargetProcess, szInjectionDllName, 5000))
+					if (!InjectModule(hTargetProcess, szInjectionDllName, dwTimeout))
 					{
 						PROXYDLLINJECTION i{ PROXYDLLINJECTION::FAILED };
 						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(PROXYDLLINJECTION), (void*)&i };
@@ -237,7 +243,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			case COPYDATA::PULLDLL:
 				{
 					PROXYDLLPULL i{};
-					if (!PullModule(hTargetProcess, szInjectionDllName, 5000))
+					if (!PullModule(hTargetProcess, szInjectionDllName, dwTimeout))
 					{
 						i = PROXYDLLPULL::FAILED;
 					}

@@ -12,6 +12,7 @@ extern HWND hWndButtonClose;
 extern HWND hWndButtonLoad;
 extern HWND hWndButtonUnload;
 extern HWND hWndButtonBroadcastWM_FONTCHANGE;
+extern HWND hWndEditTimeout;
 extern HWND hWndButtonSelectProcess;
 extern HWND hWndListViewFontList;
 extern HWND hWndEditMessage;

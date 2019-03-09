@@ -23,8 +23,6 @@
 #include "Globals.h"
 #include "resource.h"
 
-#pragma warning(disable: 4996)
-
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 
 std::list<FontResource> FontList{};
@@ -104,10 +102,11 @@ HWND hWndButtonClose{};
 HWND hWndButtonLoad{};
 HWND hWndButtonUnload{};
 HWND hWndButtonBroadcastWM_FONTCHANGE{};
+HWND hWndEditTimeout{};
 HWND hWndButtonSelectProcess{};
 HWND hWndListViewFontList{};
 HWND hWndEditMessage{};
-enum class ID : WORD { ButtonOpen = 20, ButtonClose, ButtonLoad, ButtonUnload, ButtonBroadcastWM_FONTCHANGE, ButtonSelectProcess, ListViewFontList, EditMessage };
+enum class ID : WORD { ButtonOpen = 20, ButtonClose, ButtonLoad, ButtonUnload, ButtonBroadcastWM_FONTCHANGE, StaticTimeout, EditTimeOut, ButtonSelectProcess, ListViewFontList, EditMessage };
 
 LRESULT CALLBACK ListViewProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM IParam);
@@ -137,6 +136,8 @@ PROXYDLLPULL ProxyDllPullResult{};
 ProcessInfo TargetProcessInfo{};
 PROCESS_INFORMATION piProxyProcess{};
 
+DWORD dwTimeout{};
+
 void EnableControls();
 void DisableControls();
 bool EnableDebugPrivilege();
@@ -156,11 +157,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	LRESULT ret{};
 	switch ((USERMESSAGE)Msg)
 	{
-	case USERMESSAGE::WORKINGTHREADTERMINATED:
-		{
-			EnableControls();
-		}
-		break;
 	case USERMESSAGE::CLOSEWORKINGTHREADTERMINATED:
 		{
 			if (wParam)
@@ -240,7 +236,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					CloseHandle(hWatchThread);
 
 					//Unload FontLoaderExInjectionDll(64).dll from target process
-					if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, 5000))
+					if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 					{
 						Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 						iMessageLength = Edit_GetTextLength(hWndEditMessage);
@@ -340,7 +336,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							CloseHandle(hWatchThread);
 
 							//Unload FontLoaderExInjectionDll(64).dll from target process
-							if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, 5000))
+							if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 							{
 								Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 								iMessageLength = Edit_GetTextLength(hWndEditMessage);
@@ -371,9 +367,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		break;
+	case USERMESSAGE::WORKINGTHREADTERMINATED:
 	case USERMESSAGE::WATCHTHREADTERMINATED:
 		{
 			EnableControls();
+			EnableWindow(hWndEditTimeout, TRUE);
 		}
 		break;
 	}
@@ -403,14 +401,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			hWndButtonUnload = CreateWindow(WC_BUTTON, L"Unload", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 150, 0, 50, 50, hWnd, (HMENU)ID::ButtonUnload, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 			SetWindowFont(hWndButtonUnload, hFont, TRUE);
 
-			//Initialize ButtonSelectProcess
-			hWndButtonSelectProcess = CreateWindow(WC_BUTTON, L"Select process", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 200, 29, 250, 21, hWnd, (HMENU)ID::ButtonSelectProcess, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-			SetWindowFont(hWndButtonSelectProcess, hFont, TRUE);
-
 			//Initialize ButtonBroadcastWM_FONTCHANGE
 			hWndButtonBroadcastWM_FONTCHANGE = CreateWindow(WC_BUTTON, L"Broadcast WM_FONTCHANGE", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 200, 0, 250, 21, hWnd, (HMENU)ID::ButtonBroadcastWM_FONTCHANGE, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 			SetWindowFont(hWndButtonBroadcastWM_FONTCHANGE, hFont, TRUE);
 
+			//Initialize EditTimeout and label
+			HWND hWndStaticTimeout{ CreateWindow(WC_STATIC, L"Timeout:", WS_CHILD | WS_VISIBLE | SS_LEFT , 470, 1, 50, 19, hWnd, (HMENU)ID::StaticTimeout, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
+			hWndEditTimeout = CreateWindow(WC_EDIT, L"5000", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_LEFT | ES_NUMBER | ES_AUTOHSCROLL | ES_NOHIDESEL, 520, 0, 70, 21, hWnd, (HMENU)ID::EditTimeOut, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			dwTimeout = 5000;
+			SetWindowFont(hWndStaticTimeout, hFont, TRUE);
+			SetWindowFont(hWndEditTimeout, hFont, TRUE);
+			
+			//Initialize ButtonSelectProcess
+			hWndButtonSelectProcess = CreateWindow(WC_BUTTON, L"Select process", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 200, 29, 250, 21, hWnd, (HMENU)ID::ButtonSelectProcess, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			SetWindowFont(hWndButtonSelectProcess, hFont, TRUE);
+			
 			//Initialize ListViewFontList
 			hWndListViewFontList = CreateWindow(WC_LISTVIEW, L"FontList", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | LVS_REPORT | LVS_SHOWSELALWAYS, 0, 50, rectClientMain.right - rectClientMain.left, 300, hWnd, (HMENU)ID::ListViewFontList, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
 			SetWindowFont(hWndListViewFontList, hFont, TRUE);
@@ -456,6 +461,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				"\"Unload\": Remove selected fonts from Windows or target process.\r\n"
 				"\"Broadcast WM_FONTCHANGE\": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.\r\n"
 				"\"Select process\": Select a process to only load fonts to selected process.\r\n"
+				"\"Timeout:\" The time in milliseconds FontLoaderEx wait before reporting failure when loading fonts to process, default value is 5000."
 				"\"Font Name\": Names of the fonts added to the list view.\r\n"
 				"\"State\": State of the font. There are five states, \"Not loaded\", \"Loaded\", \"Load failed\", \"Unloaded\" and \"Unload failed\".\r\n"
 				"\r\n"
@@ -623,6 +629,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 							static bool bIsSeDebugPrivilegeEnabled{ false };
 
+							//Convert text in EditTimeout to interger
+							BOOL bIsConverted{};
+#pragma warning(push)
+#pragma warning(disable:4312)
+							DWORD dwTimeoutTemp{ (DWORD)GetDlgItemInt(hWnd, (int)ID::EditTimeOut, &bIsConverted, FALSE) };
+#pragma warning(pop)
+							if (!bIsConverted)
+							{
+								MessageBox(hWnd, L"Timeout value invalid.", L"FontLoaderEx", MB_ICONEXCLAMATION);
+								SetDlgItemInt(hWnd, (int)ID::EditTimeOut, (UINT)dwTimeout, FALSE);
+								break;
+							}
+							else
+							{
+								dwTimeout = dwTimeoutTemp;
+							}
+
 							//Enable SeDebugPrivilege
 							if (!bIsSeDebugPrivilegeEnabled)
 							{
@@ -728,7 +751,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									}
 
 									//Unload FontLoaderExInjectionDll(64).dll from target process
-									if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, 5000))
+									if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 									{
 										Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 										iMessageLength = Edit_GetTextLength(hWndEditMessage);
@@ -784,7 +807,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(), &hCurrentProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
 									DuplicateHandle(GetCurrentProcess(), SelectedProcessInfo.hProcess, GetCurrentProcess(), &hTargetProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
 									std::wstringstream strParams{};
-									strParams << (UINT_PTR)hCurrentProcessDuplicated << L" " << (UINT_PTR)hTargetProcessDuplicated << L" " << (UINT_PTR)hWndMessage << L" " << (UINT_PTR)hEventMessageThreadReady << L" " << (UINT_PTR)hEventProxyProcessReady;
+									strParams << (UINT_PTR)hCurrentProcessDuplicated << L" " << (UINT_PTR)hTargetProcessDuplicated << L" " << (UINT_PTR)hWndMessage << L" " << (UINT_PTR)hEventMessageThreadReady << L" " << (UINT_PTR)hEventProxyProcessReady << L" " << dwTimeout ;
 									std::size_t nParamLength{ strParams.str().length() };
 									std::unique_ptr<WCHAR[]> lpszParams{ new WCHAR[nParamLength + 1]{} };
 									wcsncpy_s(lpszParams.get(), nParamLength + 1, strParams.str().c_str(), nParamLength);
@@ -878,6 +901,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											FontResource::RegisterAddRemoveFontProc(ProxyAddFontProc, ProxyRemoveFontProc);
 											hEventProxyAddFontFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
 											hEventProxyRemoveFontFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+											//Disable EditTimeout
+											EnableWindow(hWndEditTimeout, FALSE);
 
 											//Change caption and set TargetProcessInfo
 											std::wstringstream Caption{};
@@ -974,7 +1000,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hModuleSnapshot1);
 
 									//Inject FontLoaderExInjectionDll(64).dll into target process
-									if (!InjectModule(SelectedProcessInfo.hProcess, szInjectionDllName, 5000))
+									if (!InjectModule(SelectedProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
 										Message << L"Failed to inject " << szInjectionDllName << L" into target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
@@ -1116,6 +1142,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									//Register default AddFont() and RemoveFont() procedure
 									FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
 
+									//Enable EditTimeout
+									EnableWindow(hWndEditTimeout, TRUE);
+
 									//Revert to default caption
 									Button_SetText(hWndButtonSelectProcess, L"Select process");
 								}
@@ -1130,7 +1159,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hWatchThread);
 
 									//Unload FontLoaderExInjectionDll(64).dll from target process
-									if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, 5000))
+									if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 									{
 										Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 										iMessageLength = Edit_GetTextLength(hWndEditMessage);
@@ -1197,7 +1226,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				//"Ctrl+A" accelerator
 			case ID_ACCELERATOR_SELECTALL:
 				{
-					ListView_SetItemState(hWndListViewFontList, -1, LVIS_SELECTED, LVIS_SELECTED);
+					if (GetFocus() == hWndListViewFontList)
+					{
+						ListView_SetItemState(hWndListViewFontList, -1, LVIS_SELECTED, LVIS_SELECTED);
+					}
 				}
 				break;
 			default:
@@ -1296,8 +1328,8 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 	INT_PTR ret{};
 	 
 	static HWND hWndListViewProcessList{};
-	static HWND hWndOK{};
-	static HWND hWndCancel{};
+	static HWND hWndButtonOK{};
+	static HWND hWndButtonCancel{};
 	
 	static std::vector<ProcessInfo> ProcessList{};
 	
@@ -1316,11 +1348,11 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 			SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
 			HFONT hFont{ CreateFontIndirect(&ncm.lfMessageFont) };
 			hWndListViewProcessList = GetDlgItem(hWndDialog, IDC_LIST1);
-			hWndOK = GetDlgItem(hWndDialog, IDOK);
-			hWndCancel = GetDlgItem(hWndDialog, IDCANCEL);
+			hWndButtonOK = GetDlgItem(hWndDialog, IDOK);
+			hWndButtonCancel = GetDlgItem(hWndDialog, IDCANCEL);
 			SetWindowFont(hWndListViewProcessList, hFont, TRUE);
-			SetWindowFont(hWndOK, hFont, TRUE);
-			SetWindowFont(hWndCancel, hFont, TRUE);
+			SetWindowFont(hWndButtonOK, hFont, TRUE);
+			SetWindowFont(hWndButtonCancel, hFont, TRUE);
 			SetWindowLongPtr(hWndListViewProcessList, GWL_STYLE, GetWindowLongPtr(hWndListViewProcessList, GWL_STYLE) | LVS_REPORT | LVS_SINGLESEL);
 			RECT rectListViewClient{};
 			GetClientRect(hWndListViewProcessList, &rectListViewClient);
@@ -1495,7 +1527,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 					case NM_DBLCLK:
 						{
 							//Select double-clicked item
-							SendMessage(hWndListViewProcessList, BM_CLICK, NULL, NULL);
+							SendMessage(hWndButtonOK, BM_CLICK, NULL, NULL);
 
 							ret = (INT_PTR)TRUE;
 						}
