@@ -316,8 +316,7 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 	}
 
 	//If target process terminates, clear FontList and ListViewFontList
-	EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-	DisableAllButtons();
+	DisableControls();
 
 	FontResource::RegisterAddRemoveFontProc(NullAddFontProc, NullRemoveFontProc);
 	FontList.clear();
@@ -374,8 +373,7 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	}
 
 	//Clear FontList and ListViewFontList
-	EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-	DisableAllButtons();
+	DisableControls();
 
 	FontResource::RegisterAddRemoveFontProc(NullAddFontProc, NullRemoveFontProc);
 	FontList.clear();

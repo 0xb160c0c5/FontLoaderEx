@@ -80,5 +80,5 @@ extern bool ProxyRemoveFontProc(const wchar_t* lpFontName);
 extern bool NullAddFontProc(const wchar_t* lpFontName);
 extern bool NullRemoveFontProc(const wchar_t* lpFontName);
 
-extern void EnableAllButtons();
-extern void DisableAllButtons();
+extern void EnableControls();
+extern void DisableControls();

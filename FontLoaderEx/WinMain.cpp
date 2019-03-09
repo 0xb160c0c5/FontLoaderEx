@@ -73,8 +73,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	ShowWindow(hWndMain, nShowCmd);
 	UpdateWindow(hWndMain);
 
+	HACCEL hAccel{ LoadAccelerators(hInstance, MAKEINTRESOURCE(IDR_ACCELERATOR1)) };
+
 	MSG Msg{};
-	BOOL bRet{};
+	BOOL bRet{}, b1{}, b2{};
 	while ((bRet = GetMessage(&Msg, NULL, 0, 0)) != 0)
 	{
 		if (bRet == -1)
@@ -83,7 +85,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		}
 		else
 		{
-			if (!(IsDialogMessage(hWndMain, &Msg)))
+			//Avoid short-circuit evaluation
+			b1 = IsDialogMessage(hWndMain, &Msg);
+			b2 = TranslateAccelerator(hWndMain, hAccel, &Msg);
+			if (!(b1 || b2))
 			{
 				TranslateMessage(&Msg);
 				DispatchMessage(&Msg);
@@ -132,8 +137,8 @@ PROXYDLLPULL ProxyDllPullResult{};
 ProcessInfo TargetProcessInfo{};
 PROCESS_INFORMATION piProxyProcess{};
 
-void EnableAllButtons();
-void DisableAllButtons();
+void EnableControls();
+void DisableControls();
 bool EnableDebugPrivilege();
 bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout);
 bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout);
@@ -153,8 +158,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	{
 	case USERMESSAGE::WORKINGTHREADTERMINATED:
 		{
-			EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-			EnableAllButtons();
+			EnableControls();
 		}
 		break;
 	case USERMESSAGE::CLOSEWORKINGTHREADTERMINATED:
@@ -358,8 +362,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					break;
 				case IDNO:
 					{
-						EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-						EnableAllButtons();
+						EnableControls();
 					}
 					break;
 				default:
@@ -370,8 +373,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		break;
 	case USERMESSAGE::WATCHTHREADTERMINATED:
 		{
-			EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-			EnableAllButtons();
+			EnableControls();
 		}
 		break;
 	}
@@ -462,11 +464,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_ACTIVATE:
 		{
+			//Process drag-drop font files onto the application icon stage II
 			if (bDragDropHasFonts)
 			{
-				//Process drag-drop font files onto the application icon stage II
-				EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-				DisableAllButtons();
+				DisableControls();
 				_beginthread(DragDropWorkingThreadProc, 0, nullptr);
 			}
 		}
@@ -476,8 +477,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			//Unload all fonts
 			if (!FontList.empty())
 			{
-				EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-				DisableAllButtons();
+				DisableControls();
 				_beginthread(CloseWorkingThreadProc, 0, nullptr);
 			}
 			else
@@ -569,8 +569,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 						{
 							//Unload and close selected fonts
 							//Won't close those failed to unload
-							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-							DisableAllButtons();
+							DisableControls();
 							_beginthread(ButtonCloseWorkingThreadProc, 0, nullptr);
 						}
 						break;
@@ -587,8 +586,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					case BN_CLICKED:
 						{
 							//Load selected fonts
-							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-							DisableAllButtons();
+							DisableControls();
 							_beginthread(ButtonLoadWorkingThreadProc, 0, nullptr);
 						}
 					default:
@@ -605,8 +603,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					case BN_CLICKED:
 						{
 							//Unload selected fonts;
-							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-							DisableAllButtons();
+							DisableControls();
 							_beginthread(ButtonUnloadWorkingThreadProc, 0, nullptr);
 						}
 					default:
@@ -846,10 +843,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											CloseHandle(piProxyProcess.hProcess);
 											piProxyProcess.hProcess = NULL;
 
-											//Close handles to selected process and duplicated handles
+											//Close handles to selected process
 											CloseHandle(SelectedProcessInfo.hProcess);
-											CloseHandle(hCurrentProcessDuplicated);
-											CloseHandle(hTargetProcessDuplicated);
 										}
 										goto break_90567013;
 									default:
@@ -933,10 +928,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											CloseHandle(piProxyProcess.hProcess);
 											piProxyProcess.hProcess = NULL;
 
-											//Close handles to selected process and duplicated handles
+											//Close handles to selected process
 											CloseHandle(SelectedProcessInfo.hProcess);
-											CloseHandle(hCurrentProcessDuplicated);
-											CloseHandle(hTargetProcessDuplicated);
 										}
 										break;
 									default:
@@ -1175,8 +1168,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			case ID_MENU_LOAD:
 				{
 					//Load selected fonts
-					EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-					DisableAllButtons();
+					DisableControls();
 					_beginthread(ButtonLoadWorkingThreadProc, 0, nullptr);
 				}
 				break;
@@ -1184,8 +1176,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			case ID_MENU_UNLOAD:
 				{
 					//Unload selected fonts;
-					EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-					DisableAllButtons();
+					DisableControls();
 					_beginthread(ButtonUnloadWorkingThreadProc, 0, nullptr);
 				}
 				break;
@@ -1194,13 +1185,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				{
 					//Unload and close selected fonts
 					//Won't close those failed to unload
-					EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-					DisableAllButtons();
+					DisableControls();
 					_beginthread(ButtonCloseWorkingThreadProc, 0, nullptr);
 				}
 				break;
 				//"Select All" menu item
 			case ID_MENU_SELECTALL:
+				{
+					ListView_SetItemState(hWndListViewFontList, -1, LVIS_SELECTED, LVIS_SELECTED);
+				}
+				//"Ctrl+A" accelerator
+			case ID_ACCELERATOR_SELECTALL:
 				{
 					ListView_SetItemState(hWndListViewFontList, -1, LVIS_SELECTED, LVIS_SELECTED);
 				}
@@ -1213,14 +1208,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	case WM_NOTIFY:
 		{
 			switch (wParam)
-			{
-				//Show shortcut menu
+			{	
 			case (WORD)ID::ListViewFontList:
 				{
 					switch (((LPNMHDR)lParam)->code)
 					{
 					case NM_RCLICK:
 						{
+							//Show shortcut menu
 							POINT ptCursor{};
 							GetCursorPos(&ptCursor);
 							TrackPopupMenu((HMENU)GetSubMenu(LoadMenu((HINSTANCE)GetWindowLongPtr(hWnd, GWLP_HINSTANCE), MAKEINTRESOURCE(IDR_CONTEXTMENU1)), 0), TPM_LEFTALIGN | TPM_RIGHTBUTTON, ptCursor.x, ptCursor.y, 0, hWnd, NULL);
@@ -1299,24 +1294,30 @@ LRESULT CALLBACK ListViewProc(HWND hWndListView, UINT Msg, WPARAM wParam, LPARAM
 INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	INT_PTR ret{};
+	 
+	static HWND hWndListViewProcessList{};
+	static HWND hWndOK{};
+	static HWND hWndCancel{};
+	
 	static std::vector<ProcessInfo> ProcessList{};
-	static bool bOrderFileName{ true };
-	static bool bOrderPID{ true };
+	
+	static bool bOrderByProcessAscending{ true };
+	static bool bOrderByPIDAscending{ true };
 
 	switch (Msg)
 	{
 	case WM_INITDIALOG:
 		{
-			bOrderFileName = true;
-			bOrderPID = true;
+			bOrderByProcessAscending = true;
+			bOrderByPIDAscending = true;
 
 			//Initialize controls
 			NONCLIENTMETRICS ncm{ sizeof(NONCLIENTMETRICS) };
 			SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
 			HFONT hFont{ CreateFontIndirect(&ncm.lfMessageFont) };
-			HWND hWndListViewProcessList{ GetDlgItem(hWndDialog, IDC_LIST1) };
-			HWND hWndOK{ GetDlgItem(hWndDialog, IDOK) };
-			HWND hWndCancel{ GetDlgItem(hWndDialog, IDCANCEL) };
+			hWndListViewProcessList = GetDlgItem(hWndDialog, IDC_LIST1);
+			hWndOK = GetDlgItem(hWndDialog, IDOK);
+			hWndCancel = GetDlgItem(hWndDialog, IDCANCEL);
 			SetWindowFont(hWndListViewProcessList, hFont, TRUE);
 			SetWindowFont(hWndOK, hFont, TRUE);
 			SetWindowFont(hWndCancel, hFont, TRUE);
@@ -1359,7 +1360,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 			{
 			case IDOK:
 				{
-					int iSelected{ ListView_GetSelectionMark(GetDlgItem(hWndDialog, IDC_LIST1)) };
+					int iSelected{ ListView_GetSelectionMark(hWndListViewProcessList) };
 					if (iSelected == -1)
 					{
 						EndDialog(hWndDialog, NULL);
@@ -1395,12 +1396,15 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 					{
 					case LVN_COLUMNCLICK:
 						{
-							//Sort item by Process or by PID
+							//Sort items
+							HWND hWndHeader{ ListView_GetHeader(hWndListViewProcessList) };
+							HDITEM hdi{ HDI_FORMAT };
 							switch (((LPNMLISTVIEW)lParam)->iSubItem)
-							{
+							{	
 							case 0:
 								{
-									bOrderFileName ?
+									//Sort items by Process
+									bOrderByProcessAscending ?
 									std::sort
 									(
 										ProcessList.begin(), ProcessList.end(),
@@ -1423,12 +1427,22 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 											return s1 > s2;
 										}
 									);
-									bOrderFileName = !bOrderFileName;
+									
+									//Add arrow to the header in list view
+									Header_GetItem(hWndHeader, 1, &hdi);
+									hdi.fmt = hdi.fmt & ~(HDF_SORTDOWN | HDF_SORTUP);
+									Header_SetItem(hWndHeader, 1, &hdi);
+									Header_GetItem(hWndHeader, 0, &hdi);
+									bOrderByProcessAscending ? hdi.fmt = (hdi.fmt & ~HDF_SORTDOWN) | HDF_SORTUP : hdi.fmt = (hdi.fmt & ~HDF_SORTUP) | HDF_SORTDOWN;
+									Header_SetItem(hWndHeader, 0, &hdi);
+
+									bOrderByProcessAscending = !bOrderByProcessAscending;
 								}
 								break;
 							case 1:
 								{
-									bOrderPID ?
+									//Sort items by PID
+									bOrderByPIDAscending ?
 									std::sort
 									(
 										ProcessList.begin(), ProcessList.end(),
@@ -1445,7 +1459,16 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 											return value1.ProcessID > value2.ProcessID;
 										}
 									);
-									bOrderPID = !bOrderPID;
+									
+									//Add arrow to the header in list view
+									Header_GetItem(hWndHeader, 0, &hdi);
+									hdi.fmt = hdi.fmt & ~(HDF_SORTDOWN | HDF_SORTUP);
+									Header_SetItem(hWndHeader, 0, &hdi);
+									Header_GetItem(hWndHeader, 1, &hdi);
+									bOrderByPIDAscending ? hdi.fmt = (hdi.fmt & ~HDF_SORTDOWN) | HDF_SORTUP : hdi.fmt = (hdi.fmt & ~HDF_SORTUP) | HDF_SORTDOWN;
+									Header_SetItem(hWndHeader, 1, &hdi);
+
+									bOrderByPIDAscending = !bOrderByPIDAscending;
 								}
 								break;
 							default:
@@ -1454,7 +1477,6 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 
 							//Reset contents of list view
 							LVITEM lvi{ LVIF_TEXT, 0 };
-							HWND hWndListViewProcessList{ GetDlgItem(hWndDialog, IDC_LIST1) };
 							for (auto& i : ProcessList)
 							{
 								lvi.iSubItem = 0;
@@ -1473,7 +1495,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 					case NM_DBLCLK:
 						{
 							//Select double-clicked item
-							SendMessage(GetDlgItem(hWndDialog, IDOK), BM_CLICK, NULL, NULL);
+							SendMessage(hWndListViewProcessList, BM_CLICK, NULL, NULL);
 
 							ret = (INT_PTR)TRUE;
 						}
@@ -1495,7 +1517,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 	return ret;
 }
 
-void EnableAllButtons()
+void EnableControls()
 {
 	EnableWindow(hWndButtonOpen, TRUE);
 	EnableWindow(hWndButtonClose, TRUE);
@@ -1504,9 +1526,10 @@ void EnableAllButtons()
 	EnableWindow(hWndButtonBroadcastWM_FONTCHANGE, TRUE);
 	EnableWindow(hWndButtonSelectProcess, TRUE);
 	EnableWindow(hWndListViewFontList, TRUE);
+	EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
 }
 
-void DisableAllButtons()
+void DisableControls()
 {
 	EnableWindow(hWndButtonOpen, FALSE);
 	EnableWindow(hWndButtonClose, FALSE);
@@ -1515,6 +1538,7 @@ void DisableAllButtons()
 	EnableWindow(hWndButtonBroadcastWM_FONTCHANGE, FALSE);
 	EnableWindow(hWndButtonSelectProcess, FALSE);
 	EnableWindow(hWndListViewFontList, FALSE);
+	EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 }
 
 bool EnableDebugPrivilege()
