@@ -51,7 +51,7 @@ void DragDropWorkingThreadProc(void* lpParameter)
 	PostMessage(hWndMain, (UINT)USERMESSAGE::WORKINGTHREADTERMINATED, NULL, NULL);
 }
 
-//Unload all fonts working thread
+//Close working thread
 void CloseWorkingThreadProc(void* lpParameter)
 {
 	bool bIsFontListChanged{ false };

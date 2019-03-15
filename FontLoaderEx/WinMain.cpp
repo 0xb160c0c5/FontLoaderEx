@@ -189,13 +189,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 						}
 						goto break_DAA249E0;
 					case PROXYDLLPULL::SUCCESSFUL:
-						{
-							Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-							iMessageLength = Edit_GetTextLength(hWndEditMessage);
-							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-							Message.str(L"");
-						}
 						goto continue_DAA249E0;
 					default:
 						break;
@@ -208,10 +201,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
 					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
 					WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
-					Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
-					iMessageLength = Edit_GetTextLength(hWndEditMessage);
-					Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-					Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 					CloseHandle(piProxyProcess.hThread);
 					CloseHandle(piProxyProcess.hProcess);
 					piProxyProcess.hProcess = NULL;
@@ -244,10 +233,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 						Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 						break;
 					}
-					Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-					iMessageLength = Edit_GetTextLength(hWndEditMessage);
-					Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-					Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 
 					//Close handle to target process
 					CloseHandle(TargetProcessInfo.hProcess);
@@ -368,6 +353,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 	case USERMESSAGE::WORKINGTHREADTERMINATED:
+		{
+			EnableControls();
+		}
+		break;
 	case USERMESSAGE::WATCHTHREADTERMINATED:
 		{
 			EnableControls();
@@ -962,7 +951,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										break;
 									}
 								}
-								//Else, inject dll myself
+								//Else DIY
 								else
 								{
 									//Check whether target process loads gdi32.dll as AddFontResourceEx() and RemoveFontResourceEx() are in it
