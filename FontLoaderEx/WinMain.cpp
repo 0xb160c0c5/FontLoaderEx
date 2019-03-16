@@ -439,7 +439,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				"\"Unload\": Remove selected fonts from Windows or target process.\r\n"
 				"\"Broadcast WM_FONTCHANGE\": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.\r\n"
 				"\"Select process\": Select a process to only load fonts to selected process.\r\n"
-				"\"Timeout:\" The time in milliseconds FontLoaderEx wait before reporting failure when loading fonts to process, default value is 5000."
+				"\"Timeout:\" The time in milliseconds FontLoaderEx waits before reporting failure while injecting dll into target process via proxy process, the default value is 5000."
 				"\"Font Name\": Names of the fonts added to the list view.\r\n"
 				"\"State\": State of the font. There are five states, \"Not loaded\", \"Loaded\", \"Load failed\", \"Unloaded\" and \"Unload failed\".\r\n"
 				"\r\n"
@@ -466,6 +466,82 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			}
 			else
 			{
+				std::wstringstream Message{};
+				int iMessageLength{};
+
+				//If proxy process is running
+				if (piProxyProcess.hProcess)
+				{
+					//Terminate watch thread
+					SetEvent(hEventTerminateWatchThread);
+					WaitForSingleObject(hWatchThread, INFINITE);
+					CloseHandle(hEventTerminateWatchThread);
+					CloseHandle(hWatchThread);
+
+					//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
+					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
+					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
+					WaitForSingleObject(hEventProxyDllPullFinished, INFINITE);
+					CloseHandle(hEventProxyDllPullFinished);
+					switch (ProxyDllPullResult)
+					{
+					case PROXYDLLPULL::SUCCESSFUL:
+						goto continue_69504405;
+					case PROXYDLLPULL::FAILED:
+						{
+							Message << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+							iMessageLength = Edit_GetTextLength(hWndEditMessage);
+							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+						}
+						goto break_69504405;
+					default:
+						break;
+					}
+				break_69504405:
+					break;
+				continue_69504405:
+
+					//Terminate proxy process
+					COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
+					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
+					WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
+					CloseHandle(piProxyProcess.hThread);
+					CloseHandle(piProxyProcess.hProcess);
+					piProxyProcess.hProcess = NULL;
+
+					//Terminate message thread
+					SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+					WaitForSingleObject(hMessageThread, INFINITE);
+					CloseHandle(hMessageThread);
+
+					//Close handle to target process
+					CloseHandle(TargetProcessInfo.hProcess);
+					TargetProcessInfo.hProcess = NULL;
+				}
+				//Else DIY
+				if (TargetProcessInfo.hProcess)
+				{
+					//Terminate watch thread
+					SetEvent(hEventTerminateWatchThread);
+					WaitForSingleObject(hWatchThread, INFINITE);
+					CloseHandle(hEventTerminateWatchThread);
+					CloseHandle(hWatchThread);
+
+					//Unload FontLoaderExInjectionDll(64).dll from target process
+					if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
+					{
+						Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+						iMessageLength = Edit_GetTextLength(hWndEditMessage);
+						Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+						Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+						break;
+					}
+
+					//Close handle to target process
+					CloseHandle(TargetProcessInfo.hProcess);
+					TargetProcessInfo.hProcess = NULL;
+				}
 				DestroyWindow(hWnd);
 			}
 		}
@@ -1554,19 +1630,21 @@ bool EnableDebugPrivilege()
 	{
 		return false;
 	}
+
 	if (!LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &luid))
 	{
 		CloseHandle(hToken);
 		return false;
 	}
+
 	TOKEN_PRIVILEGES tkp{ 1 , {luid, SE_PRIVILEGE_ENABLED} };
 	if (!AdjustTokenPrivileges(hToken, FALSE, &tkp, sizeof(tkp), NULL, NULL))
 	{
 		CloseHandle(hToken);
 		return false;
 	}
-
 	CloseHandle(hToken);
+
 	return true;
 }
 
@@ -1582,6 +1660,7 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 	{
 		return false;
 	}
+
 	if (!WriteProcessMemory(hProcess, lpRemoteBuffer, (LPVOID)szDllPath, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), NULL))
 	{
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);

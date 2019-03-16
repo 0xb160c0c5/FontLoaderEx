@@ -13,7 +13,7 @@ HANDLE hEventProxyRemoveFontFinished{};
 ADDFONT ProxyAddFontResult{};
 REMOVEFONT ProxyRemoveFontResult{};
 
-DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, size_t nParamSize)
+DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, SIZE_T nParamSize)
 {
 	LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, nParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
 	if (!lpRemoteBuffer)

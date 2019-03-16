@@ -80,7 +80,7 @@ const WCHAR szInjectionDllName[]{ L"FontLoaderExInjectionDll.dll" };
 
 bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout);
 bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout);
-DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, size_t nParamSize, DWORD Timeout);
+DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, SIZE_T nParamSize);
 bool EnableDebugPrivilege();
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
@@ -247,7 +247,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			case COPYDATA::ADDFONT:
 				{
 					ADDFONT i{};
-					if (!CallRemoteProc(hTargetProcess, pfnRemoteAddFontProc, pcds->lpData, (std::wcslen((LPWSTR)pcds->lpData) + 1) * sizeof(wchar_t), 5000))
+					if (!CallRemoteProc(hTargetProcess, pfnRemoteAddFontProc, pcds->lpData, (std::wcslen((LPWSTR)pcds->lpData) + 1) * sizeof(wchar_t)))
 					{
 						i = ADDFONT::FAILED;
 					}
@@ -263,7 +263,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			case COPYDATA::REMOVEFONT:
 				{
 					REMOVEFONT i{};
-					if (!CallRemoteProc(hTargetProcess, pfnRemoteRemoveFontProc, pcds->lpData, (std::wcslen((LPWSTR)pcds->lpData) + 1) * sizeof(wchar_t), 5000))
+					if (!CallRemoteProc(hTargetProcess, pfnRemoteRemoveFontProc, pcds->lpData, (std::wcslen((LPWSTR)pcds->lpData) + 1) * sizeof(wchar_t)))
 					{
 						i = REMOVEFONT::FAILED;
 					}
@@ -419,7 +419,7 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 	return true;
 }
 
-DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, size_t nParamSize, DWORD Timeout)
+DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, SIZE_T nParamSize)
 {
 	LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, nParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
 	if (!lpRemoteBuffer)
@@ -439,10 +439,7 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 		return false;
 	}
-	if (WaitForSingleObject(hRemoteThread, Timeout) == WAIT_TIMEOUT)
-	{
-		return false;
-	}
+	WaitForSingleObject(hRemoteThread, INFINITE);
 	VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
 	DWORD dwRemoteThreadExitCode{};
@@ -451,8 +448,8 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 		CloseHandle(hRemoteThread);
 		return false;
 	}
-
 	CloseHandle(hRemoteThread);
+
 	return dwRemoteThreadExitCode;
 }
 
@@ -465,18 +462,20 @@ bool EnableDebugPrivilege()
 	{
 		return false;
 	}
+
 	if (!LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &luid))
 	{
 		CloseHandle(hToken);
 		return false;
 	}
+
 	TOKEN_PRIVILEGES tkp{ 1 , {luid, SE_PRIVILEGE_ENABLED} };
 	if (!AdjustTokenPrivileges(hToken, FALSE, &tkp, sizeof(tkp), NULL, NULL))
 	{
 		CloseHandle(hToken);
 		return false;
 	}
-
 	CloseHandle(hToken);
+
 	return true;
 }
