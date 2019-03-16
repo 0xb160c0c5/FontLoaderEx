@@ -12,7 +12,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 {
 #ifdef _DEBUG
 	//Wait for debugger to attach
-	MessageBox(NULL, L"", L"", NULL);
+	MessageBox(NULL, L"FontLoaderEx launched!", L"FontLoaderEx", NULL);
 #endif
 
 	//Detect whether FontLoaderEx launchs FontloaderExProxy
@@ -24,8 +24,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	CloseHandle(hEventParentProcessRunning);
 
 	//Create window
-	WNDCLASS wndclass{ 0, WndProc, 0, 0, hInstance, NULL, NULL, NULL, NULL, L"FontLoaderExProxy" };
-	if (!RegisterClass(&wndclass))
+	WNDCLASS wc{ 0, WndProc, 0, 0, hInstance, NULL, NULL, NULL, NULL, L"FontLoaderExProxy" };
+	if (!RegisterClass(&wc))
 	{
 		return -1;
 	}
@@ -62,8 +62,6 @@ HANDLE hEventProxyProcessReady{};
 
 DWORD dwTimeout{};
 
-enum class USERMESSAGE : UINT { TERMINATE = WM_USER + 0x100 };
-
 enum class COPYDATA : ULONG_PTR { PROXYPROCESSHWNDSENT, PROXYPROCESSDEBUGPRIVILEGEENABLEFINISHED, INJECTDLL, DLLINJECTIONFINISHED, PULLDLL, DLLPULLFINISHED, ADDFONT, ADDFONTFINISHED, REMOVEFONT, REMOVEFONTFINISHED, TERMINATE };
 enum class PROXYPROCESSDEBUGPRIVILEGEENABLING { SUCCESSFUL, FAILED };
 enum class PROXYDLLINJECTION { SUCCESSFUL, FAILED, FAILEDTOENUMERATEMODULES, GDI32NOTLOADED, MODULENOTFOUND };
@@ -88,14 +86,6 @@ bool EnableDebugPrivilege();
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	LRESULT ret{};
-	switch ((USERMESSAGE)Msg)
-	{
-	case USERMESSAGE::TERMINATE:
-		{
-			DestroyWindow(hWnd);
-		}
-		break;
-	}
 	switch (Msg)
 	{
 	case WM_CREATE:
@@ -111,7 +101,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			hTargetProcess = (HANDLE)std::wcstoul(argv[1], nullptr, 10);
 			hWndParentProcessMessage = (HWND)std::wcstoul(argv[2], nullptr, 10);
 
-			//Get handles to synchronization objects from command line
+			//Get handles to synchronization objects
 			hEventMessageThreadReady = (HANDLE)std::wcstoul(argv[3], nullptr, 10);
 			hEventProxyProcessReady = (HANDLE)std::wcstoul(argv[4], nullptr, 10);
 
@@ -125,6 +115,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			//Notify parent process ready
 			SetEvent(hEventProxyProcessReady);
 
+			//Send HWND to parent process
+			COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::PROXYPROCESSHWNDSENT, sizeof(HWND), &hWnd };
+			FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds2, SendMessage);
+
 			//Enable SeDebugPrivilege
 			PROXYPROCESSDEBUGPRIVILEGEENABLING i{};
 			COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PROXYPROCESSDEBUGPRIVILEGEENABLEFINISHED, sizeof(PROXYPROCESSDEBUGPRIVILEGEENABLING), (void*)&i };
@@ -137,13 +131,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			{
 				i = PROXYPROCESSDEBUGPRIVILEGEENABLING::FAILED;
 				FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
-
-				break;
 			}
-			
-			//Send HWND to parent process
-			COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::PROXYPROCESSHWNDSENT, sizeof(HWND), &hWnd };
-			FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds2, SendMessage);
 		}
 		break;
 	case WM_COPYDATA:
@@ -290,7 +278,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				//Terminate self
 			case COPYDATA::TERMINATE:
 				{
-					PostMessage(hWnd, (UINT)USERMESSAGE::TERMINATE, NULL, NULL);
+					DestroyWindow(hWnd);
 				}
 			default:
 				break;

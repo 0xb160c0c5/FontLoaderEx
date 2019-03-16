@@ -180,16 +180,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					CloseHandle(hEventProxyDllPullFinished);
 					switch (ProxyDllPullResult)
 					{
+					case PROXYDLLPULL::SUCCESSFUL:
+						goto continue_DAA249E0;
 					case PROXYDLLPULL::FAILED:
 						{
-							Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+							Message << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 							iMessageLength = Edit_GetTextLength(hWndEditMessage);
 							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 						}
 						goto break_DAA249E0;
-					case PROXYDLLPULL::SUCCESSFUL:
-						goto continue_DAA249E0;
 					default:
 						break;
 					}
@@ -265,6 +265,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							CloseHandle(hEventProxyDllPullFinished);
 							switch (ProxyDllPullResult)
 							{
+							case PROXYDLLPULL::SUCCESSFUL:
+								goto continue_C82EA5C2;
 							case PROXYDLLPULL::FAILED:
 								{
 									Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
@@ -273,15 +275,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 								}
 								goto break_C82EA5C2;
-							case PROXYDLLPULL::SUCCESSFUL:
-								{
-									Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-									iMessageLength = Edit_GetTextLength(hWndEditMessage);
-									Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-									Message.str(L"");
-								}
-								goto continue_C82EA5C2;
 							default:
 								break;
 							}
@@ -293,10 +286,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
 							FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
 							WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
-							Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
-							iMessageLength = Edit_GetTextLength(hWndEditMessage);
-							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 							CloseHandle(piProxyProcess.hThread);
 							CloseHandle(piProxyProcess.hProcess);
 							piProxyProcess.hProcess = NULL;
@@ -618,12 +607,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 							static bool bIsSeDebugPrivilegeEnabled{ false };
 
-							//Convert text in EditTimeout to interger
+							//Convert text in EditTimeout to integer
 							BOOL bIsConverted{};
-#pragma warning(push)
-#pragma warning(disable:4312)
 							DWORD dwTimeoutTemp{ (DWORD)GetDlgItemInt(hWnd, (int)ID::EditTimeOut, &bIsConverted, FALSE) };
-#pragma warning(pop)
 							if (!bIsConverted)
 							{
 								MessageBox(hWnd, L"Timeout value invalid.", L"FontLoaderEx", MB_ICONEXCLAMATION);
@@ -679,23 +665,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hEventProxyDllPullFinished);
 									switch (ProxyDllPullResult)
 									{
-									case PROXYDLLPULL::FAILED:
-										{
-											Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-											iMessageLength = Edit_GetTextLength(hWndEditMessage);
-											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-										}
-										goto break_B9A25A68;
 									case PROXYDLLPULL::SUCCESSFUL:
 										{
-											Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+											Message << szInjectionDllNameByProxy << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 											iMessageLength = Edit_GetTextLength(hWndEditMessage);
 											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 											Message.str(L"");
 										}
 										goto continue_B9A25A68;
+									case PROXYDLLPULL::FAILED:
+										{
+											Message << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+											iMessageLength = Edit_GetTextLength(hWndEditMessage);
+											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+										}
+										goto break_B9A25A68;
 									default:
 										break;
 									}
@@ -730,14 +716,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								//Else DIY
 								if (TargetProcessInfo.hProcess)
 								{
-									//Terminate watch thread if started
-									if (hWatchThread)
-									{
-										SetEvent(hEventTerminateWatchThread);
-										WaitForSingleObject(hWatchThread, INFINITE);
-										CloseHandle(hEventTerminateWatchThread);
-										CloseHandle(hWatchThread);
-									}
+									//Terminate watch thread
+									SetEvent(hEventTerminateWatchThread);
+									WaitForSingleObject(hWatchThread, INFINITE);
+									CloseHandle(hEventTerminateWatchThread);
+									CloseHandle(hWatchThread);
 
 									//Unload FontLoaderExInjectionDll(64).dll from target process
 									if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
@@ -790,7 +773,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									hMessageThread = (HANDLE)_beginthreadex(nullptr, 0, MessageThreadProc, (void*)GetWindowLongPtr(hWnd, GWLP_HINSTANCE), 0, nullptr);
 									WaitForSingleObject(hEventMessageThreadReady, INFINITE);
 
-									//Run proxy process, send handle to current process and target process, HWND to message window, handle to synchronization objects as arguments to proxy process
+									//Run proxy process, send handle to current process and target process, HWND to message window, handle to synchronization objects and timeout as arguments to proxy process
 									HANDLE hCurrentProcessDuplicated{};
 									HANDLE hTargetProcessDuplicated{};
 									DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(), &hCurrentProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
@@ -832,6 +815,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 									Message.str(L"");
 
+									//Wait for message-only window to recieve HWND to proxy process
+									WaitForSingleObject(hEventProxyProcessHWNDRevieved, INFINITE);
+									CloseHandle(hEventProxyProcessHWNDRevieved);
+
 									//Wait for proxy process to enable SeDebugPrivilege
 									WaitForSingleObject(hEventProxyProcessDebugPrivilegeEnablingFinished, INFINITE);
 									CloseHandle(hEventProxyProcessDebugPrivilegeEnablingFinished);
@@ -865,10 +852,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								break_90567013:
 									break;
 								continue_90567013:
-
-									//Wait for message-only window to recieve HWND to proxy process
-									WaitForSingleObject(hEventProxyProcessHWNDRevieved, INFINITE);
-									CloseHandle(hEventProxyProcessHWNDRevieved);
 
 									//Begin dll injection
 									COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::INJECTDLL, 0, NULL };
@@ -1081,23 +1064,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hEventProxyDllPullFinished);
 									switch (ProxyDllPullResult)
 									{
-									case PROXYDLLPULL::FAILED:
-										{
-											Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-											iMessageLength = Edit_GetTextLength(hWndEditMessage);
-											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-										}
-										goto break_0F70B465;
 									case PROXYDLLPULL::SUCCESSFUL:
 										{
-											Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+											Message << szInjectionDllNameByProxy << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 											iMessageLength = Edit_GetTextLength(hWndEditMessage);
 											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 											Message.str(L"");
 										}
 										goto continue_0F70B465;
+									case PROXYDLLPULL::FAILED:
+										{
+											Message << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+											iMessageLength = Edit_GetTextLength(hWndEditMessage);
+											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+										}
+										goto break_0F70B465;
 									default:
 										break;
 									}
