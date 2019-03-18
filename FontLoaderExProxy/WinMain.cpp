@@ -231,13 +231,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			case COPYDATA::PULLDLL:
 				{
 					PROXYDLLPULL i{};
-					if (!PullModule(hTargetProcess, szInjectionDllName, dwTimeout))
+					if (PullModule(hTargetProcess, szInjectionDllName, dwTimeout))
 					{
-						i = PROXYDLLPULL::FAILED;
+						i = PROXYDLLPULL::SUCCESSFUL;
 					}
 					else
 					{
-						i = PROXYDLLPULL::SUCCESSFUL;
+						i = PROXYDLLPULL::FAILED;
 					}
 					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLPULLFINISHED, sizeof(PROXYDLLPULL), (void*)&i };
 					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
@@ -247,13 +247,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			case COPYDATA::ADDFONT:
 				{
 					ADDFONT i{};
-					if (!CallRemoteProc(hTargetProcess, pfnRemoteAddFontProc, pcds->lpData, (std::wcslen((LPWSTR)pcds->lpData) + 1) * sizeof(wchar_t)))
+					if (CallRemoteProc(hTargetProcess, pfnRemoteAddFontProc, pcds->lpData, (std::wcslen((LPWSTR)pcds->lpData) + 1) * sizeof(wchar_t)))
 					{
-						i = ADDFONT::FAILED;
+						i = ADDFONT::SUCCESSFUL;
 					}
 					else
 					{
-						i = ADDFONT::SUCCESSFUL;
+						i = ADDFONT::FAILED;
 					}
 					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::ADDFONTFINISHED, sizeof(ADDFONT), (void*)&i };
 					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
@@ -263,13 +263,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			case COPYDATA::REMOVEFONT:
 				{
 					REMOVEFONT i{};
-					if (!CallRemoteProc(hTargetProcess, pfnRemoteRemoveFontProc, pcds->lpData, (std::wcslen((LPWSTR)pcds->lpData) + 1) * sizeof(wchar_t)))
+					if (CallRemoteProc(hTargetProcess, pfnRemoteRemoveFontProc, pcds->lpData, (std::wcslen((LPWSTR)pcds->lpData) + 1) * sizeof(wchar_t)))
 					{
-						i = REMOVEFONT::FAILED;
+						i = REMOVEFONT::SUCCESSFUL;
 					}
 					else
 					{
-						i = REMOVEFONT::SUCCESSFUL;
+						i = REMOVEFONT::FAILED;
 					}
 					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::REMOVEFONTFINISHED, sizeof(REMOVEFONT), (void*)&i };
 					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);

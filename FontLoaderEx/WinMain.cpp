@@ -18,7 +18,6 @@
 #include <list>
 #include <vector>
 #include <algorithm>
-#include <cctype>
 #include "FontResource.h"
 #include "Globals.h"
 #include "resource.h"
@@ -269,7 +268,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								goto continue_C82EA5C2;
 							case PROXYDLLPULL::FAILED:
 								{
-									Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+									Message << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 									iMessageLength = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -439,7 +438,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				"\"Unload\": Remove selected fonts from Windows or target process.\r\n"
 				"\"Broadcast WM_FONTCHANGE\": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.\r\n"
 				"\"Select process\": Select a process to only load fonts to selected process.\r\n"
-				"\"Timeout:\" The time in milliseconds FontLoaderEx waits before reporting failure while injecting dll into target process via proxy process, the default value is 5000."
+				"\"Timeout:\" The time in milliseconds FontLoaderEx waits before reporting failure while injecting dll into target process via proxy process, the default value is 5000.\r\n"
 				"\"Font Name\": Names of the fonts added to the list view.\r\n"
 				"\"State\": State of the font. There are five states, \"Not loaded\", \"Loaded\", \"Load failed\", \"Unloaded\" and \"Unload failed\".\r\n"
 				"\r\n"
@@ -976,7 +975,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										goto continue_DBEA36FE;
 									case PROXYDLLINJECTION::GDI32NOTLOADED:
 										{
-											Message << L"gdi32.dll not loaded by target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
+											Message << L"Gdi32.dll not loaded by target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
 										}
 										goto continue_DBEA36FE;
 									case PROXYDLLINJECTION::MODULENOTFOUND:
@@ -1013,7 +1012,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								//Else DIY
 								else
 								{
-									//Check whether target process loads gdi32.dll as AddFontResourceEx() and RemoveFontResourceEx() are in it
+									//Check whether target process loads Gdi32.dll as AddFontResourceEx() and RemoveFontResourceEx() are in it
 									HANDLE hModuleSnapshot1{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, SelectedProcessInfo.ProcessID) };
 									MODULEENTRY32 me321{ sizeof(MODULEENTRY32) };
 									bool bIsGDI32Loaded{ false };
@@ -1029,7 +1028,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									}
 									do
 									{
-										if (!lstrcmpi(me321.szModule, L"gdi32.dll"))
+										if (!lstrcmpi(me321.szModule, L"Gdi32.dll"))
 										{
 											bIsGDI32Loaded = true;
 											break;
@@ -1039,7 +1038,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
 										CloseHandle(hModuleSnapshot1);
-										Message << L"gdi32.dll not loaded by target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
+										Message << L"Gdi32.dll not loaded by target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
 										iMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -1490,10 +1489,19 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 										ProcessList.begin(), ProcessList.end(),
 										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
 										{
-											std::wstring s1(value1.ProcessName.size(), L'\0'), s2(value2.ProcessName.size(), L'\0');
-											std::transform(value1.ProcessName.begin(), value1.ProcessName.end(), s1.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
-											std::transform(value2.ProcessName.begin(), value2.ProcessName.end(), s2.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
-											return s1 < s2;
+											int i{ lstrcmpi(value1.ProcessName.c_str(), value2.ProcessName.c_str()) };
+											if (i < 0)
+											{
+												return true;
+											}
+											if (i > 0)
+											{
+												return false;
+											}
+											else
+											{
+												return false;
+											}
 										}
 									) :
 									std::sort
@@ -1501,10 +1509,19 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 										ProcessList.begin(), ProcessList.end(),
 										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
 										{
-											std::wstring s1(value1.ProcessName.size(), L'\0'), s2(value2.ProcessName.size(), L'\0');
-											std::transform(value1.ProcessName.begin(), value1.ProcessName.end(), s1.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
-											std::transform(value2.ProcessName.begin(), value2.ProcessName.end(), s2.begin(), [](const wchar_t c) -> const wchar_t { return std::tolower(c); });
-											return s1 > s2;
+											int i{ lstrcmpi(value2.ProcessName.c_str(), value1.ProcessName.c_str()) };
+											if (i < 0)
+											{
+												return true;
+											}
+											if (i >= 0)
+											{
+												return false;
+											}
+											else
+											{
+												return false;
+											}
 										}
 									);
 									
