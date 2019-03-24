@@ -2,6 +2,12 @@
 
 #include <Windows.h>
 #include <string>
+#include <assert.h>
+
+#ifdef _DEBUG
+	#define ADDFONT_WAIT_MILLISEC 300
+	#define REMOVEFONT_WAIT_MILLISEC 300
+#endif
 
 class FontResource
 {

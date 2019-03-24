@@ -1,6 +1,6 @@
 ﻿#include <Windows.h>
 #include <windowsx.h>
-#include <cstring>
+#include <cstddef>
 #include "FontResource.h"
 #include "Globals.h"
 
@@ -13,50 +13,66 @@ HANDLE hEventProxyRemoveFontFinished{};
 ADDFONT ProxyAddFontResult{};
 REMOVEFONT ProxyRemoveFontResult{};
 
-DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, SIZE_T nParamSize)
+DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t nParamSize)
 {
-	LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, nParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
-	if (!lpRemoteBuffer)
-	{
-		return false;
-	}
+	DWORD dwRet{};
 
-	if (!WriteProcessMemory(hProcess, lpRemoteBuffer, lpParameter, nParamSize, NULL))
+	do
 	{
+		LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, nParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
+		if (!lpRemoteBuffer)
+		{
+			dwRet = 0;
+			break;
+		}
+
+		if (!WriteProcessMemory(hProcess, lpRemoteBuffer, lpParameter, nParamSize, NULL))
+		{
+			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
+
+			dwRet = 0;
+			break;
+		}
+
+		HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)lpRemoteProcAddr, lpRemoteBuffer, 0, NULL) };
+		if (!hRemoteThread)
+		{
+			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
+
+			dwRet = 0;
+			break;
+		}
+		WaitForSingleObject(hRemoteThread, INFINITE);
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-		return false;
-	}
 
-	HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)lpRemoteProcAddr, lpRemoteBuffer, 0, NULL) };
-	if (!hRemoteThread)
-	{
-		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-		return false;
-	}
-	WaitForSingleObject(hRemoteThread, INFINITE);
-	VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
+		DWORD dwRemoteThreadExitCode{};
+		if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
+		{
+			CloseHandle(hRemoteThread);
 
-	DWORD dwRemoteThreadExitCode{};
-	if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
-	{
+			dwRet = 0;
+			break;
+		}
 		CloseHandle(hRemoteThread);
-		return false;
-	}
-	CloseHandle(hRemoteThread);
 
-	return dwRemoteThreadExitCode;
+		dwRet = dwRemoteThreadExitCode;
+	} while (false);
+
+	return dwRet;
 }
 
 #ifdef _DEBUG
 bool DefaultAddFontProc(const wchar_t* lpszFontName)
 {
-	Sleep(300);
+	Sleep(ADDFONT_WAIT_MILLISEC);
+
 	return true;
 }
 
 bool DefaultRemoveFontProc(const wchar_t* lpszFontName)
 {
-	Sleep(300);
+	Sleep(REMOVEFONT_WAIT_MILLISEC);
+
 	return true;
 }
 #else
@@ -83,7 +99,8 @@ bool RemoteRemoveFontProc(const wchar_t* lpszFontName)
 
 bool ProxyAddFontProc(const wchar_t* lpszFontName)
 {
-	bool ret{};
+	bool bRet{};
+
 	COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::ADDFONT, (DWORD)(std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), (void*)lpszFontName };
 	FORWARD_WM_COPYDATA(hWndProxy, hWndMain, &cds, SendMessage);
 	WaitForSingleObject(hEventProxyAddFontFinished, INFINITE);
@@ -92,22 +109,24 @@ bool ProxyAddFontProc(const wchar_t* lpszFontName)
 	{
 	case ADDFONT::SUCCESSFUL:
 		{
-			ret = true;
+			bRet = true;
 		}
 		break;
 	case ADDFONT::FAILED:
 		{
-			ret = false;
+			bRet = false;
 		}
 	default:
 		break;
 	}
-	return ret;
+
+	return bRet;
 }
 
 bool ProxyRemoveFontProc(const wchar_t* lpszFontName)
 {
-	bool ret{};
+	bool bRet{};
+
 	COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::REMOVEFONT, (DWORD)(std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), (void*)lpszFontName };
 	FORWARD_WM_COPYDATA(hWndProxy, hWndMain, &cds, SendMessage);
 	WaitForSingleObject(hEventProxyRemoveFontFinished, INFINITE);
@@ -116,17 +135,18 @@ bool ProxyRemoveFontProc(const wchar_t* lpszFontName)
 	{
 	case REMOVEFONT::SUCCESSFUL:
 		{
-			ret = true;
+			bRet = true;
 		}
 		break;
 	case REMOVEFONT::FAILED:
 		{
-			ret = false;
+			bRet = false;
 		}
 	default:
 		break;
 	}
-	return ret;
+
+	return bRet;
 }
 
 bool NullAddFontProc(const wchar_t* lpszFontName)
@@ -141,10 +161,12 @@ bool NullRemoveFontProc(const wchar_t* lpszFontName)
 
 FontResource::FontResource(const std::wstring& FontName) : strFontName_(FontName)
 {
+	return;
 }
 
 FontResource::FontResource(const wchar_t* FontName) : strFontName_(FontName)
 {
+	return;
 }
 
 FontResource::~FontResource()
@@ -164,6 +186,7 @@ void FontResource::RegisterAddRemoveFontProc(pfnAddFontProc AddFontProc, pfnRemo
 bool FontResource::Load()
 {
 	bool bRet;
+
 	if (!bIsLoaded_)
 	{
 		if (AddFontProc_(strFontName_.c_str()))
@@ -180,12 +203,14 @@ bool FontResource::Load()
 	{
 		bRet = true;
 	}
+
 	return bRet;
 }
 
 bool FontResource::Unload()
 {
 	bool bRet;
+
 	if (bIsLoaded_)
 	{
 		if (RemoveFontProc_(strFontName_.c_str()))
@@ -202,6 +227,7 @@ bool FontResource::Unload()
 	{
 		bRet = true;
 	}
+
 	return bRet;
 }
 

@@ -7,17 +7,11 @@
 extern std::list<FontResource> FontList;
 
 extern HWND hWndMain;
-extern HWND hWndButtonOpen;
-extern HWND hWndButtonClose;
-extern HWND hWndButtonLoad;
-extern HWND hWndButtonUnload;
-extern HWND hWndButtonBroadcastWM_FONTCHANGE;
-extern HWND hWndEditTimeout;
-extern HWND hWndButtonSelectProcess;
-extern HWND hWndListViewFontList;
-extern HWND hWndEditMessage;
+extern HMENU hMenuContextListViewFontList;
 
-enum class USERMESSAGE : UINT { WORKINGTHREADTERMINATED = WM_USER + 0x100, CLOSEWORKINGTHREADTERMINATED, TERMINATEWATCHTHREAD, WATCHTHREADTERMINATED, TERMINATEMESSAGETHREAD };
+enum class ID : WORD { ButtonOpen = 20, ButtonClose, ButtonLoad, ButtonUnload, ButtonBroadcastWM_FONTCHANGE, StaticTimeout, EditTimeout, ButtonSelectProcess, ListViewFontList, Splitter, EditMessage };
+
+enum class USERMESSAGE : UINT {DRAGDROPWORKINGTHREADTERMINATED = WM_USER + 0x100, BUTTONCLOSEWORKINGTHREADTERMINATED, BUTTONLOADWORKINGTHREADTERMINATED, BUTTONUNLOADWORKINGTHREADTERMINATED, CLOSEWORKINGTHREADTERMINATED,TERMINATEWATCHTHREAD, WATCHTHREADTERMINATED, TERMINATEMESSAGETHREAD };
 
 extern bool bDragDropHasFonts;
 
@@ -49,17 +43,18 @@ extern HWND hWndProxy;
 extern HWND hWndMessage;
 
 extern HANDLE hEventParentProcessRunning;
+extern HANDLE hEventMessageThreadNotReady;
 extern HANDLE hEventMessageThreadReady;
 extern HANDLE hEventTerminateWatchThread;
 extern HANDLE hEventProxyProcessReady;
 extern HANDLE hEventProxyProcessDebugPrivilegeEnablingFinished;
 extern HANDLE hEventProxyProcessHWNDRevieved;
 extern HANDLE hEventProxyDllInjectionFinished;
-extern HANDLE hEventProxyDllPullFinished;
+extern HANDLE hEventProxyDllPullingFinished;
 extern HANDLE hEventProxyAddFontFinished;
 extern HANDLE hEventProxyRemoveFontFinished;
 
-enum class COPYDATA : ULONG_PTR { PROXYPROCESSHWNDSENT, PROXYPROCESSDEBUGPRIVILEGEENABLINGFINISHED, INJECTDLL, DLLINJECTIONFINISHED, PULLDLL, DLLPULLFINISHED, ADDFONT, ADDFONTFINISHED, REMOVEFONT, REMOVEFONTFINISHED, TERMINATE };
+enum class COPYDATA : ULONG_PTR { PROXYPROCESSHWNDSENT, PROXYPROCESSDEBUGPRIVILEGEENABLINGFINISHED, INJECTDLL, DLLINJECTIONFINISHED, PULLDLL, DLLPULLINGFINISHED, ADDFONT, ADDFONTFINISHED, REMOVEFONT, REMOVEFONTFINISHED, TERMINATE };
 enum class PROXYPROCESSDEBUGPRIVILEGEENABLING { SUCCESSFUL, FAILED };
 enum class PROXYDLLINJECTION { SUCCESSFUL, FAILED, FAILEDTOENUMERATEMODULES, GDI32NOTLOADED, MODULENOTFOUND };
 enum class PROXYDLLPULL { SUCCESSFUL, FAILED };
@@ -68,7 +63,7 @@ enum class REMOVEFONT { SUCCESSFUL, FAILED };
 
 extern PROXYPROCESSDEBUGPRIVILEGEENABLING ProxyDebugPrivilegeEnablingResult;
 extern PROXYDLLINJECTION ProxyDllInjectionResult;
-extern PROXYDLLPULL ProxyDllPullResult;
+extern PROXYDLLPULL ProxyDllPullingResult;
 extern ADDFONT ProxyAddFontResult;
 extern REMOVEFONT ProxyRemoveFontResult;
 
@@ -80,6 +75,3 @@ extern bool ProxyAddFontProc(const wchar_t* lpFontName);
 extern bool ProxyRemoveFontProc(const wchar_t* lpFontName);
 extern bool NullAddFontProc(const wchar_t* lpFontName);
 extern bool NullRemoveFontProc(const wchar_t* lpFontName);
-
-extern void EnableControls();
-extern void DisableControls();

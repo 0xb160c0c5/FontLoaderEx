@@ -1,5 +1,5 @@
 ﻿#if !defined(UNICODE) || !defined(_UNICODE)
-	#error Unicode character set required
+#error Unicode character set required
 #endif
 
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -18,8 +18,10 @@
 #include <list>
 #include <vector>
 #include <algorithm>
+#include <cstddef>
 #include "FontResource.h"
 #include "Globals.h"
+#include "Splitter.h"
 #include "resource.h"
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
@@ -27,6 +29,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 std::list<FontResource> FontList{};
 
 HWND hWndMain{};
+HMENU hMenuContextListViewFontList{};
 
 bool bDragDropHasFonts{ false };
 
@@ -62,13 +65,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		return -1;
 	}
 
-	if (!(hWndMain = CreateWindow(L"FontLoaderEx", L"FontLoaderEx", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_BORDER | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT, 700, 700, NULL, NULL, hInstance, NULL)))
+	if (!(hWndMain = CreateWindow(L"FontLoaderEx", L"FontLoaderEx", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 700, 700, NULL, NULL, hInstance, NULL)))
 	{
 		return -1;
 	}
 
 	ShowWindow(hWndMain, nShowCmd);
 	UpdateWindow(hWndMain);
+
+	hMenuContextListViewFontList = GetSubMenu(LoadMenu(hInstance, MAKEINTRESOURCE(IDR_CONTEXTMENU1)), 0);
 
 	HACCEL hAccel{ LoadAccelerators(hInstance, MAKEINTRESOURCE(IDR_ACCELERATOR1)) };
 
@@ -96,49 +101,39 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	return (int)Msg.wParam;
 }
 
-HWND hWndButtonOpen{};
-HWND hWndButtonClose{};
-HWND hWndButtonLoad{};
-HWND hWndButtonUnload{};
-HWND hWndButtonBroadcastWM_FONTCHANGE{};
-HWND hWndEditTimeout{};
-HWND hWndButtonSelectProcess{};
-HWND hWndListViewFontList{};
-HWND hWndEditMessage{};
-enum class ID : WORD { ButtonOpen = 20, ButtonClose, ButtonLoad, ButtonUnload, ButtonBroadcastWM_FONTCHANGE, StaticTimeout, EditTimeOut, ButtonSelectProcess, ListViewFontList, EditMessage };
-
 LRESULT CALLBACK ListViewProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM IParam);
 
-LONG_PTR OldListViewProc;
+WNDPROC OldStaticProc;
+WNDPROC OldListViewProc;
 
 void* pfnRemoteAddFontProc{};
 void* pfnRemoteRemoveFontProc{};
+
 HANDLE hWatchThread{};
 HANDLE hMessageThread{};
 HANDLE hProxyProcess{};
 HWND hWndProxy{};
 
 HANDLE hEventParentProcessRunning{};
+HANDLE hEventMessageThreadNotReady{};
 HANDLE hEventMessageThreadReady{};
 HANDLE hEventTerminateWatchThread{};
 HANDLE hEventProxyProcessReady{};
 HANDLE hEventProxyProcessDebugPrivilegeEnablingFinished{};
 HANDLE hEventProxyProcessHWNDRevieved{};
 HANDLE hEventProxyDllInjectionFinished{};
-HANDLE hEventProxyDllPullFinished{};
+HANDLE hEventProxyDllPullingFinished{};
 
 PROXYPROCESSDEBUGPRIVILEGEENABLING ProxyDebugPrivilegeEnablingResult{};
 PROXYDLLINJECTION ProxyDllInjectionResult{};
-PROXYDLLPULL ProxyDllPullResult{};
+PROXYDLLPULL ProxyDllPullingResult{};
 
 ProcessInfo TargetProcessInfo{};
 PROCESS_INFORMATION piProxyProcess{};
 
 DWORD dwTimeout{};
 
-void EnableControls();
-void DisableControls();
 bool EnableDebugPrivilege();
 bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout);
 bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout);
@@ -154,10 +149,13 @@ const WCHAR szInjectionDllNameByProxy[]{ L"FontLoaderExInjectionDll64.dll" };
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	LRESULT ret{};
+
 	switch ((USERMESSAGE)Msg)
 	{
 	case USERMESSAGE::CLOSEWORKINGTHREADTERMINATED:
 		{
+			HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
+
 			if (wParam)
 			{
 				std::wstringstream Message{};
@@ -175,9 +173,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
 					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
 					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
-					WaitForSingleObject(hEventProxyDllPullFinished, INFINITE);
-					CloseHandle(hEventProxyDllPullFinished);
-					switch (ProxyDllPullResult)
+					WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
+					CloseHandle(hEventProxyDllPullingFinished);
+					switch (ProxyDllPullingResult)
 					{
 					case PROXYDLLPULL::SUCCESSFUL:
 						goto continue_DAA249E0;
@@ -207,6 +205,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					//Terminate message thread
 					SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 					WaitForSingleObject(hMessageThread, INFINITE);
+					DWORD dwMessageThreadExitCode{};
+					GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+					if (dwMessageThreadExitCode)
+					{
+						MessageBox(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+					}
 					CloseHandle(hMessageThread);
 
 					//Close handle to target process
@@ -237,6 +241,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					CloseHandle(TargetProcessInfo.hProcess);
 					TargetProcessInfo.hProcess = NULL;
 				}
+
 				DestroyWindow(hWnd);
 			}
 			else
@@ -260,9 +265,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
 							COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
 							FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
-							WaitForSingleObject(hEventProxyDllPullFinished, INFINITE);
-							CloseHandle(hEventProxyDllPullFinished);
-							switch (ProxyDllPullResult)
+							WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
+							CloseHandle(hEventProxyDllPullingFinished);
+							switch (ProxyDllPullingResult)
 							{
 							case PROXYDLLPULL::SUCCESSFUL:
 								goto continue_C82EA5C2;
@@ -292,6 +297,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							//Terminate message thread
 							SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 							WaitForSingleObject(hMessageThread, INFINITE);
+							DWORD dwMessageThreadExitCode{};
+							GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+							if (dwMessageThreadExitCode)
+							{
+								MessageBox(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+							}
 							CloseHandle(hMessageThread);
 
 							//Close handle to target process
@@ -317,21 +328,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 								break;
 							}
-							Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-							iMessageLength = Edit_GetTextLength(hWndEditMessage);
-							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 
 							//Close handle to target process
 							CloseHandle(TargetProcessInfo.hProcess);
 							TargetProcessInfo.hProcess = NULL;
 						}
+
 						DestroyWindow(hWnd);
 					}
 					break;
 				case IDNO:
 					{
-						EnableControls();
+						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), TRUE);
+						EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+						EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
 					}
 					break;
 				default:
@@ -340,16 +355,43 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		break;
-	case USERMESSAGE::WORKINGTHREADTERMINATED:
+	case USERMESSAGE::BUTTONCLOSEWORKINGTHREADTERMINATED:
 		{
-			EnableControls();
+			if (FontList.empty())
+			{
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), TRUE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+				EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_GRAYED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_GRAYED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_GRAYED);
+			}
+		}
+		break;
+	case USERMESSAGE::DRAGDROPWORKINGTHREADTERMINATED:
+	case USERMESSAGE::BUTTONLOADWORKINGTHREADTERMINATED:
+	case USERMESSAGE::BUTTONUNLOADWORKINGTHREADTERMINATED:
+		{
+			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), TRUE);
+			EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+			EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
 		}
 		break;
 	case USERMESSAGE::WATCHTHREADTERMINATED:
 		{
-			EnableControls();
-			EnableWindow(hWndEditTimeout, TRUE);
+			EnableWindow(GetDlgItem(hWndMain, (int)ID::EditTimeout), TRUE);
+			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
 		}
+		break;
+	default:
 		break;
 	}
 	switch (Msg)
@@ -358,89 +400,98 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		{
 			RECT rectClientMain{};
 			GetClientRect(hWnd, &rectClientMain);
+
 			NONCLIENTMETRICS ncm{ sizeof(NONCLIENTMETRICS) };
 			SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
 			HFONT hFont{ CreateFontIndirect(&ncm.lfMessageFont) };
 
 			//Initialize ButtonOpen
-			hWndButtonOpen = CreateWindow(WC_BUTTON, L"Open", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 0, 50, 50, hWnd, (HMENU)ID::ButtonOpen, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			HWND hWndButtonOpen{ CreateWindow(WC_BUTTON, L"Open", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 0, 50, 50, hWnd, (HMENU)ID::ButtonOpen, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndButtonOpen, hFont, TRUE);
 
 			//Initialize ButtonClose
-			hWndButtonClose = CreateWindow(WC_BUTTON, L"Close", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 50, 0, 50, 50, hWnd, (HMENU)ID::ButtonClose, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			HWND hWndButtonClose{ CreateWindow(WC_BUTTON, L"Close", WS_CHILD | WS_VISIBLE | WS_DISABLED | WS_TABSTOP | BS_PUSHBUTTON, 50, 0, 50, 50, hWnd, (HMENU)ID::ButtonClose, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndButtonClose, hFont, TRUE);
 
 			//Initialize ButtonLoad
-			hWndButtonLoad = CreateWindow(WC_BUTTON, L"Load", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 100, 0, 50, 50, hWnd, (HMENU)ID::ButtonLoad, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			HWND hWndButtonLoad{ CreateWindow(WC_BUTTON, L"Load", WS_CHILD | WS_VISIBLE | WS_DISABLED | WS_TABSTOP | BS_PUSHBUTTON, 100, 0, 50, 50, hWnd, (HMENU)ID::ButtonLoad, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndButtonLoad, hFont, TRUE);
 
 			//Initialize ButtonUnload
-			hWndButtonUnload = CreateWindow(WC_BUTTON, L"Unload", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 150, 0, 50, 50, hWnd, (HMENU)ID::ButtonUnload, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			HWND hWndButtonUnload{ CreateWindow(WC_BUTTON, L"Unload", WS_CHILD | WS_VISIBLE | WS_DISABLED | WS_TABSTOP | BS_PUSHBUTTON, 150, 0, 50, 50, hWnd, (HMENU)ID::ButtonUnload, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndButtonUnload, hFont, TRUE);
 
 			//Initialize ButtonBroadcastWM_FONTCHANGE
-			hWndButtonBroadcastWM_FONTCHANGE = CreateWindow(WC_BUTTON, L"Broadcast WM_FONTCHANGE", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 200, 0, 250, 21, hWnd, (HMENU)ID::ButtonBroadcastWM_FONTCHANGE, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			HWND hWndButtonBroadcastWM_FONTCHANGE{ CreateWindow(WC_BUTTON, L"Broadcast WM_FONTCHANGE", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 200, 0, 250, 21, hWnd, (HMENU)ID::ButtonBroadcastWM_FONTCHANGE, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndButtonBroadcastWM_FONTCHANGE, hFont, TRUE);
 
 			//Initialize EditTimeout and label
 			HWND hWndStaticTimeout{ CreateWindow(WC_STATIC, L"Timeout:", WS_CHILD | WS_VISIBLE | SS_LEFT , 470, 1, 50, 19, hWnd, (HMENU)ID::StaticTimeout, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
-			hWndEditTimeout = CreateWindow(WC_EDIT, L"5000", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_LEFT | ES_NUMBER | ES_AUTOHSCROLL | ES_NOHIDESEL, 520, 0, 70, 21, hWnd, (HMENU)ID::EditTimeOut, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
-			dwTimeout = 5000;
+			HWND hWndEditTimeout{ CreateWindow(WC_EDIT, L"5000", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_LEFT | ES_NUMBER | ES_AUTOHSCROLL | ES_NOHIDESEL, 520, 0, 70, 21, hWnd, (HMENU)ID::EditTimeout, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndStaticTimeout, hFont, TRUE);
 			SetWindowFont(hWndEditTimeout, hFont, TRUE);
-			
+
+			dwTimeout = 5000;
+
 			//Initialize ButtonSelectProcess
-			hWndButtonSelectProcess = CreateWindow(WC_BUTTON, L"Select process", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 200, 29, 250, 21, hWnd, (HMENU)ID::ButtonSelectProcess, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			HWND hWndButtonSelectProcess{ CreateWindow(WC_BUTTON, L"Select process", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 200, 29, 250, 21, hWnd, (HMENU)ID::ButtonSelectProcess, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndButtonSelectProcess, hFont, TRUE);
-			
+
 			//Initialize ListViewFontList
-			hWndListViewFontList = CreateWindow(WC_LISTVIEW, L"FontList", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | LVS_REPORT | LVS_SHOWSELALWAYS, 0, 50, rectClientMain.right - rectClientMain.left, 300, hWnd, (HMENU)ID::ListViewFontList, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			HWND hWndListViewFontList{ CreateWindow(WC_LISTVIEW, L"FontList", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | LVS_REPORT | LVS_SHOWSELALWAYS, 0, 50, rectClientMain.right - rectClientMain.left, 300, hWnd, (HMENU)ID::ListViewFontList, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
+			ListView_SetExtendedListViewStyle(hWndListViewFontList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 			SetWindowFont(hWndListViewFontList, hFont, TRUE);
-			DragAcceptFiles(hWndListViewFontList, TRUE);
-			OldListViewProc = GetWindowLongPtr(hWndListViewFontList, GWLP_WNDPROC);
-			SetWindowLongPtr(hWndListViewFontList, GWLP_WNDPROC, (LONG_PTR)ListViewProc);
-			RECT rectClientListViewFontList{};
-			GetClientRect(hWndListViewFontList, &rectClientListViewFontList);
-			LVCOLUMN lvc1{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectClientListViewFontList.right - rectClientListViewFontList.left) * 4 / 5 , (LPWSTR)L"Font Name" };
-			LVCOLUMN lvc2{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectClientListViewFontList.right - rectClientListViewFontList.left) * 1 / 5 , (LPWSTR)L"State" };
+
+			RECT rectListViewFontListClient{};
+			GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+			LVCOLUMN lvc1{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectListViewFontListClient.right - rectListViewFontListClient.left) * 4 / 5 , (LPWSTR)L"Font Name" };
+			LVCOLUMN lvc2{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectListViewFontListClient.right - rectListViewFontListClient.left) * 1 / 5 , (LPWSTR)L"State" };
 			ListView_InsertColumn(hWndListViewFontList, 0, &lvc1);
 			ListView_InsertColumn(hWndListViewFontList, 1, &lvc2);
-			ListView_SetExtendedListViewStyle(hWndListViewFontList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+
+			DragAcceptFiles(hWndListViewFontList, TRUE);
+
+			OldListViewProc = (WNDPROC)SetWindowLongPtr(hWndListViewFontList, GWLP_WNDPROC, (LONG_PTR)ListViewProc);
+
 			CHANGEFILTERSTRUCT cfs{ sizeof(CHANGEFILTERSTRUCT) };
 			ChangeWindowMessageFilterEx(hWndListViewFontList, WM_DROPFILES, MSGFLT_ALLOW, &cfs);
 			ChangeWindowMessageFilterEx(hWndListViewFontList, WM_COPYDATA, MSGFLT_ALLOW, &cfs);
 			ChangeWindowMessageFilterEx(hWndListViewFontList, 0x0049, MSGFLT_ALLOW, &cfs);	//WM_COPYGLOBALDATA
 
+			//Initialize StaticSplitter
+			InitSplitter();
+			HWND hWndSplitter{ CreateWindow(UC_SPLITTER, NULL, WS_CHILD | WS_VISIBLE, 0, 350, rectClientMain.right - rectClientMain.left, 5, hWnd, (HMENU)ID::Splitter, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
+
 			//Initialize EditMessage
-			hWndEditMessage = CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_READONLY | ES_LEFT | ES_MULTILINE, 0, 350, rectClientMain.right - rectClientMain.left, rectClientMain.bottom - rectClientMain.top - 350, hWnd, (HMENU)ID::EditMessage, ((LPCREATESTRUCT)lParam)->hInstance, NULL);
+			HWND hWndEditMessage{ CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_READONLY | ES_LEFT | ES_MULTILINE | ES_NOHIDESEL, 0, 355, rectClientMain.right - rectClientMain.left, rectClientMain.bottom - rectClientMain.top - 355, hWnd, (HMENU)ID::EditMessage, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndEditMessage, hFont, TRUE);
 			Edit_SetText(hWndEditMessage,
-				L"Temporarily load fonts to Windows or specific process.\r\n"
+				LR"(Temporarily load fonts to Windows or specific process.)""\r\n"
 				"\r\n"
-				"How to load fonts to Windows:\r\n"
-				"1.Drag-drop font files onto the icon of this application.\r\n"
-				"2.Click \"Open\" button to select fonts or drag-drop font files onto the list view, then click \"Load\" button.\r\n"
+				R"(How to load fonts to Windows:)""\r\n"
+				R"(1.Drag-drop font files onto the icon of this application.)""\r\n"
+				R"(2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.)""\r\n"
 				"\r\n"
-				"How to unload fonts from Windows:\r\n"
-				"Select all fonts then click \"Unload\" or \"Close\" button or the X at the upper-right cornor.\r\n"
+				R"(How to unload fonts from Windows:)""\r\n"
+				R"(Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.)""\r\n"
 				"\r\n"
-				"How to load fonts to process:\r\n"
-				"1.Click \"Click to select process\", select a process.\r\n"
-				"2.Click \"Open\" button to select fonts or drag-drop font files onto the list view, then click \"Load\" button.\r\n"
+				R"(How to load fonts to process:)""\r\n"
+				R"(1.Click "Click to select process", select a process.)""\r\n"
+				R"(2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.)""\r\n"
 				"\r\n"
-				"How to unload fonts from process:\r\n"
-				"Select all fonts then click \"Unload\" or \"Close\" button or the X at the upper-right cornor or terminate selected process.\r\n"
+				R"(How to unload fonts from process:)""\r\n"
+				R"(Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor or terminate selected process.)""\r\n"
 				"\r\n"
-				"UI description:\r\n"
-				"\"Open\": Add fonts to the list view.\r\n"
-				"\"Close\": Remove selected fonts from Windows or target process and the list view.\r\n"
-				"\"Load\": Add selected fonts to Windows or target process.\r\n"
-				"\"Unload\": Remove selected fonts from Windows or target process.\r\n"
-				"\"Broadcast WM_FONTCHANGE\": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.\r\n"
-				"\"Select process\": Select a process to only load fonts to selected process.\r\n"
-				"\"Timeout:\" The time in milliseconds FontLoaderEx waits before reporting failure while injecting dll into target process via proxy process, the default value is 5000.\r\n"
-				"\"Font Name\": Names of the fonts added to the list view.\r\n"
-				"\"State\": State of the font. There are five states, \"Not loaded\", \"Loaded\", \"Load failed\", \"Unloaded\" and \"Unload failed\".\r\n"
+				R"(UI description:)""\r\n"
+				R"("Open": Add fonts to the list view.)""\r\n"
+				R"("Close": Remove selected fonts from Windows or target process and the list view.)""\r\n"
+				R"("Load": Add selected fonts to Windows or target process.)""\r\n"
+				R"("Unload": Remove selected fonts from Windows or target process.)""\r\n"
+				R"("Broadcast WM_FONTCHANGE": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.)""\r\n"
+				R"("Select process": Select a process to only load fonts to selected process.)""\r\n"
+				R"("Timeout": The time in milliseconds FontLoaderEx waits before reporting failure while injecting dll into target process via proxy process, the default value is 5000.)""\r\n"
+				R"("Font Name": Names of the fonts added to the list view.)""\r\n"
+				R"("State": State of the font. There are five states, "Not loaded", "Loaded", "Load failed", "Unloaded" and "Unload failed".)""\r\n"
 				"\r\n"
 			);
 		}
@@ -450,7 +501,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			//Process drag-drop font files onto the application icon stage II
 			if (bDragDropHasFonts)
 			{
-				DisableControls();
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), FALSE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), FALSE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), FALSE);
+				EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+
 				_beginthread(DragDropWorkingThreadProc, 0, nullptr);
 			}
 		}
@@ -460,11 +516,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			//Unload all fonts
 			if (!FontList.empty())
 			{
-				DisableControls();
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), FALSE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), FALSE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), FALSE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), FALSE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), FALSE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), FALSE);
+				EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+
 				_beginthread(CloseWorkingThreadProc, 0, nullptr);
 			}
 			else
 			{
+				HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
+
 				std::wstringstream Message{};
 				int iMessageLength{};
 
@@ -480,9 +546,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
 					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
 					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
-					WaitForSingleObject(hEventProxyDllPullFinished, INFINITE);
-					CloseHandle(hEventProxyDllPullFinished);
-					switch (ProxyDllPullResult)
+					WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
+					CloseHandle(hEventProxyDllPullingFinished);
+					switch (ProxyDllPullingResult)
 					{
 					case PROXYDLLPULL::SUCCESSFUL:
 						goto continue_69504405;
@@ -512,6 +578,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					//Terminate message thread
 					SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 					WaitForSingleObject(hMessageThread, INFINITE);
+					DWORD dwMessageThreadExitCode{};
+					GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+					if (dwMessageThreadExitCode)
+					{
+						MessageBox(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+					}
 					CloseHandle(hMessageThread);
 
 					//Close handle to target process
@@ -541,7 +613,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					CloseHandle(TargetProcessInfo.hProcess);
 					TargetProcessInfo.hProcess = NULL;
 				}
-				DestroyWindow(hWnd);
+
+				ret = DefWindowProc(hWnd, Msg, wParam, lParam);
 			}
 		}
 		break;
@@ -559,9 +632,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				{
 					switch (HIWORD(wParam))
 					{
+						//Open dialog and add fonts to list view
 					case BN_CLICKED:
 						{
-							//Open dialog and add fonts to list view
+							HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)ID::ListViewFontList) };
+							HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
+
 							WCHAR szOpenFileNames[32768]{};
 							OPENFILENAME ofn{ sizeof(ofn), hWnd, NULL, L"Font Files(*.ttf;*.ttc;*.otf)\0*.ttf;*.ttc;*.otf\0", NULL, 0, 0, szOpenFileNames, sizeof(szOpenFileNames), NULL, 0, NULL, NULL, OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT };
 							if (GetOpenFileName(&ofn))
@@ -572,12 +648,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								if (PathIsDirectory(ofn.lpstrFile))
 								{
 									WCHAR* lpszFileName{ ofn.lpstrFile + ofn.nFileOffset };
+
 									do
 									{
 										WCHAR lpszPath[MAX_PATH]{};
 										PathCombine(lpszPath, ofn.lpstrFile, lpszFileName);
 										lpszFileName += std::wcslen(lpszFileName) + 1;
 										FontList.push_back(lpszPath);
+
 										lvi.iSubItem = 0;
 										lvi.pszText = (LPWSTR)lpszPath;
 										ListView_InsertItem(hWndListViewFontList, &lvi);
@@ -586,16 +664,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										ListView_SetItem(hWndListViewFontList, &lvi);
 										ListView_SetItemState(hWndListViewFontList, lvi.iItem, LVIS_SELECTED, LVIS_SELECTED);
 										lvi.iItem++;
-										Message.str(L"");
+
 										Message << lpszPath << L" opened\r\n";
 										iMessageLenth = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, iMessageLenth, iMessageLenth);
 										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+										Message.str(L"");
 									} while (*lpszFileName);
 								}
 								else
 								{
 									FontList.push_back(ofn.lpstrFile);
+
 									lvi.iSubItem = 0;
 									lvi.pszText = (LPWSTR)ofn.lpstrFile;
 									ListView_InsertItem(hWndListViewFontList, &lvi);
@@ -603,6 +683,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									lvi.pszText = (LPWSTR)L"Not loaded";
 									ListView_SetItem(hWndListViewFontList, &lvi);
 									ListView_SetItemState(hWndListViewFontList, lvi.iItem, LVIS_SELECTED, LVIS_SELECTED);
+
 									Message << ofn.lpstrFile << L" opened\r\n";
 									iMessageLenth = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, iMessageLenth, iMessageLenth);
@@ -611,7 +692,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								iMessageLenth = Edit_GetTextLength(hWndEditMessage);
 								Edit_SetSel(hWndEditMessage, iMessageLenth, iMessageLenth);
 								Edit_ReplaceSel(hWndEditMessage, L"\r\n");
-							}
+
+								EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+								EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+								EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+								EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_ENABLED);
+								EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_ENABLED);
+								EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+								EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_ENABLED);
+							}	
 						}
 						break;
 					default:
@@ -624,11 +713,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				{
 					switch (HIWORD(wParam))
 					{
+						//Unload and close selected fonts
+						//Won't close those failed to unload
 					case BN_CLICKED:
 						{
-							//Unload and close selected fonts
-							//Won't close those failed to unload
-							DisableControls();
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), FALSE);
+							EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+
 							_beginthread(ButtonCloseWorkingThreadProc, 0, nullptr);
 						}
 						break;
@@ -642,10 +739,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				{
 					switch (HIWORD(wParam))
 					{
+						//Load selected fonts
 					case BN_CLICKED:
 						{
-							//Load selected fonts
-							DisableControls();
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), FALSE);
+							EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+
 							_beginthread(ButtonLoadWorkingThreadProc, 0, nullptr);
 						}
 					default:
@@ -658,11 +763,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				{
 					switch (HIWORD(wParam))
 					{
-
+						//Unload selected fonts
 					case BN_CLICKED:
 						{
-							//Unload selected fonts;
-							DisableControls();
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), FALSE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), FALSE);
+							EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+
 							_beginthread(ButtonUnloadWorkingThreadProc, 0, nullptr);
 						}
 					default:
@@ -675,20 +787,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				{
 					switch (HIWORD(wParam))
 					{
+						//Select a process to load fonts to
 					case BN_CLICKED:
 						{
-							std::wstringstream Message{};
-							int iMessageLength{};
+							HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
+							HWND hWndButtonSelectProcess{ GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess) };
 
 							static bool bIsSeDebugPrivilegeEnabled{ false };
 
+							std::wstringstream Message{};
+							int iMessageLength{};
+
 							//Convert text in EditTimeout to integer
 							BOOL bIsConverted{};
-							DWORD dwTimeoutTemp{ (DWORD)GetDlgItemInt(hWnd, (int)ID::EditTimeOut, &bIsConverted, FALSE) };
+							DWORD dwTimeoutTemp{ (DWORD)GetDlgItemInt(hWnd, (int)ID::EditTimeout, &bIsConverted, FALSE) };
 							if (!bIsConverted)
 							{
 								MessageBox(hWnd, L"Timeout value invalid.", L"FontLoaderEx", MB_ICONEXCLAMATION);
-								SetDlgItemInt(hWnd, (int)ID::EditTimeOut, (UINT)dwTimeout, FALSE);
+
+								SetDlgItemInt(hWnd, (int)ID::EditTimeout, (UINT)dwTimeout, FALSE);
 								break;
 							}
 							else
@@ -736,9 +853,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
 									COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
 									FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
-									WaitForSingleObject(hEventProxyDllPullFinished, INFINITE);
-									CloseHandle(hEventProxyDllPullFinished);
-									switch (ProxyDllPullResult)
+									WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
+									CloseHandle(hEventProxyDllPullingFinished);
+									switch (ProxyDllPullingResult)
 									{
 									case PROXYDLLPULL::SUCCESSFUL:
 										{
@@ -779,6 +896,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									//Terminate message thread
 									SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 									WaitForSingleObject(hMessageThread, INFINITE);
+									DWORD dwMessageThreadExitCode{};
+									GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+									if (dwMessageThreadExitCode)
+									{
+										MessageBox(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+									}
 									CloseHandle(hMessageThread);
 
 									//Close handle to target process and synchronization objects
@@ -806,11 +929,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 										break;
 									}
-									Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-									iMessageLength = Edit_GetTextLength(hWndEditMessage);
-									Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-									Message.str(L"");
+									else
+									{
+										Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+										iMessageLength = Edit_GetTextLength(hWndEditMessage);
+										Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+										Message.str(L"");
+									}
 
 									//Close handle to target process
 									CloseHandle(TargetProcessInfo.hProcess);
@@ -839,14 +965,33 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									//Create synchronization objects and message thread
 									SECURITY_ATTRIBUTES sa{ sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
 									hEventParentProcessRunning = CreateEvent(NULL, TRUE, FALSE, L"FontLoaderEx_EventParentProcessRunning");
+									hEventMessageThreadNotReady = CreateEvent(&sa, TRUE, FALSE, NULL);
 									hEventMessageThreadReady = CreateEvent(&sa, TRUE, FALSE, NULL);
 									hEventProxyProcessReady = CreateEvent(&sa, TRUE, FALSE, NULL);
 									hEventProxyProcessDebugPrivilegeEnablingFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
 									hEventProxyProcessHWNDRevieved = CreateEvent(NULL, TRUE, FALSE, NULL);
 									hEventProxyDllInjectionFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
-									hEventProxyDllPullFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
+									hEventProxyDllPullingFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
 									hMessageThread = (HANDLE)_beginthreadex(nullptr, 0, MessageThreadProc, (void*)GetWindowLongPtr(hWnd, GWLP_HINSTANCE), 0, nullptr);
-									WaitForSingleObject(hEventMessageThreadReady, INFINITE);
+									HANDLE handles[]{ hEventMessageThreadNotReady, hEventMessageThreadReady };
+									switch (WaitForMultipleObjects(2, handles, FALSE, INFINITE))
+									{
+									case WAIT_OBJECT_0:
+										{
+											MessageBox(NULL, L"Failed to create message-only window.", L"FontLoaderEx", MB_ICONERROR);
+
+											WaitForSingleObject(hMessageThread, INFINITE);
+											CloseHandle(hMessageThread);
+										}
+										goto break_721EFBC1;
+									case WAIT_OBJECT_0 + 1:
+										goto continue_721EFBC1;
+									default:
+										break;
+									}
+								break_721EFBC1:
+									break;
+								continue_721EFBC1:
 
 									//Run proxy process, send handle to current process and target process, HWND to message window, handle to synchronization objects and timeout as arguments to proxy process
 									HANDLE hCurrentProcessDuplicated{};
@@ -854,24 +999,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(), &hCurrentProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
 									DuplicateHandle(GetCurrentProcess(), SelectedProcessInfo.hProcess, GetCurrentProcess(), &hTargetProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
 									std::wstringstream strParams{};
-									strParams << (UINT_PTR)hCurrentProcessDuplicated << L" " << (UINT_PTR)hTargetProcessDuplicated << L" " << (UINT_PTR)hWndMessage << L" " << (UINT_PTR)hEventMessageThreadReady << L" " << (UINT_PTR)hEventProxyProcessReady << L" " << dwTimeout ;
+									strParams << (UINT_PTR)hCurrentProcessDuplicated << L" " << (UINT_PTR)hTargetProcessDuplicated << L" " << (UINT_PTR)hWndMessage << L" " << (UINT_PTR)hEventMessageThreadReady << L" " << (UINT_PTR)hEventProxyProcessReady << L" " << dwTimeout;
 									std::size_t nParamLength{ strParams.str().length() };
 									std::unique_ptr<WCHAR[]> lpszParams{ new WCHAR[nParamLength + 1]{} };
 									wcsncpy_s(lpszParams.get(), nParamLength + 1, strParams.str().c_str(), nParamLength);
 									STARTUPINFO si{ sizeof(STARTUPINFO) };
 #ifdef _DEBUG
-	#ifdef _WIN64
-									if (!CreateProcess(L"..\\Debug\\FontLoaderExProxy.exe", lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
-	#else
-									if (!CreateProcess(L"..\\x64\\Debug\\FontLoaderExProxy.exe", lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
-	#endif
+#ifdef _WIN64
+									if (!CreateProcess(LR"(..\Debug\FontLoaderExProxy.exe)", lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
 #else
-									if (!CreateProcess(L"FontLoaderExProxy.exe", lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
+									if (!CreateProcess(LR"(..\x64\Debug\FontLoaderExProxy.exe)", lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
+#endif
+#else
+									if (!CreateProcess(LR"(FontLoaderExProxy.exe)", lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
 #endif
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
 										CloseHandle(hCurrentProcessDuplicated);
 										CloseHandle(hTargetProcessDuplicated);
+
 										Message << L"Failed to launch FontLoaderExProxy." << L"\r\n\r\n";
 										iMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
@@ -884,6 +1030,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hEventProxyProcessReady);
 									CloseHandle(hEventMessageThreadReady);
 									CloseHandle(hEventParentProcessRunning);
+
 									Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") succesfully launched.\r\n\r\n";
 									iMessageLength = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
@@ -909,13 +1056,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
 											FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
 											WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
+
 											Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
 											iMessageLength = Edit_GetTextLength(hWndEditMessage);
 											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+
 											CloseHandle(piProxyProcess.hThread);
 											CloseHandle(piProxyProcess.hProcess);
 											piProxyProcess.hProcess = NULL;
+
+											//Terminate message thread
+											SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+											WaitForSingleObject(hMessageThread, INFINITE);
+											DWORD dwMessageThreadExitCode{};
+											GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+											if (dwMessageThreadExitCode)
+											{
+												MessageBox(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+											}
+											CloseHandle(hMessageThread);
 
 											//Close handles to selected process
 											CloseHandle(SelectedProcessInfo.hProcess);
@@ -949,13 +1109,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											hEventProxyAddFontFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
 											hEventProxyRemoveFontFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
 
-											//Disable EditTimeout
-											EnableWindow(hWndEditTimeout, FALSE);
+											//Disable EditTimeout and ButtonBroadcastWM_FONTCHANGE
+											EnableWindow(GetDlgItem(hWndMain, (int)ID::EditTimeout), FALSE);
+											EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
 
-											//Change caption and set TargetProcessInfo
+											//Change caption
 											std::wstringstream Caption{};
 											Caption << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L")";
 											Button_SetText(hWndButtonSelectProcess, (LPCWSTR)Caption.str().c_str());
+
+											//Set TargetProcessInfo
 											TargetProcessInfo = SelectedProcessInfo;
 
 											//Start watch thread and create synchronization object
@@ -975,7 +1138,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										goto continue_DBEA36FE;
 									case PROXYDLLINJECTION::GDI32NOTLOADED:
 										{
-											Message << L"Gdi32.dll not loaded by target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
+											Message << L"gdi32.dll not loaded by target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
 										}
 										goto continue_DBEA36FE;
 									case PROXYDLLINJECTION::MODULENOTFOUND:
@@ -993,13 +1156,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
 											FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
 											WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
+
 											Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
 											iMessageLength = Edit_GetTextLength(hWndEditMessage);
 											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+
 											CloseHandle(piProxyProcess.hThread);
 											CloseHandle(piProxyProcess.hProcess);
 											piProxyProcess.hProcess = NULL;
+
+											//Terminate message thread
+											SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+											WaitForSingleObject(hMessageThread, INFINITE);
+											DWORD dwMessageThreadExitCode{};
+											GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+											if (dwMessageThreadExitCode)
+											{
+												MessageBox(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+											}
+											CloseHandle(hMessageThread);
 
 											//Close handles to selected process
 											CloseHandle(SelectedProcessInfo.hProcess);
@@ -1012,14 +1188,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								//Else DIY
 								else
 								{
-									//Check whether target process loads Gdi32.dll as AddFontResourceEx() and RemoveFontResourceEx() are in it
-									HANDLE hModuleSnapshot1{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, SelectedProcessInfo.ProcessID) };
-									MODULEENTRY32 me321{ sizeof(MODULEENTRY32) };
+									//Check whether target process loads gdi32.dll as AddFontResourceEx() and RemoveFontResourceEx() are in it
+									HANDLE hModuleSnapshot{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, SelectedProcessInfo.ProcessID) };
+									MODULEENTRY32 me32{ sizeof(MODULEENTRY32) };
 									bool bIsGDI32Loaded{ false };
-									if (!Module32First(hModuleSnapshot1, &me321))
+									if (!Module32First(hModuleSnapshot, &me32))
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
-										CloseHandle(hModuleSnapshot1);
+										CloseHandle(hModuleSnapshot);
+
 										Message << L"Failed to enumerate modules in target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
 										iMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
@@ -1028,28 +1205,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									}
 									do
 									{
-										if (!lstrcmpi(me321.szModule, L"Gdi32.dll"))
+										if (!lstrcmpi(me32.szModule, L"gdi32.dll"))
 										{
 											bIsGDI32Loaded = true;
 											break;
 										}
-									} while (Module32Next(hModuleSnapshot1, &me321));
+									} while (Module32Next(hModuleSnapshot, &me32));
 									if (!bIsGDI32Loaded)
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
-										CloseHandle(hModuleSnapshot1);
-										Message << L"Gdi32.dll not loaded by target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
+										CloseHandle(hModuleSnapshot);
+
+										Message << L"gdi32.dll not loaded by target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
 										iMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 										break;
 									}
-									CloseHandle(hModuleSnapshot1);
+									CloseHandle(hModuleSnapshot);
 
 									//Inject FontLoaderExInjectionDll(64).dll into target process
 									if (!InjectModule(SelectedProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
+
 										Message << L"Failed to inject " << szInjectionDllName << L" into target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
 										iMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
@@ -1063,13 +1242,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									Message.str(L"");
 
 									//Get base address of FontLoaderExInjectionDll(64).dll in target process
-									HANDLE hModuleSnapshot{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, SelectedProcessInfo.ProcessID) };
-									MODULEENTRY32 me32{ sizeof(MODULEENTRY32) };
+									HANDLE hModuleSnapshot2{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, SelectedProcessInfo.ProcessID) };
+									MODULEENTRY32 me322{ sizeof(MODULEENTRY32) };
 									BYTE* pModBaseAddr{};
-									if (!Module32First(hModuleSnapshot, &me32))
+									if (!Module32First(hModuleSnapshot2, &me322))
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
-										CloseHandle(hModuleSnapshot);
+										CloseHandle(hModuleSnapshot2);
+
 										Message << L"Failed to enumerate modules in target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
 										iMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
@@ -1078,23 +1258,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									}
 									do
 									{
-										if (!lstrcmpi(me32.szModule, szInjectionDllName))
+										if (!lstrcmpi(me322.szModule, szInjectionDllName))
 										{
-											pModBaseAddr = me32.modBaseAddr;
+											pModBaseAddr = me322.modBaseAddr;
 											break;
 										}
-									} while (Module32Next(hModuleSnapshot, &me32));
+									} while (Module32Next(hModuleSnapshot2, &me322));
 									if (!pModBaseAddr)
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
-										CloseHandle(hModuleSnapshot);
+										CloseHandle(hModuleSnapshot2);
+
 										Message << szInjectionDllName << " not found in target process " << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L").\r\n\r\n";
 										iMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 										break;
 									}
-									CloseHandle(hModuleSnapshot);
+									CloseHandle(hModuleSnapshot2);
 
 									//Calculate addresses of AddFont() and RemoveFont() in target process
 									HMODULE hModInjectionDll{ LoadLibrary(szInjectionDllName) };
@@ -1109,10 +1290,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									//Register remote AddFont() and RemoveFont() procedure
 									FontResource::RegisterAddRemoveFontProc(RemoteAddFontProc, RemoteRemoveFontProc);
 
-									//Change caption and set TargetProcessInfo
+									//Change caption
 									std::wstringstream Caption{};
 									Caption << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L")";
 									Button_SetText(hWndButtonSelectProcess, (LPCWSTR)Caption.str().c_str());
+
+									//Set TargetProcessInfo
 									TargetProcessInfo = SelectedProcessInfo;
 
 									//Start watch thread and create synchronization object
@@ -1135,9 +1318,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
 									COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
 									FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
-									WaitForSingleObject(hEventProxyDllPullFinished, INFINITE);
-									CloseHandle(hEventProxyDllPullFinished);
-									switch (ProxyDllPullResult)
+									WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
+									CloseHandle(hEventProxyDllPullingFinished);
+									switch (ProxyDllPullingResult)
 									{
 									case PROXYDLLPULL::SUCCESSFUL:
 										{
@@ -1167,10 +1350,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
 									FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
 									WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
+
 									Message << L"FontLoaderExProxy(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
 									iMessageLength = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+
 									CloseHandle(piProxyProcess.hThread);
 									CloseHandle(piProxyProcess.hProcess);
 									piProxyProcess.hProcess = NULL;
@@ -1178,6 +1363,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									//Terminate message thread
 									SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 									WaitForSingleObject(hMessageThread, INFINITE);
+									DWORD dwMessageThreadExitCode{};
+									GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+									if (dwMessageThreadExitCode)
+									{
+										MessageBox(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+									}
 									CloseHandle(hMessageThread);
 
 									//Close handle to target process and synchronization objects
@@ -1189,8 +1380,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									//Register default AddFont() and RemoveFont() procedure
 									FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
 
-									//Enable EditTimeout
-									EnableWindow(hWndEditTimeout, TRUE);
+									//Enable EditTimeout and ButtonBroadcastWM_FONTCHANGE
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::EditTimeout), TRUE);
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
 
 									//Revert to default caption
 									Button_SetText(hWndButtonSelectProcess, L"Select process");
@@ -1214,10 +1406,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 										break;
 									}
-									Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-									iMessageLength = Edit_GetTextLength(hWndEditMessage);
-									Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+									else
+									{
+										Message << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+										iMessageLength = Edit_GetTextLength(hWndEditMessage);
+										Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+									}
 
 									//Close handle to target process
 									CloseHandle(TargetProcessInfo.hProcess);
@@ -1237,45 +1432,45 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					}
 				}
 				break;
+			default:
+				break;
 			}
-			switch(LOWORD(wParam))
+			switch (LOWORD(wParam))
 			{
 				//"Load" menu item
 			case ID_MENU_LOAD:
 				{
-					//Load selected fonts
-					DisableControls();
-					_beginthread(ButtonLoadWorkingThreadProc, 0, nullptr);
+					//Simulate clicking "Load" button
+					SendMessage(GetDlgItem(hWnd, (int)ID::ButtonLoad), BM_CLICK, NULL, NULL);
 				}
 				break;
 				//"Unload" menu item
 			case ID_MENU_UNLOAD:
 				{
-					//Unload selected fonts;
-					DisableControls();
-					_beginthread(ButtonUnloadWorkingThreadProc, 0, nullptr);
+					//Simulate clicking "Unload" button
+					SendMessage(GetDlgItem(hWnd, (int)ID::ButtonUnload), BM_CLICK, NULL, NULL);
 				}
 				break;
 				//"Close" menu item
 			case ID_MENU_CLOSE:
 				{
-					//Unload and close selected fonts
-					//Won't close those failed to unload
-					DisableControls();
-					_beginthread(ButtonCloseWorkingThreadProc, 0, nullptr);
+					//Simulate clicking "Close" button
+					SendMessage(GetDlgItem(hWnd, (int)ID::ButtonClose), BM_CLICK, NULL, NULL);
 				}
 				break;
 				//"Select All" menu item
 			case ID_MENU_SELECTALL:
 				{
-					ListView_SetItemState(hWndListViewFontList, -1, LVIS_SELECTED, LVIS_SELECTED);
+					//Select all items in ListViewFontList
+					ListView_SetItemState(GetDlgItem(hWndMain, (int)ID::ListViewFontList), -1, LVIS_SELECTED, LVIS_SELECTED);
 				}
 				//"Ctrl+A" accelerator
 			case ID_ACCELERATOR_SELECTALL:
 				{
-					if (GetFocus() == hWndListViewFontList)
+					//Select all items in ListViewFontList
+					if (GetFocus() == GetDlgItem(hWndMain, (int)ID::ListViewFontList))
 					{
-						ListView_SetItemState(hWndListViewFontList, -1, LVIS_SELECTED, LVIS_SELECTED);
+						ListView_SetItemState(GetDlgItem(hWndMain, (int)ID::ListViewFontList), -1, LVIS_SELECTED, LVIS_SELECTED);
 					}
 				}
 				break;
@@ -1286,18 +1481,76 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_NOTIFY:
 		{
-			switch (wParam)
-			{	
-			case (WORD)ID::ListViewFontList:
+			switch ((ID)wParam)
+			{
+			case ID::Splitter:
 				{
-					switch (((LPNMHDR)lParam)->code)
+					static LONG CursorOffsetY{};
+
+					switch ((SPLITTERNOTIFICATION)((LPNMHDR)lParam)->code)
 					{
-					case NM_RCLICK:
+						//Begin dragging Splitter
+					case SPLITTERNOTIFICATION::DRAGBEGIN:
 						{
-							//Show shortcut menu
-							POINT ptCursor{};
-							GetCursorPos(&ptCursor);
-							TrackPopupMenu((HMENU)GetSubMenu(LoadMenu((HINSTANCE)GetWindowLongPtr(hWnd, GWLP_HINSTANCE), MAKEINTRESOURCE(IDR_CONTEXTMENU1)), 0), TPM_LEFTALIGN | TPM_RIGHTBUTTON, ptCursor.x, ptCursor.y, 0, hWnd, NULL);
+							//Caculate cursor offset to window top in y orientation
+							HWND hWndSplitter{ ((LPSPLITTERSTRUCT)lParam)->nmhdr.hwndFrom };
+							RECT rectSplitter{}, rectSplitterClient{};
+							GetWindowRect(hWndSplitter, &rectSplitter);
+							GetClientRect(hWndSplitter, &rectSplitterClient);
+							CursorOffsetY = ((LPSPLITTERSTRUCT)lParam)->ptCursor.y - rectSplitterClient.top;
+							MapWindowRect(hWndSplitter, HWND_DESKTOP, &rectSplitterClient);
+							CursorOffsetY += rectSplitterClient.top - rectSplitter.top;
+
+							//Confine cursor to a specific rectangle
+							RECT rectMainClient{}, rectDesktop{}, rectButtonOpen{};
+							GetClientRect(hWnd, &rectMainClient);
+							MapWindowRect(hWnd, HWND_DESKTOP, &rectMainClient);
+							GetWindowRect(GetDesktopWindow(), &rectDesktop);
+							GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rectButtonOpen);
+							RECT rectMouseClip{ rectDesktop.left, rectMainClient.top + (rectButtonOpen.bottom - rectButtonOpen.top) + CursorOffsetY, rectDesktop.right, rectMainClient.bottom - ((rectSplitter.bottom - rectSplitter.top) - CursorOffsetY) };
+							ClipCursor(&rectMouseClip);
+						}
+						break;
+						//Dragging Splitter
+					case SPLITTERNOTIFICATION::DRAGGING:
+						{
+							//Convert cursor coordinates from Splitter to main window
+							POINT ptCursor{ ((LPSPLITTERSTRUCT)lParam)->ptCursor };
+							MapWindowPoints(((LPSPLITTERSTRUCT)lParam)->nmhdr.hwndFrom, hWnd, &ptCursor, 1);
+
+							//Move Splitter
+							HWND hWndSplitter{ ((LPSPLITTERSTRUCT)lParam)->nmhdr.hwndFrom };
+							RECT rectSplitter{};
+							GetWindowRect(hWndSplitter, &rectSplitter);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
+							MoveWindow(hWndSplitter, 0, ptCursor.y - CursorOffsetY, rectSplitter.right - rectSplitter.left, rectSplitter.bottom - rectSplitter.top, TRUE);
+
+							//Resize ListViewFontList
+							HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
+							RECT rectListViewFontList{};
+							GetWindowRect(hWndListViewFontList, &rectListViewFontList);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
+							MoveWindow(hWndListViewFontList, 0, rectListViewFontList.top, rectListViewFontList.right - rectListViewFontList.left, ptCursor.y - CursorOffsetY - rectListViewFontList.top, TRUE);
+
+							//Resize EditMessage
+							HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
+							RECT rectEditMessage{}, rectMainClient{};
+							GetWindowRect(hWndEditMessage, &rectEditMessage);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
+							GetClientRect(hWnd, &rectMainClient);
+							MoveWindow(hWndEditMessage, 0, ptCursor.y + (rectSplitter.bottom - rectSplitter.top) - CursorOffsetY, rectEditMessage.right - rectEditMessage.left, rectMainClient.bottom - rectSplitter.bottom, TRUE);
+						}
+						break;
+						//End dragging Splitter
+					case SPLITTERNOTIFICATION::DRAGEND:
+						{
+							//Free cursor
+							ClipCursor(NULL);
+
+							//Redraw controls
+							RECT rectClientMain{};
+							GetClientRect(hWnd, &rectClientMain);
+							InvalidateRect(hWnd, &rectClientMain, FALSE);
 						}
 						break;
 					default:
@@ -1310,33 +1563,113 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		break;
+	case WM_CONTEXTMENU:
+		{
+			//Show context menu on ListViewFontList
+			if ((HWND)wParam == GetDlgItem(hWnd, (int)ID::ListViewFontList))
+			{
+				POINT ptMenu{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+				if (ptMenu.x == -1 && ptMenu.y == -1)
+				{
+					HWND hWndListViewFontList{ GetDlgItem(hWnd,(int)ID::ListViewFontList) };
+
+					int iSelectionMark{ ListView_GetSelectionMark(hWndListViewFontList) };
+					if (iSelectionMark == -1)
+					{
+						RECT rectListViewFontListClient{};
+						GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+						MapWindowRect(hWndListViewFontList, HWND_DESKTOP, &rectListViewFontListClient);
+						ptMenu = { rectListViewFontListClient.left, rectListViewFontListClient.top };
+					}
+					else
+					{
+						POINT ptSelectionMark{};
+						ListView_GetItemPosition(hWndListViewFontList, iSelectionMark, &ptSelectionMark);
+						ClientToScreen(hWndListViewFontList, &ptSelectionMark);
+						ptMenu = ptSelectionMark;
+					}
+				}
+
+				TrackPopupMenu(hMenuContextListViewFontList, TPM_LEFTALIGN | TPM_RIGHTBUTTON, ptMenu.x, ptMenu.y, 0, hWnd, NULL);
+			}
+		}
+		break;
+	case WM_SIZE:
+		{
+			switch (wParam)
+			{
+				//Resize controls
+			case SIZE_MAXIMIZED:
+			case SIZE_RESTORED:
+				{
+					//Resize Splitter
+					HWND hWndSplitter{ GetDlgItem(hWnd, (int)ID::Splitter) };
+					RECT rectSplitter{};
+					GetWindowRect(hWndSplitter, &rectSplitter);
+					MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
+					MoveWindow(hWndSplitter, rectSplitter.left, rectSplitter.top, LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+
+					//Resize ListViewFontList
+					HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
+					RECT rectListViewFontList{};
+					GetWindowRect(hWndListViewFontList, &rectListViewFontList);
+					MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
+					MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), rectListViewFontList.bottom - rectListViewFontList.top, TRUE);
+
+					RECT rectListViewFontListClient{};
+					GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+					ListView_SetColumnWidth(hWndListViewFontList, 0, rectListViewFontListClient.right - rectListViewFontListClient.left - ListView_GetColumnWidth(hWndListViewFontList, 1));
+
+					//Resize EditMessage
+					HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
+					RECT rectEditMessage{};
+					GetWindowRect(hWndEditMessage, &rectEditMessage);
+					MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
+					MoveWindow(hWndEditMessage, rectEditMessage.left, rectEditMessage.top, LOWORD(lParam), HIWORD(lParam) - rectSplitter.bottom, TRUE);
+				}
+				break;
+			default:
+				break;
+			}
+		}
+		break;
+	case WM_GETMINMAXINFO:
+		{
+			//Limit minimize window size
+			((LPMINMAXINFO)lParam)->ptMinTrackSize = { 700, 700 };
+		}
+		break;
 	default:
 		{
 			ret = DefWindowProc(hWnd, Msg, wParam, lParam);
 		}
 		break;
 	}
+
 	return ret;
 }
 
 LRESULT CALLBACK ListViewProc(HWND hWndListView, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
-	LRESULT ret{ 0 };
+	LRESULT ret{};
+
 	switch (Msg)
 	{
 	case WM_DROPFILES:
 		{
 			//Process drag-drop and open fonts
-			HDROP hdrop{ (HDROP)wParam };
-			LVITEM lvi{ LVIF_TEXT, ListView_GetItemCount(hWndListViewFontList) };
-			UINT nFileCount{ DragQueryFile(hdrop, 0xFFFFFFFF, NULL, 0) };
+			HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)ID::ListViewFontList) };
+			HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
 
 			std::wstringstream Message{};
 			int iMessageLength{};
+
+			UINT nFileCount{ DragQueryFile((HDROP)wParam, 0xFFFFFFFF, NULL, 0) };
+			LVITEM lvi{ LVIF_TEXT, ListView_GetItemCount(hWndListViewFontList) };
 			for (UINT i = 0; i < nFileCount; i++)
 			{
 				WCHAR szFileName[MAX_PATH]{};
-				DragQueryFile(hdrop, i, szFileName, MAX_PATH);
+				DragQueryFile((HDROP)wParam, i, szFileName, MAX_PATH);
 				if (PathMatchSpec(szFileName, L"*.ttf") || PathMatchSpec(szFileName, L"*.ttc") || PathMatchSpec(szFileName, L"*.otf"))
 				{
 					FontList.push_back(szFileName);
@@ -1348,38 +1681,45 @@ LRESULT CALLBACK ListViewProc(HWND hWndListView, UINT Msg, WPARAM wParam, LPARAM
 					ListView_SetItem(hWndListViewFontList, &lvi);
 					ListView_SetItemState(hWndListViewFontList, lvi.iItem, LVIS_SELECTED, LVIS_SELECTED);
 					lvi.iItem++;
-					Message.str(L"");
+
 					Message << szFileName << L" opened\r\n";
 					iMessageLength = Edit_GetTextLength(hWndEditMessage);
 					Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 					Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+					Message.str(L"");
 				}
 			}
 			iMessageLength = Edit_GetTextLength(hWndEditMessage);
 			Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 			Edit_ReplaceSel(hWndEditMessage, L"\r\n");
-			DragFinish(hdrop);
+
+			DragFinish((HDROP)wParam);
+
+			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+			EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_ENABLED);
+			EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_ENABLED);
+			EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+			EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_ENABLED);
 		}
 		break;
 	default:
 		{
-			ret = CallWindowProc((WNDPROC)OldListViewProc, hWndListView, Msg, wParam, lParam);
+			ret = CallWindowProc(OldListViewProc, hWndListView, Msg, wParam, lParam);
 		}
 		break;
 	}
+
 	return ret;
 }
 
 INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	INT_PTR ret{};
-	 
-	static HWND hWndListViewProcessList{};
-	static HWND hWndButtonOK{};
-	static HWND hWndButtonCancel{};
-	
+
 	static std::vector<ProcessInfo> ProcessList{};
-	
+
 	static bool bOrderByProcessAscending{ true };
 	static bool bOrderByPIDAscending{ true };
 
@@ -1390,24 +1730,30 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 			bOrderByProcessAscending = true;
 			bOrderByPIDAscending = true;
 
-			//Initialize controls
 			NONCLIENTMETRICS ncm{ sizeof(NONCLIENTMETRICS) };
 			SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
 			HFONT hFont{ CreateFontIndirect(&ncm.lfMessageFont) };
-			hWndListViewProcessList = GetDlgItem(hWndDialog, IDC_LIST1);
-			hWndButtonOK = GetDlgItem(hWndDialog, IDOK);
-			hWndButtonCancel = GetDlgItem(hWndDialog, IDCANCEL);
+
+			//Initialize ListViewProcessList
+			HWND hWndListViewProcessList{ GetDlgItem(hWndDialog, IDC_LIST1) };
 			SetWindowFont(hWndListViewProcessList, hFont, TRUE);
-			SetWindowFont(hWndButtonOK, hFont, TRUE);
-			SetWindowFont(hWndButtonCancel, hFont, TRUE);
 			SetWindowLongPtr(hWndListViewProcessList, GWL_STYLE, GetWindowLongPtr(hWndListViewProcessList, GWL_STYLE) | LVS_REPORT | LVS_SINGLESEL);
-			RECT rectListViewClient{};
-			GetClientRect(hWndListViewProcessList, &rectListViewClient);
-			LVCOLUMN lvc1{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectListViewClient.right - rectListViewClient.left) * 4 / 5 , (LPWSTR)L"Process" };
-			LVCOLUMN lvc2{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectListViewClient.right - rectListViewClient.left) * 1 / 5 , (LPWSTR)L"PID" };
+
+			RECT rectListViewProcessListClient{};
+			GetClientRect(hWndListViewProcessList, &rectListViewProcessListClient);
+			LVCOLUMN lvc1{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectListViewProcessListClient.right - rectListViewProcessListClient.left) * 4 / 5 , (LPWSTR)L"Process" };
+			LVCOLUMN lvc2{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectListViewProcessListClient.right - rectListViewProcessListClient.left) * 1 / 5 , (LPWSTR)L"PID" };
 			ListView_InsertColumn(hWndListViewProcessList, 0, &lvc1);
 			ListView_InsertColumn(hWndListViewProcessList, 1, &lvc2);
 			ListView_SetExtendedListViewStyle(hWndListViewProcessList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+
+			//Initialize ButtonOK
+			HWND hWndButtonOK{ GetDlgItem(hWndDialog, IDOK) };
+			SetWindowFont(hWndButtonOK, hFont, TRUE);
+
+			//Initialize ButtonCancel
+			HWND hWndButtonCancel{ GetDlgItem(hWndDialog, IDCANCEL) };
+			SetWindowFont(hWndButtonCancel, hFont, TRUE);
 
 			//Fill ProcessList
 			ProcessList.clear();
@@ -1426,6 +1772,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 					lvi.pszText = (LPWSTR)str.c_str();
 					ListView_SetItem(hWndListViewProcessList, &lvi);
 					lvi.iItem++;
+
 					ProcessList.push_back({ NULL, pe32.szExeFile, pe32.th32ProcessID });
 				} while (Process32Next(hProcessSnapshot, &pe32));
 			}
@@ -1437,8 +1784,11 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 		{
 			switch (LOWORD(wParam))
 			{
+				//Return selected process
 			case IDOK:
 				{
+					HWND hWndListViewProcessList{ GetDlgItem(hWndDialog, IDC_LIST1) };
+
 					int iSelected{ ListView_GetSelectionMark(hWndListViewProcessList) };
 					if (iSelected == -1)
 					{
@@ -1447,12 +1797,14 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 					else
 					{
 						ProcessInfo* TargetProcessInfo = new ProcessInfo{ ProcessList[iSelected] };
+
 						EndDialog(hWndDialog, (INT_PTR)TargetProcessInfo);
 					}
 
 					ret = (INT_PTR)TRUE;
 				}
 				break;
+				//Return null
 			case IDCANCEL:
 				{
 					EndDialog(hWndDialog, NULL);
@@ -1473,58 +1825,57 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 				{
 					switch (((LPNMLISTVIEW)lParam)->hdr.code)
 					{
+						//Sort items
 					case LVN_COLUMNCLICK:
 						{
-							//Sort items
+							HWND hWndListViewProcessList{ GetDlgItem(hWndDialog, IDC_LIST1) };
 							HWND hWndHeader{ ListView_GetHeader(hWndListViewProcessList) };
+
 							HDITEM hdi{ HDI_FORMAT };
+
 							switch (((LPNMLISTVIEW)lParam)->iSubItem)
-							{	
+							{
 							case 0:
 								{
 									//Sort items by Process
 									bOrderByProcessAscending ?
-									std::sort
-									(
-										ProcessList.begin(), ProcessList.end(),
-										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-										{
-											int i{ lstrcmpi(value1.ProcessName.c_str(), value2.ProcessName.c_str()) };
-											if (i < 0)
+										std::sort(ProcessList.begin(), ProcessList.end(),
+											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
 											{
-												return true;
-											}
-											if (i > 0)
+												int i{ lstrcmpi(value1.ProcessName.c_str(), value2.ProcessName.c_str()) };
+												if (i < 0)
+												{
+													return true;
+												}
+												if (i > 0)
+												{
+													return false;
+												}
+												else
+												{
+													return false;
+												}
+											})
+										:
+										std::sort(ProcessList.begin(), ProcessList.end(),
+											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
 											{
-												return false;
-											}
-											else
-											{
-												return false;
-											}
-										}
-									) :
-									std::sort
-									(
-										ProcessList.begin(), ProcessList.end(),
-										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-										{
-											int i{ lstrcmpi(value2.ProcessName.c_str(), value1.ProcessName.c_str()) };
-											if (i < 0)
-											{
-												return true;
-											}
-											if (i >= 0)
-											{
-												return false;
-											}
-											else
-											{
-												return false;
-											}
-										}
-									);
-									
+												int i{ lstrcmpi(value2.ProcessName.c_str(), value1.ProcessName.c_str()) };
+												if (i < 0)
+												{
+													return true;
+												}
+												if (i >= 0)
+												{
+													return false;
+												}
+												else
+												{
+													return false;
+												}
+											})
+										;
+
 									//Add arrow to the header in list view
 									Header_GetItem(hWndHeader, 1, &hdi);
 									hdi.fmt = hdi.fmt & ~(HDF_SORTDOWN | HDF_SORTUP);
@@ -1540,23 +1891,19 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 								{
 									//Sort items by PID
 									bOrderByPIDAscending ?
-									std::sort
-									(
-										ProcessList.begin(), ProcessList.end(),
-										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-										{
-											return value1.ProcessID < value2.ProcessID;
-										}
-										) :
-									std::sort
-									(
-										ProcessList.begin(), ProcessList.end(),
-										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-										{
-											return value1.ProcessID > value2.ProcessID;
-										}
-									);
-									
+										std::sort(ProcessList.begin(), ProcessList.end(),
+											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
+									{
+										return value1.ProcessID < value2.ProcessID;
+									})
+										:
+										std::sort(ProcessList.begin(), ProcessList.end(),
+											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
+									{
+										return value1.ProcessID > value2.ProcessID;
+									})
+										;
+
 									//Add arrow to the header in list view
 									Header_GetItem(hWndHeader, 0, &hdi);
 									hdi.fmt = hdi.fmt & ~(HDF_SORTDOWN | HDF_SORTUP);
@@ -1589,10 +1936,11 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 							ret = (INT_PTR)TRUE;
 						}
 						break;
+						//Select double-clicked item
 					case NM_DBLCLK:
 						{
-							//Select double-clicked item
-							SendMessage(hWndButtonOK, BM_CLICK, NULL, NULL);
+							//Simulate clicking "OK" button
+							SendMessage(GetDlgItem(hWndDialog, IDOK), BM_CLICK, NULL, NULL);
 
 							ret = (INT_PTR)TRUE;
 						}
@@ -1614,169 +1962,203 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 	return ret;
 }
 
-void EnableControls()
-{
-	EnableWindow(hWndButtonOpen, TRUE);
-	EnableWindow(hWndButtonClose, TRUE);
-	EnableWindow(hWndButtonLoad, TRUE);
-	EnableWindow(hWndButtonUnload, TRUE);
-	EnableWindow(hWndButtonBroadcastWM_FONTCHANGE, TRUE);
-	EnableWindow(hWndButtonSelectProcess, TRUE);
-	EnableWindow(hWndListViewFontList, TRUE);
-	EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-}
-
-void DisableControls()
-{
-	EnableWindow(hWndButtonOpen, FALSE);
-	EnableWindow(hWndButtonClose, FALSE);
-	EnableWindow(hWndButtonLoad, FALSE);
-	EnableWindow(hWndButtonUnload, FALSE);
-	EnableWindow(hWndButtonBroadcastWM_FONTCHANGE, FALSE);
-	EnableWindow(hWndButtonSelectProcess, FALSE);
-	EnableWindow(hWndListViewFontList, FALSE);
-	EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-}
-
 bool EnableDebugPrivilege()
 {
+	bool bRet{};
+
 	//Enable SeDebugPrivilege
-	HANDLE hToken{};
-	LUID luid{};
-	if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken))
+	do
 	{
-		return false;
-	}
+		HANDLE hToken{};
+		LUID luid{};
+		if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken))
+		{
+			bRet = false;
+			break;
+		}
 
-	if (!LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &luid))
-	{
+		if (!LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &luid))
+		{
+			CloseHandle(hToken);
+
+			bRet = false;
+			break;
+		}
+
+		TOKEN_PRIVILEGES tkp{ 1 , {luid, SE_PRIVILEGE_ENABLED} };
+		if (!AdjustTokenPrivileges(hToken, FALSE, &tkp, sizeof(tkp), NULL, NULL))
+		{
+			CloseHandle(hToken);
+
+			bRet = false;
+			break;
+		}
 		CloseHandle(hToken);
-		return false;
-	}
 
-	TOKEN_PRIVILEGES tkp{ 1 , {luid, SE_PRIVILEGE_ENABLED} };
-	if (!AdjustTokenPrivileges(hToken, FALSE, &tkp, sizeof(tkp), NULL, NULL))
-	{
-		CloseHandle(hToken);
-		return false;
-	}
-	CloseHandle(hToken);
+		bRet = true;
+	} while (false);
 
-	return true;
+	return bRet;
 }
 
 bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 {
+	bool bRet{};
+
 	//Inject dll into target process
-	WCHAR szDllPath[MAX_PATH]{};
-	GetModuleFileName(NULL, szDllPath, MAX_PATH);
-	PathRemoveFileSpec(szDllPath);
-	PathAppend(szDllPath, szModuleName);
-	LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
-	if (!lpRemoteBuffer)
+	do
 	{
-		return false;
-	}
+		WCHAR szDllPath[MAX_PATH]{};
+		GetModuleFileName(NULL, szDllPath, MAX_PATH);
+		PathRemoveFileSpec(szDllPath);
+		PathAppend(szDllPath, szModuleName);
 
-	if (!WriteProcessMemory(hProcess, lpRemoteBuffer, (LPVOID)szDllPath, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), NULL))
-	{
+		LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
+		if (!lpRemoteBuffer)
+		{
+			bRet = false;
+			break;
+		}
+
+		if (!WriteProcessMemory(hProcess, lpRemoteBuffer, (LPVOID)szDllPath, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), NULL))
+		{
+			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
+
+			bRet = false;
+			break;
+		}
+
+		HMODULE hModule{ GetModuleHandle(L"Kernel32") };
+		if (!hModule)
+		{
+			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
+
+			bRet = false;
+			break;
+		}
+
+		LPTHREAD_START_ROUTINE addr{ (LPTHREAD_START_ROUTINE)GetProcAddress(hModule, "LoadLibraryW") };
+		HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, addr, lpRemoteBuffer, 0, NULL) };
+		if (!hRemoteThread)
+		{
+			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
+
+			bRet = false;
+			break;
+		}
+
+		if (WaitForSingleObject(hRemoteThread, Timeout) == WAIT_TIMEOUT)
+		{
+			CloseHandle(hRemoteThread);
+			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
+
+			bRet = false;
+			break;
+		}
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-		return false;
-	}
 
-	HMODULE hModule{ GetModuleHandle(L"Kernel32") };
-	if (!hModule)
-	{
-		return false;
-	}
+		//Get exit code of remote thread
+		DWORD dwRemoteThreadExitCode{};
+		if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
+		{
+			CloseHandle(hRemoteThread);
 
-	LPTHREAD_START_ROUTINE addr{ (LPTHREAD_START_ROUTINE)GetProcAddress(hModule, "LoadLibraryW") };
-	HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, addr, lpRemoteBuffer, 0, NULL) };
-	if (!hRemoteThread)
-	{
-		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-		return false;
-	}
+			bRet = false;
+			break;
+		}
 
-	if (WaitForSingleObject(hRemoteThread, Timeout) == WAIT_TIMEOUT)
-	{
+		if (!dwRemoteThreadExitCode)
+		{
+			CloseHandle(hRemoteThread);
+
+			bRet = false;
+			break;
+		}
 		CloseHandle(hRemoteThread);
-		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-		return false;
-	}
-	VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
-	//Get exit code of remote thread
-	DWORD dwRemoteThreadExitCode{};
-	if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
-	{
-		CloseHandle(hRemoteThread);
-		return false;
-	}
+		bRet = true;
+	} while (false);
 
-	if (!dwRemoteThreadExitCode)
-	{
-		CloseHandle(hRemoteThread);
-		return false;
-	}
-	CloseHandle(hRemoteThread);
-
-	return true;
+	return bRet;
 }
 
 bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 {
+	bool bRet{};
+
 	//Find HMODULE of szModuleName in target process
-	HANDLE hModuleSnapshot{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetProcessId(hProcess)) };
-	MODULEENTRY32 me32{ sizeof(MODULEENTRY32) };
-	HMODULE hModInjectionDll{};
-	if (!Module32First(hModuleSnapshot, &me32))
-	{
-		CloseHandle(hModuleSnapshot);
-		return false;
-	}
 	do
 	{
-		if (!lstrcmpi(me32.szModule, szModuleName))
+		HANDLE hModuleSnapshot{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetProcessId(hProcess)) };
+		MODULEENTRY32 me32{ sizeof(MODULEENTRY32) };
+		HMODULE hModInjectionDll{};
+		if (!Module32First(hModuleSnapshot, &me32))
 		{
-			hModInjectionDll = me32.hModule;
+			CloseHandle(hModuleSnapshot);
+
+			bRet = false;
 			break;
 		}
-	} while (Module32Next(hModuleSnapshot, &me32));
-	if (!hModInjectionDll)
-	{
+		do
+		{
+			if (!lstrcmpi(me32.szModule, szModuleName))
+			{
+				hModInjectionDll = me32.hModule;
+				break;
+			}
+		} while (Module32Next(hModuleSnapshot, &me32));
+		if (!hModInjectionDll)
+		{
+			CloseHandle(hModuleSnapshot);
+
+			bRet = false;
+			break;
+		}
 		CloseHandle(hModuleSnapshot);
-		return false;
-	}
-	CloseHandle(hModuleSnapshot);
 
-	//Unload FontLoaderExInjectionDll(64).dll from target process
-	HMODULE hModule{ GetModuleHandle(L"Kernel32") };
-	LPTHREAD_START_ROUTINE addr{ (LPTHREAD_START_ROUTINE)GetProcAddress(hModule, "FreeLibrary") };
-	HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, addr, (LPVOID)hModInjectionDll, 0, NULL) };
-	if (!hRemoteThread)
-	{
-		return false;
-	}
-	if (WaitForSingleObject(hRemoteThread, Timeout) == WAIT_TIMEOUT)
-	{
-		CloseHandle(hRemoteThread);
-		return false;
-	}
+		//Unload FontLoaderExInjectionDll(64).dll from target process
+		HMODULE hModule{ GetModuleHandle(L"Kernel32") };
+		if (!hModule)
+		{
+			bRet = false;
+			break;
+		}
 
-	//Get exit code of remote thread
-	DWORD dwRemoteThreadExitCode{};
-	if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
-	{
-		CloseHandle(hRemoteThread);
-		return false;
-	}
-	if (!dwRemoteThreadExitCode)
-	{
-		CloseHandle(hRemoteThread);
-		return false;
-	}
-	CloseHandle(hRemoteThread);
+		LPTHREAD_START_ROUTINE addr{ (LPTHREAD_START_ROUTINE)GetProcAddress(hModule, "FreeLibrary") };
+		HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, addr, (LPVOID)hModInjectionDll, 0, NULL) };
+		if (!hRemoteThread)
+		{
+			bRet = false;
+			break;
+		}
+		if (WaitForSingleObject(hRemoteThread, Timeout) == WAIT_TIMEOUT)
+		{
+			CloseHandle(hRemoteThread);
 
-	return true;
+			bRet = false;
+			break;
+		}
+
+		//Get exit code of remote thread
+		DWORD dwRemoteThreadExitCode{};
+		if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
+		{
+			CloseHandle(hRemoteThread);
+
+			bRet = false;
+			break;
+		}
+		if (!dwRemoteThreadExitCode)
+		{
+			CloseHandle(hRemoteThread);
+
+			bRet = false;
+			break;
+		}
+		CloseHandle(hRemoteThread);
+
+		bRet = true;
+	} while (false);
+
+	return bRet;
 }

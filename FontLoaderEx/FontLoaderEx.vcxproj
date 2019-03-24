@@ -123,9 +123,11 @@
     <ClInclude Include="FontResource.h" />
     <ClInclude Include="Globals.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="Splitter.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FontResource.cpp" />
+    <ClCompile Include="Splitter.cpp" />
     <ClCompile Include="WinMain.cpp" />
     <ClCompile Include="WorkingThreads.cpp" />
   </ItemGroup>
