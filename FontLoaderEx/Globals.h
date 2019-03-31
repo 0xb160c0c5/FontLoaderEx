@@ -11,15 +11,15 @@ extern HMENU hMenuContextListViewFontList;
 
 enum class ID : WORD { ButtonOpen = 20, ButtonClose, ButtonLoad, ButtonUnload, ButtonBroadcastWM_FONTCHANGE, StaticTimeout, EditTimeout, ButtonSelectProcess, ListViewFontList, Splitter, EditMessage };
 
-enum class USERMESSAGE : UINT {DRAGDROPWORKINGTHREADTERMINATED = WM_USER + 0x100, BUTTONCLOSEWORKINGTHREADTERMINATED, BUTTONLOADWORKINGTHREADTERMINATED, BUTTONUNLOADWORKINGTHREADTERMINATED, CLOSEWORKINGTHREADTERMINATED,TERMINATEWATCHTHREAD, WATCHTHREADTERMINATED, TERMINATEMESSAGETHREAD };
+enum class USERMESSAGE : UINT {DRAGDROPWORKINGTHREADTERMINATED = WM_USER + 0x100, BUTTONCLOSEWORKINGTHREADTERMINATED, BUTTONLOADWORKINGTHREADTERMINATED, BUTTONUNLOADWORKINGTHREADTERMINATED, CLOSEWORKINGTHREADTERMINATED, TERMINATEWATCHTHREAD, WATCHTHREADTERMINATED, TERMINATEMESSAGETHREAD };
 
 extern bool bDragDropHasFonts;
 
-extern void DragDropWorkingThreadProc(void* lpParameter);
-extern void CloseWorkingThreadProc(void* lpParameter);
-extern void ButtonCloseWorkingThreadProc(void* lpParameter);
-extern void ButtonLoadWorkingThreadProc(void* lpParameter);
-extern void ButtonUnloadWorkingThreadProc(void* lpParameter);
+extern void DragDropWorkerThreadProc(void* lpParameter);
+extern void CloseWorkerThreadProc(void* lpParameter);
+extern void ButtonCloseWorkerThreadProc(void* lpParameter);
+extern void ButtonLoadWorkerThreadProc(void* lpParameter);
+extern void ButtonUnloadWorkerThreadProc(void* lpParameter);
 extern unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter);
 extern unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter);
 extern unsigned int __stdcall MessageThreadProc(void* lpParameter);
@@ -31,7 +31,7 @@ struct ProcessInfo
 {
 	HANDLE hProcess;
 	std::wstring ProcessName;
-	std::uint32_t ProcessID;
+	DWORD ProcessID;
 };
 
 extern ProcessInfo TargetProcessInfo;
@@ -41,6 +41,9 @@ extern void* pfnRemoteRemoveFontProc;
 extern PROCESS_INFORMATION piProxyProcess;
 extern HWND hWndProxy;
 extern HWND hWndMessage;
+
+extern HANDLE hCurrentProcessDuplicated;
+extern HANDLE hTargetProcessDuplicated;
 
 extern HANDLE hEventParentProcessRunning;
 extern HANDLE hEventMessageThreadNotReady;

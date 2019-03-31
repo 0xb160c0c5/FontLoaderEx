@@ -35,10 +35,10 @@
     <ClCompile Include="WinMain.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="WorkingThreads.cpp">
+    <ClCompile Include="Splitter.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="Splitter.cpp">
+    <ClCompile Include="WorkerThreads.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

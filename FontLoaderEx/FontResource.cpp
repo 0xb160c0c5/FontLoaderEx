@@ -1,11 +1,13 @@
 ﻿#include <Windows.h>
 #include <windowsx.h>
-#include <cstddef>
+#include <cwchar>
 #include "FontResource.h"
 #include "Globals.h"
 
 FontResource::pfnAddFontProc FontResource::AddFontProc_{};
 FontResource::pfnRemoveFontProc FontResource::RemoveFontProc_{};
+
+HWND hWndProxy{};
 
 HANDLE hEventProxyAddFontFinished{};
 HANDLE hEventProxyRemoveFontFinished{};
@@ -87,6 +89,7 @@ bool DefaultRemoveFontProc(const wchar_t* lpszFontName)
 }
 #endif // _DEBUG
 
+
 bool RemoteAddFontProc(const wchar_t* lpszFontName)
 {
 	return CallRemoteProc(TargetProcessInfo.hProcess, pfnRemoteAddFontProc, (void*)lpszFontName, (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t));
@@ -101,7 +104,7 @@ bool ProxyAddFontProc(const wchar_t* lpszFontName)
 {
 	bool bRet{};
 
-	COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::ADDFONT, (DWORD)(std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), (void*)lpszFontName };
+	COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::ADDFONT, (DWORD)((std::wcslen(lpszFontName) + 1) * sizeof(wchar_t)), (void*)lpszFontName };
 	FORWARD_WM_COPYDATA(hWndProxy, hWndMain, &cds, SendMessage);
 	WaitForSingleObject(hEventProxyAddFontFinished, INFINITE);
 	ResetEvent(hEventProxyAddFontFinished);
@@ -127,7 +130,7 @@ bool ProxyRemoveFontProc(const wchar_t* lpszFontName)
 {
 	bool bRet{};
 
-	COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::REMOVEFONT, (DWORD)(std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), (void*)lpszFontName };
+	COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::REMOVEFONT, (DWORD)((std::wcslen(lpszFontName) + 1) * sizeof(wchar_t)), (void*)lpszFontName };
 	FORWARD_WM_COPYDATA(hWndProxy, hWndMain, &cds, SendMessage);
 	WaitForSingleObject(hEventProxyRemoveFontFinished, INFINITE);
 	ResetEvent(hEventProxyRemoveFontFinished);
@@ -192,6 +195,7 @@ bool FontResource::Load()
 		if (AddFontProc_(strFontName_.c_str()))
 		{
 			bIsLoaded_ = true;
+
 			bRet = true;
 		}
 		else
@@ -216,6 +220,7 @@ bool FontResource::Unload()
 		if (RemoveFontProc_(strFontName_.c_str()))
 		{
 			bIsLoaded_ = false;
+
 			bRet = true;
 		}
 		else

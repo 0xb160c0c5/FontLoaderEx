@@ -17,9 +17,9 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM
 
 	switch (Msg)
 	{
-		//Draw a horizontal line in the middle
 	case WM_PAINT:
 		{
+			// Draw a horizontal line in the middle
 			PAINTSTRUCT ps{};
 			HDC hDC{ BeginPaint(hWndSplitter, &ps) };
 
@@ -34,6 +34,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM
 		break;
 	case WM_LBUTTONDOWN:
 		{
+			// Capture mouse and send SPLITTERNOTIFICATION::DRAGBEGIN to parent window
 			SetCapture(hWndSplitter);
 
 			SPLITTERSTRUCT ss{ hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGBEGIN, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
@@ -42,6 +43,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM
 		break;
 	case WM_MOUSEMOVE:
 		{
+			// If holding left button, send SPLITTERNOTIFICATION::DRAGGING to parent window
 			if ((wParam == MK_LBUTTON))
 			{
 				SPLITTERSTRUCT ss{ hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGGING, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
@@ -51,6 +53,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM
 		break;
 	case WM_LBUTTONUP:
 		{
+			// Release mouse and send SPLITTERNOTIFICATION::DRAGBEGIN to parent window
 			ReleaseCapture();
 
 			SPLITTERSTRUCT ss{ hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGEND, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };

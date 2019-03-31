@@ -129,7 +129,7 @@
     <ClCompile Include="FontResource.cpp" />
     <ClCompile Include="Splitter.cpp" />
     <ClCompile Include="WinMain.cpp" />
-    <ClCompile Include="WorkingThreads.cpp" />
+    <ClCompile Include="WorkerThreads.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Resource.rc" />

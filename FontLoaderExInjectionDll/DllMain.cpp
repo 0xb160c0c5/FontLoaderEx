@@ -1,6 +1,6 @@
 ﻿#include <Windows.h>
 
-#define EXPORT_FUNCTION comment(linker, "/EXPORT:" __FUNCTION__ "=" __FUNCDNAME__)	//Export function and avoid name mangling with __stdcall
+#define EXPORT_FUNCTION comment(linker, "/EXPORT:" __FUNCTION__ "=" __FUNCDNAME__)	// Export function and avoid name mangling with __stdcall
 
 DWORD WINAPI AddFont(_In_ LPVOID lpParameter)
 {

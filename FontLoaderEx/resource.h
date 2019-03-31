@@ -1,7 +1,7 @@
-﻿//{{NO_DEPENDENCIES}}
+﻿// {{NO_DEPENDENCIES}}
 // Microsoft Visual C++ 生成的包含文件。
 // 供 Resource.rc 使用
-//
+// 
 #define IDD_DIALOG1                     101
 #define IDR_CONTEXTMENU1                102
 #define IDR_ACCELERATOR1                106

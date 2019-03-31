@@ -1,6 +1,6 @@
 ﻿#if !defined(UNICODE) || !defined(_UNICODE)
 #error Unicode character set required
-#endif
+#endif // UNICODE && _UNICODE
 
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #pragma comment(lib, "ComCtl32.lib")
@@ -12,13 +12,15 @@
 #include <tlhelp32.h>
 #include <windowsx.h>
 #include <process.h>
+#include <sddl.h>
 #include <string>
-#include <cstring>
+#include <cwchar>
+#include <iomanip>
 #include <sstream>
 #include <list>
 #include <vector>
 #include <algorithm>
-#include <cstddef>
+#include <memory>
 #include "FontResource.h"
 #include "Globals.h"
 #include "Splitter.h"
@@ -33,17 +35,62 @@ HMENU hMenuContextListViewFontList{};
 
 bool bDragDropHasFonts{ false };
 
+// Create an unique string by scope
+enum class Scope { Machine, Desktop, Session, User };
+std::wstring GetUniqueName(const std::wstring& string, Scope scope);
+
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
-	//Register default AddFont() and RemoveFont() procedure
+	// Prevent multiple instances of FontLoaderEx in different scopes
+	HANDLE hMutexOneInstance{};
+	Scope scope{ Scope::Session };
+	std::wstring strMutexName{ GetUniqueName(L"FontLoaderEx-656A8394-5AB8-4061-8882-2FE2E7940C2E", scope) };
+	hMutexOneInstance = CreateMutex(NULL, FALSE, strMutexName.c_str());
+	if (GetLastError() == ERROR_ALREADY_EXISTS || GetLastError() == ERROR_ACCESS_DENIED)
+	{
+		std::wstringstream strMessage{};
+		strMessage << L"An instance of FontloaderEx is already running ";
+		switch (scope)
+		{
+		case Scope::Machine:
+			{
+				strMessage << L"on the same machine.";
+			}
+			break;
+		case Scope::Desktop:
+			{
+				strMessage << L"on the same desktop.";
+			}
+			break;
+		case Scope::Session:
+			{
+				strMessage << L"in the same session.";
+			}
+			break;
+		case Scope::User:
+			{
+				strMessage << L"by the same user.";
+			}
+			break;
+		default:
+			break;
+		}
+
+		MessageBox(NULL, strMessage.str().c_str(), L"FontLoaderEx", MB_ICONWARNING);
+
+		return 0;
+	}
+
+	// Register default AddFont() and RemoveFont() procedure
 	FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
 
-	//Process drag-drop font files onto the application icon stage I
+	// Process drag-drop font files onto the application icon stage I
 	int argc{};
 	LPWSTR* argv = CommandLineToArgvW(GetCommandLine(), &argc);
 	if (argc > 1)
 	{
 		bDragDropHasFonts = true;
+
 		for (int i = 1; i < argc; i++)
 		{
 			if (PathMatchSpec(argv[i], L"*.ttf") || PathMatchSpec(argv[i], L"*.ttc") || PathMatchSpec(argv[i], L"*.otf"))
@@ -54,17 +101,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	}
 	LocalFree(argv);
 
-	//Initialize common controls
+	// Initialize common controls
 	InitCommonControls();
 
-	//Create window
+	// Create window
 	WNDCLASS wc{ CS_HREDRAW | CS_VREDRAW, WndProc, 0, 0, hInstance, LoadIcon(NULL, IDI_APPLICATION), LoadCursor(NULL, IDC_ARROW), GetSysColorBrush(COLOR_WINDOW), NULL, L"FontLoaderEx" };
-
 	if (!RegisterClass(&wc))
 	{
 		return -1;
 	}
-
 	if (!(hWndMain = CreateWindow(L"FontLoaderEx", L"FontLoaderEx", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 700, 700, NULL, NULL, hInstance, NULL)))
 	{
 		return -1;
@@ -87,7 +132,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		}
 		else
 		{
-			//Avoid short-circuit evaluation
+			// Avoid short-circuit evaluation
 			b1 = IsDialogMessage(hWndMain, &Msg);
 			b2 = TranslateAccelerator(hWndMain, hAccel, &Msg);
 			if (!(b1 || b2))
@@ -98,14 +143,14 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		}
 	}
 
+	CloseHandle(hMutexOneInstance);
+
 	return (int)Msg.wParam;
 }
 
-LRESULT CALLBACK ListViewProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
+LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
 INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM IParam);
-
-WNDPROC OldStaticProc;
-WNDPROC OldListViewProc;
 
 void* pfnRemoteAddFontProc{};
 void* pfnRemoteRemoveFontProc{};
@@ -113,7 +158,9 @@ void* pfnRemoteRemoveFontProc{};
 HANDLE hWatchThread{};
 HANDLE hMessageThread{};
 HANDLE hProxyProcess{};
-HWND hWndProxy{};
+
+HANDLE hCurrentProcessDuplicated{};
+HANDLE hTargetProcessDuplicated{};
 
 HANDLE hEventParentProcessRunning{};
 HANDLE hEventMessageThreadNotReady{};
@@ -134,6 +181,8 @@ PROCESS_INFORMATION piProxyProcess{};
 
 DWORD dwTimeout{};
 
+int MessageBoxCentered(HWND hWnd, LPCTSTR lpText, LPCTSTR lpCaption, UINT uType);
+
 bool EnableDebugPrivilege();
 bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout);
 bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout);
@@ -144,11 +193,17 @@ const WCHAR szInjectionDllNameByProxy[]{ L"FontLoaderExInjectionDll.dll" };
 #else
 const WCHAR szInjectionDllName[]{ L"FontLoaderExInjectionDll.dll" };
 const WCHAR szInjectionDllNameByProxy[]{ L"FontLoaderExInjectionDll64.dll" };
-#endif
+#endif // _WIN64
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	LRESULT ret{};
+
+	static LONG EditMessageTextMarginY{};
+
+	static UINT_PTR SizingEdge{};
+	static RECT rectMainClientOld{};
+	static int PreviousShowCmd{};
 
 	switch ((USERMESSAGE)Msg)
 	{
@@ -161,16 +216,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				std::wstringstream Message{};
 				int iMessageLength{};
 
-				//If loaded via proxy
+				// If loaded via proxy
 				if (piProxyProcess.hProcess)
 				{
-					//Terminate watch thread
+					// Terminate watch thread
 					SetEvent(hEventTerminateWatchThread);
 					WaitForSingleObject(hWatchThread, INFINITE);
 					CloseHandle(hEventTerminateWatchThread);
 					CloseHandle(hWatchThread);
 
-					//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
+					// Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
 					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
 					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
 					WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
@@ -185,6 +240,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							iMessageLength = Edit_GetTextLength(hWndEditMessage);
 							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+							EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+							if (!TargetProcessInfo.hProcess)
+							{
+								EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+							}
 						}
 						goto break_DAA249E0;
 					default:
@@ -194,7 +260,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					break;
 				continue_DAA249E0:
 
-					//Terminate proxy process
+					// Terminate proxy process
 					COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
 					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
 					WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
@@ -202,42 +268,55 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					CloseHandle(piProxyProcess.hProcess);
 					piProxyProcess.hProcess = NULL;
 
-					//Terminate message thread
-					SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+					// Terminate message thread
+					PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 					WaitForSingleObject(hMessageThread, INFINITE);
 					DWORD dwMessageThreadExitCode{};
 					GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
 					if (dwMessageThreadExitCode)
 					{
-						MessageBox(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+						MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
 					}
 					CloseHandle(hMessageThread);
 
-					//Close handle to target process
+					// Close handle to target process and duplicated handles
 					CloseHandle(TargetProcessInfo.hProcess);
 					TargetProcessInfo.hProcess = NULL;
+					CloseHandle(hCurrentProcessDuplicated);
+					CloseHandle(hTargetProcessDuplicated);
 				}
 
-				//Else DIY
+				// Else DIY
 				if (TargetProcessInfo.hProcess)
 				{
-					//Terminate watch thread
+					// Terminate watch thread
 					SetEvent(hEventTerminateWatchThread);
 					WaitForSingleObject(hWatchThread, INFINITE);
 					CloseHandle(hEventTerminateWatchThread);
 					CloseHandle(hWatchThread);
 
-					//Unload FontLoaderExInjectionDll(64).dll from target process
+					// Unload FontLoaderExInjectionDll(64).dll from target process
 					if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 					{
 						Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 						iMessageLength = Edit_GetTextLength(hWndEditMessage);
 						Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 						Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+
+						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+						EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+						EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+						if (!TargetProcessInfo.hProcess)
+						{
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+						}
 						break;
 					}
 
-					//Close handle to target process
+					// Close handle to target process
 					CloseHandle(TargetProcessInfo.hProcess);
 					TargetProcessInfo.hProcess = NULL;
 				}
@@ -246,23 +325,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			}
 			else
 			{
-				switch (MessageBox(hWnd, L"Some fonts are not successfully unloaded.\r\n\r\nDo you still want to exit?", L"FontLoaderEx", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1 | MB_APPLMODAL))
+				switch (MessageBoxCentered(hWnd, L"Some fonts are not successfully unloaded.\r\n\r\nDo you still want to exit?", L"FontLoaderEx", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1 | MB_APPLMODAL))
 				{
 				case IDYES:
 					{
 						std::wstringstream Message{};
 						int iMessageLength{};
 
-						//If loaded via proxy
+						// If loaded via proxy
 						if (piProxyProcess.hProcess)
 						{
-							//Terminate watch thread
+							// Terminate watch thread
 							SetEvent(hEventTerminateWatchThread);
 							WaitForSingleObject(hWatchThread, INFINITE);
 							CloseHandle(hEventTerminateWatchThread);
 							CloseHandle(hWatchThread);
 
-							//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
+							// Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
 							COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
 							FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
 							WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
@@ -277,6 +356,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									iMessageLength = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+									EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+									if (!TargetProcessInfo.hProcess)
+									{
+										EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+									}
 								}
 								goto break_C82EA5C2;
 							default:
@@ -286,7 +376,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							break;
 						continue_C82EA5C2:
 
-							//Terminate proxy process
+							// Terminate proxy process
 							COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
 							FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
 							WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
@@ -294,42 +384,55 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							CloseHandle(piProxyProcess.hProcess);
 							piProxyProcess.hProcess = NULL;
 
-							//Terminate message thread
-							SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+							// Terminate message thread
+							PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 							WaitForSingleObject(hMessageThread, INFINITE);
 							DWORD dwMessageThreadExitCode{};
 							GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
 							if (dwMessageThreadExitCode)
 							{
-								MessageBox(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+								MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
 							}
 							CloseHandle(hMessageThread);
 
-							//Close handle to target process
+							// Close handle to target process and duplicated handles
 							CloseHandle(TargetProcessInfo.hProcess);
 							TargetProcessInfo.hProcess = NULL;
+							CloseHandle(hCurrentProcessDuplicated);
+							CloseHandle(hTargetProcessDuplicated);
 						}
 
-						//Else DIY
+						// Else DIY
 						if (TargetProcessInfo.hProcess)
 						{
-							//Terminate watch thread
+							// Terminate watch thread
 							SetEvent(hEventTerminateWatchThread);
 							WaitForSingleObject(hWatchThread, INFINITE);
 							CloseHandle(hEventTerminateWatchThread);
 							CloseHandle(hWatchThread);
 
-							//Unload FontLoaderExInjectionDll(64).dll from target process
+							// Unload FontLoaderExInjectionDll(64).dll from target process
 							if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 							{
 								Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 								iMessageLength = Edit_GetTextLength(hWndEditMessage);
 								Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 								Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+
+								EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+								EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+								EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+								EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+								EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+								EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+								if (!TargetProcessInfo.hProcess)
+								{
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+								}
 								break;
 							}
 
-							//Close handle to target process
+							// Close handle to target process
 							CloseHandle(TargetProcessInfo.hProcess);
 							TargetProcessInfo.hProcess = NULL;
 						}
@@ -340,13 +443,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				case IDNO:
 					{
 						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+						EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+						EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
 						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
 						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
 						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
-						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
-						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), TRUE);
-						EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
-						EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+						if (!TargetProcessInfo.hProcess)
+						{
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+						}
 					}
 					break;
 				default:
@@ -357,17 +462,33 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		break;
 	case USERMESSAGE::BUTTONCLOSEWORKINGTHREADTERMINATED:
 		{
+			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+			EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+			EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
 			if (FontList.empty())
 			{
-				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
-				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
-				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), TRUE);
-				EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
-				EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
 				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_GRAYED);
 				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_GRAYED);
 				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_GRAYED);
+			}
+			else
+			{
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+			}
+			bool bIsSomeFontsLoaded{};
+			for (auto& i : FontList)
+			{
+				if (i.IsLoaded())
+				{
+					bIsSomeFontsLoaded = true;
+				}
+			}
+			if (!bIsSomeFontsLoaded)
+			{
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), TRUE);
 			}
 		}
 		break;
@@ -379,10 +500,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
 			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
 			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
-			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
-			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), TRUE);
 			EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
 			EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+			if (!TargetProcessInfo.hProcess)
+			{
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+			}
+			bool bIsSomeFontsLoaded{};
+			for (auto& i : FontList)
+			{
+				if (i.IsLoaded())
+				{
+					bIsSomeFontsLoaded = true;
+				}
+			}
+			if (!bIsSomeFontsLoaded)
+			{
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), TRUE);
+			}
 		}
 		break;
 	case USERMESSAGE::WATCHTHREADTERMINATED:
@@ -398,6 +533,49 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	{
 	case WM_CREATE:
 		{
+			/*
+			┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+			┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃
+			┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨
+			┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃
+			┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃
+			┃        │        │        │        │     Select Process     │                    ┃
+			┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨
+			┃ Font Name                                                        │ State        ┃
+			┠──────────────────────────────────────────────────────────────────┼──────────────┨
+			┃                                                                  ┆              ┃
+			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+			┃                                                                  ┆              ┃
+			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+			┃                                                                  ┆              ┃
+			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+			┃                                                                  ┆              ┃
+			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+			┠──────────────────────────────────────────────────────────────────┴──────────────┨
+			┠─────────────────────────────────────────────────────────────────────────────┬───┨
+			┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃
+			┃                                                                             ├───┨
+			┃ How to load fonts to Windows:                                               │▒▒▒┃
+			┃ 1.Drag-drop font files onto the icon of this application.                   │▒▒▒┃
+			┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▒▒▒┃
+			┃  view, then click "Load" button.                                            │▒▒▒┃
+			┃                                                                             ├───┨
+			┃ How to unload fonts from Windows:                                           │   ┃
+			┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃
+			┃ upper-right cornor.                                                         │   ┃
+			┃                                                                             │   ┃
+			┃ How to load fonts to process:                                               │   ┃
+			┃ 1.Click "Click to select process", select a process.                        │   ┃
+			┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list ├───┨
+			┃ view, then click "Load" button.                                             │ ↓ ┃
+			┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
+			*/
+
+			// Get initial window state
+			WINDOWPLACEMENT wp{ sizeof(WINDOWPLACEMENT) };
+			GetWindowPlacement(hWnd, &wp);
+			PreviousShowCmd = wp.showCmd;
+
 			RECT rectClientMain{};
 			GetClientRect(hWnd, &rectClientMain);
 
@@ -405,39 +583,41 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
 			HFONT hFont{ CreateFontIndirect(&ncm.lfMessageFont) };
 
-			//Initialize ButtonOpen
+			// Initialize ButtonOpen
 			HWND hWndButtonOpen{ CreateWindow(WC_BUTTON, L"Open", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 0, 50, 50, hWnd, (HMENU)ID::ButtonOpen, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndButtonOpen, hFont, TRUE);
 
-			//Initialize ButtonClose
+			// Initialize ButtonClose
 			HWND hWndButtonClose{ CreateWindow(WC_BUTTON, L"Close", WS_CHILD | WS_VISIBLE | WS_DISABLED | WS_TABSTOP | BS_PUSHBUTTON, 50, 0, 50, 50, hWnd, (HMENU)ID::ButtonClose, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndButtonClose, hFont, TRUE);
 
-			//Initialize ButtonLoad
+			// Initialize ButtonLoad
 			HWND hWndButtonLoad{ CreateWindow(WC_BUTTON, L"Load", WS_CHILD | WS_VISIBLE | WS_DISABLED | WS_TABSTOP | BS_PUSHBUTTON, 100, 0, 50, 50, hWnd, (HMENU)ID::ButtonLoad, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndButtonLoad, hFont, TRUE);
 
-			//Initialize ButtonUnload
+			// Initialize ButtonUnload
 			HWND hWndButtonUnload{ CreateWindow(WC_BUTTON, L"Unload", WS_CHILD | WS_VISIBLE | WS_DISABLED | WS_TABSTOP | BS_PUSHBUTTON, 150, 0, 50, 50, hWnd, (HMENU)ID::ButtonUnload, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndButtonUnload, hFont, TRUE);
 
-			//Initialize ButtonBroadcastWM_FONTCHANGE
+			// Initialize ButtonBroadcastWM_FONTCHANGE
 			HWND hWndButtonBroadcastWM_FONTCHANGE{ CreateWindow(WC_BUTTON, L"Broadcast WM_FONTCHANGE", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 200, 0, 250, 21, hWnd, (HMENU)ID::ButtonBroadcastWM_FONTCHANGE, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndButtonBroadcastWM_FONTCHANGE, hFont, TRUE);
 
-			//Initialize EditTimeout and label
+			// Initialize EditTimeout and its label
 			HWND hWndStaticTimeout{ CreateWindow(WC_STATIC, L"Timeout:", WS_CHILD | WS_VISIBLE | SS_LEFT , 470, 1, 50, 19, hWnd, (HMENU)ID::StaticTimeout, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
-			HWND hWndEditTimeout{ CreateWindow(WC_EDIT, L"5000", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_LEFT | ES_NUMBER | ES_AUTOHSCROLL | ES_NOHIDESEL, 520, 0, 70, 21, hWnd, (HMENU)ID::EditTimeout, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
+			HWND hWndEditTimeout{ CreateWindow(WC_EDIT, L"5000", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_LEFT | ES_NUMBER | ES_AUTOHSCROLL | ES_NOHIDESEL, 520, 0, 80, 21, hWnd, (HMENU)ID::EditTimeout, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndStaticTimeout, hFont, TRUE);
 			SetWindowFont(hWndEditTimeout, hFont, TRUE);
 
+			Edit_LimitText(hWndEditTimeout, 10);
+
 			dwTimeout = 5000;
 
-			//Initialize ButtonSelectProcess
+			// Initialize ButtonSelectProcess
 			HWND hWndButtonSelectProcess{ CreateWindow(WC_BUTTON, L"Select process", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 200, 29, 250, 21, hWnd, (HMENU)ID::ButtonSelectProcess, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndButtonSelectProcess, hFont, TRUE);
 
-			//Initialize ListViewFontList
+			// Initialize ListViewFontList
 			HWND hWndListViewFontList{ CreateWindow(WC_LISTVIEW, L"FontList", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | LVS_REPORT | LVS_SHOWSELALWAYS, 0, 50, rectClientMain.right - rectClientMain.left, 300, hWnd, (HMENU)ID::ListViewFontList, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			ListView_SetExtendedListViewStyle(hWndListViewFontList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 			SetWindowFont(hWndListViewFontList, hFont, TRUE);
@@ -451,18 +631,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 			DragAcceptFiles(hWndListViewFontList, TRUE);
 
-			OldListViewProc = (WNDPROC)SetWindowLongPtr(hWndListViewFontList, GWLP_WNDPROC, (LONG_PTR)ListViewProc);
+			SetWindowSubclass(hWndListViewFontList, ListViewFontListSubclassProc, 0, NULL);
 
 			CHANGEFILTERSTRUCT cfs{ sizeof(CHANGEFILTERSTRUCT) };
 			ChangeWindowMessageFilterEx(hWndListViewFontList, WM_DROPFILES, MSGFLT_ALLOW, &cfs);
 			ChangeWindowMessageFilterEx(hWndListViewFontList, WM_COPYDATA, MSGFLT_ALLOW, &cfs);
-			ChangeWindowMessageFilterEx(hWndListViewFontList, 0x0049, MSGFLT_ALLOW, &cfs);	//WM_COPYGLOBALDATA
+			ChangeWindowMessageFilterEx(hWndListViewFontList, 0x0049, MSGFLT_ALLOW, &cfs);	// WM_COPYGLOBALDATA
 
-			//Initialize StaticSplitter
-			InitSplitter();
-			HWND hWndSplitter{ CreateWindow(UC_SPLITTER, NULL, WS_CHILD | WS_VISIBLE, 0, 350, rectClientMain.right - rectClientMain.left, 5, hWnd, (HMENU)ID::Splitter, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
+			// Initialize StaticSplitter
+			HWND hWndSplitter{ CreateWindow((LPWSTR)InitSplitter(), NULL, WS_CHILD | WS_VISIBLE, 0, 350, rectClientMain.right - rectClientMain.left, 5, hWnd, (HMENU)ID::Splitter, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 
-			//Initialize EditMessage
+			// Initialize EditMessage
 			HWND hWndEditMessage{ CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_READONLY | ES_LEFT | ES_MULTILINE | ES_NOHIDESEL, 0, 355, rectClientMain.right - rectClientMain.left, rectClientMain.bottom - rectClientMain.top - 355, hWnd, (HMENU)ID::EditMessage, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndEditMessage, hFont, TRUE);
 			Edit_SetText(hWndEditMessage,
@@ -494,11 +673,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				R"("State": State of the font. There are five states, "Not loaded", "Loaded", "Load failed", "Unloaded" and "Unload failed".)""\r\n"
 				"\r\n"
 			);
+
+			SetWindowSubclass(hWndEditMessage, EditMessageSubclassProc, 0, NULL);
+
+			RECT rectEditMessageClient{}, rectEditMessageFormatting{};
+			GetClientRect(hWndEditMessage, &rectEditMessageClient);
+			Edit_GetRect(hWndEditMessage, &rectEditMessageFormatting);
+			EditMessageTextMarginY = (rectEditMessageClient.bottom - rectEditMessageClient.top) - (rectEditMessageFormatting.bottom - rectEditMessageFormatting.top);
 		}
 		break;
 	case WM_ACTIVATE:
 		{
-			//Process drag-drop font files onto the application icon stage II
+			// Process drag-drop font files onto the application icon stage II
 			if (bDragDropHasFonts)
 			{
 				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), FALSE);
@@ -507,13 +693,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), FALSE);
 				EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
-				_beginthread(DragDropWorkingThreadProc, 0, nullptr);
+				_beginthread(DragDropWorkerThreadProc, 0, nullptr);
 			}
 		}
 		break;
 	case WM_CLOSE:
 		{
-			//Unload all fonts
+			// Unload all fonts
 			if (!FontList.empty())
 			{
 				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), FALSE);
@@ -525,7 +711,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), FALSE);
 				EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
-				_beginthread(CloseWorkingThreadProc, 0, nullptr);
+				_beginthread(CloseWorkerThreadProc, 0, nullptr);
 			}
 			else
 			{
@@ -534,16 +720,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				std::wstringstream Message{};
 				int iMessageLength{};
 
-				//If proxy process is running
+				// If loaded via proxy
 				if (piProxyProcess.hProcess)
 				{
-					//Terminate watch thread
-					SetEvent(hEventTerminateWatchThread);
-					WaitForSingleObject(hWatchThread, INFINITE);
-					CloseHandle(hEventTerminateWatchThread);
-					CloseHandle(hWatchThread);
-
-					//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
+					// Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
 					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
 					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
 					WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
@@ -567,7 +747,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					break;
 				continue_69504405:
 
-					//Terminate proxy process
+					// Terminate watch thread
+					SetEvent(hEventTerminateWatchThread);
+					WaitForSingleObject(hWatchThread, INFINITE);
+					CloseHandle(hEventTerminateWatchThread);
+					CloseHandle(hWatchThread);
+
+					// Terminate message thread
+					PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+					WaitForSingleObject(hMessageThread, INFINITE);
+					DWORD dwMessageThreadExitCode{};
+					GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+					if (dwMessageThreadExitCode)
+					{
+						MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+					}
+					CloseHandle(hMessageThread);
+
+					// Terminate proxy process
 					COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
 					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
 					WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
@@ -575,31 +772,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					CloseHandle(piProxyProcess.hProcess);
 					piProxyProcess.hProcess = NULL;
 
-					//Terminate message thread
-					SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-					WaitForSingleObject(hMessageThread, INFINITE);
-					DWORD dwMessageThreadExitCode{};
-					GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
-					if (dwMessageThreadExitCode)
-					{
-						MessageBox(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
-					}
-					CloseHandle(hMessageThread);
-
-					//Close handle to target process
+					// Close handle to target process and duplicated handles
 					CloseHandle(TargetProcessInfo.hProcess);
 					TargetProcessInfo.hProcess = NULL;
+					CloseHandle(hCurrentProcessDuplicated);
+					CloseHandle(hTargetProcessDuplicated);
 				}
-				//Else DIY
+				// Else DIY
 				if (TargetProcessInfo.hProcess)
 				{
-					//Terminate watch thread
-					SetEvent(hEventTerminateWatchThread);
-					WaitForSingleObject(hWatchThread, INFINITE);
-					CloseHandle(hEventTerminateWatchThread);
-					CloseHandle(hWatchThread);
-
-					//Unload FontLoaderExInjectionDll(64).dll from target process
+					// Unload FontLoaderExInjectionDll(64).dll from target process
 					if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 					{
 						Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
@@ -609,7 +791,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 						break;
 					}
 
-					//Close handle to target process
+					// Terminate watch thread
+					SetEvent(hEventTerminateWatchThread);
+					WaitForSingleObject(hWatchThread, INFINITE);
+					CloseHandle(hEventTerminateWatchThread);
+					CloseHandle(hWatchThread);
+
+					// Close handle to target process
 					CloseHandle(TargetProcessInfo.hProcess);
 					TargetProcessInfo.hProcess = NULL;
 				}
@@ -627,14 +815,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		{
 			switch ((ID)LOWORD(wParam))
 			{
-				//"Open" Button
+				// "Open" Button
 			case ID::ButtonOpen:
 				{
 					switch (HIWORD(wParam))
 					{
-						//Open dialog and add fonts to list view
+						// Open “Open” dialog and add fonts
 					case BN_CLICKED:
 						{
+							bool bIsFontListEmptyBefore{ FontList.empty() };
+
 							HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)ID::ListViewFontList) };
 							HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
 
@@ -648,7 +838,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								if (PathIsDirectory(ofn.lpstrFile))
 								{
 									WCHAR* lpszFileName{ ofn.lpstrFile + ofn.nFileOffset };
-
 									do
 									{
 										WCHAR lpszPath[MAX_PATH]{};
@@ -693,14 +882,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								Edit_SetSel(hWndEditMessage, iMessageLenth, iMessageLenth);
 								Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-								EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
-								EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
-								EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
-								EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_ENABLED);
-								EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_ENABLED);
-								EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-								EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_ENABLED);
-							}	
+								if (bIsFontListEmptyBefore)
+								{
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+									EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_ENABLED);
+									EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_ENABLED);
+									EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+									EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_ENABLED);
+								}
+							}
 						}
 						break;
 					default:
@@ -708,13 +900,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					}
 				}
 				break;
-				//"Close" button
+				// "Close" button
 			case ID::ButtonClose:
 				{
 					switch (HIWORD(wParam))
 					{
-						//Unload and close selected fonts
-						//Won't close those failed to unload
+						// Unload and close selected fonts
+						// Won't close those failed to unload
 					case BN_CLICKED:
 						{
 							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), FALSE);
@@ -726,7 +918,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), FALSE);
 							EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
-							_beginthread(ButtonCloseWorkingThreadProc, 0, nullptr);
+							_beginthread(ButtonCloseWorkerThreadProc, 0, nullptr);
 						}
 						break;
 					default:
@@ -734,12 +926,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					}
 				}
 				break;
-				//"Load" button
+				// "Load" button
 			case ID::ButtonLoad:
 				{
 					switch (HIWORD(wParam))
 					{
-						//Load selected fonts
+						// Load selected fonts
 					case BN_CLICKED:
 						{
 							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), FALSE);
@@ -751,19 +943,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), FALSE);
 							EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
-							_beginthread(ButtonLoadWorkingThreadProc, 0, nullptr);
+							_beginthread(ButtonLoadWorkerThreadProc, 0, nullptr);
 						}
 					default:
 						break;
 					}
 				}
 				break;
-				//"Unload" button
+				// "Unload" button
 			case ID::ButtonUnload:
 				{
 					switch (HIWORD(wParam))
 					{
-						//Unload selected fonts
+						// Unload selected fonts
 					case BN_CLICKED:
 						{
 							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), FALSE);
@@ -775,19 +967,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), FALSE);
 							EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
-							_beginthread(ButtonUnloadWorkingThreadProc, 0, nullptr);
+							_beginthread(ButtonUnloadWorkerThreadProc, 0, nullptr);
 						}
 					default:
 						break;
 					}
 				}
 				break;
-				//"Select process" button
+				// "Select process" button
 			case ID::ButtonSelectProcess:
 				{
 					switch (HIWORD(wParam))
 					{
-						//Select a process to load fonts to
+						// Select a process to load fonts to
 					case BN_CLICKED:
 						{
 							HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
@@ -795,15 +987,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 							static bool bIsSeDebugPrivilegeEnabled{ false };
 
+							static HANDLE hCurrentProcessDuplicated{};
+							static HANDLE hTargetProcessDuplicated{};
+
 							std::wstringstream Message{};
 							int iMessageLength{};
 
-							//Convert text in EditTimeout to integer
+							// Convert text in EditTimeout to integer
 							BOOL bIsConverted{};
 							DWORD dwTimeoutTemp{ (DWORD)GetDlgItemInt(hWnd, (int)ID::EditTimeout, &bIsConverted, FALSE) };
 							if (!bIsConverted)
 							{
-								MessageBox(hWnd, L"Timeout value invalid.", L"FontLoaderEx", MB_ICONEXCLAMATION);
+								MessageBoxCentered(hWnd, L"Timeout value invalid.", L"FontLoaderEx", MB_ICONWARNING);
 
 								SetDlgItemInt(hWnd, (int)ID::EditTimeout, (UINT)dwTimeout, FALSE);
 								break;
@@ -813,44 +1008,31 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								dwTimeout = dwTimeoutTemp;
 							}
 
-							//Enable SeDebugPrivilege
+							// Enable SeDebugPrivilege
 							if (!bIsSeDebugPrivilegeEnabled)
 							{
 								if (!EnableDebugPrivilege())
 								{
-									MessageBox(NULL, L"Failed to enable SeDebugPrivilige for FontLoaderEx.", L"FontLoaderEx", MB_ICONERROR);
+									MessageBoxCentered(NULL, L"Failed to enable SeDebugPrivilige for FontLoaderEx.", L"FontLoaderEx", MB_ICONERROR);
 									break;
 								}
 								bIsSeDebugPrivilegeEnabled = true;
 							}
 
-							//If some fonts are loaded to target process, prompt user to close all first
-							if ((!FontList.empty()) && TargetProcessInfo.hProcess)
-							{
-								MessageBox(hWnd, L"Please close all fonts before selecting process.", L"FontLoaderEx", MB_ICONEXCLAMATION);
-								break;
-							}
-
-							//Select process
+							// Select process
 							ProcessInfo* pi{ (ProcessInfo*)DialogBox(NULL, MAKEINTRESOURCE(IDD_DIALOG1), hWnd, DialogProc) };
 
-							//If p != nullptr, select it
+							// If p != nullptr, select it
 							if (pi)
 							{
 								ProcessInfo SelectedProcessInfo = *pi;
 								delete pi;
 
-								//Clear selected process
-								//If loaded via proxy
+								// Clear selected process
+								// If loaded via proxy
 								if (piProxyProcess.hProcess)
 								{
-									//Terminate watch thread
-									SetEvent(hEventTerminateWatchThread);
-									WaitForSingleObject(hWatchThread, INFINITE);
-									CloseHandle(hEventTerminateWatchThread);
-									CloseHandle(hWatchThread);
-
-									//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
+									// Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
 									COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
 									FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
 									WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
@@ -881,7 +1063,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									break;
 								continue_B9A25A68:
 
-									//Terminate proxy process
+									// Terminate watch thread
+									SetEvent(hEventTerminateWatchThread);
+									WaitForSingleObject(hWatchThread, INFINITE);
+									CloseHandle(hEventTerminateWatchThread);
+									CloseHandle(hWatchThread);
+
+									// Terminate message thread
+									PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+									WaitForSingleObject(hMessageThread, INFINITE);
+									DWORD dwMessageThreadExitCode{};
+									GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+									if (dwMessageThreadExitCode)
+									{
+										MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+									}
+									CloseHandle(hMessageThread);
+
+									// Terminate proxy process
 									COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
 									FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
 									WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
@@ -893,34 +1092,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									CloseHandle(piProxyProcess.hProcess);
 									piProxyProcess.hProcess = NULL;
 
-									//Terminate message thread
-									SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-									WaitForSingleObject(hMessageThread, INFINITE);
-									DWORD dwMessageThreadExitCode{};
-									GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
-									if (dwMessageThreadExitCode)
-									{
-										MessageBox(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
-									}
-									CloseHandle(hMessageThread);
-
-									//Close handle to target process and synchronization objects
+									// Close handles to target process, duplicated handles and synchronization objects
 									CloseHandle(TargetProcessInfo.hProcess);
 									TargetProcessInfo.hProcess = NULL;
+									CloseHandle(hCurrentProcessDuplicated);
+									CloseHandle(hTargetProcessDuplicated);
 									CloseHandle(hEventProxyAddFontFinished);
 									CloseHandle(hEventProxyRemoveFontFinished);
 								}
 
-								//Else DIY
+								// Else DIY
 								if (TargetProcessInfo.hProcess)
 								{
-									//Terminate watch thread
-									SetEvent(hEventTerminateWatchThread);
-									WaitForSingleObject(hWatchThread, INFINITE);
-									CloseHandle(hEventTerminateWatchThread);
-									CloseHandle(hWatchThread);
-
-									//Unload FontLoaderExInjectionDll(64).dll from target process
+									// Unload FontLoaderExInjectionDll(64).dll from target process
 									if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 									{
 										Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
@@ -938,12 +1122,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										Message.str(L"");
 									}
 
-									//Close handle to target process
+									// Terminate watch thread
+									SetEvent(hEventTerminateWatchThread);
+									WaitForSingleObject(hWatchThread, INFINITE);
+									CloseHandle(hEventTerminateWatchThread);
+									CloseHandle(hWatchThread);
+
+									// Close handle to target process
 									CloseHandle(TargetProcessInfo.hProcess);
 									TargetProcessInfo.hProcess = NULL;
 								}
 
-								//Get handle to target process
+								// Get handle to target process
 								SelectedProcessInfo.hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, SelectedProcessInfo.ProcessID);
 								if (!SelectedProcessInfo.hProcess)
 								{
@@ -954,17 +1144,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									break;
 								}
 
-								//Determine current and target process type
+								// Determine current and target process type
 								BOOL bIsWOW64Target{}, bIsWOW64Current{};
 								IsWow64Process(SelectedProcessInfo.hProcess, &bIsWOW64Target);
 								IsWow64Process(GetCurrentProcess(), &bIsWOW64Current);
 
-								//If process types are different, launch FontLoaderExProxy.exe to inject dll
+								// If process types are different, launch FontLoaderExProxy.exe to inject dll
 								if (bIsWOW64Current != bIsWOW64Target)
 								{
-									//Create synchronization objects and message thread
+									// Create synchronization objects and message thread
 									SECURITY_ATTRIBUTES sa{ sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
-									hEventParentProcessRunning = CreateEvent(NULL, TRUE, FALSE, L"FontLoaderEx_EventParentProcessRunning");
+									hEventParentProcessRunning = CreateEvent(NULL, TRUE, FALSE, L"FontLoaderEx_EventParentProcessRunning_B980D8A4-C487-4306-9D17-3BA6A2CCA4A4");
 									hEventMessageThreadNotReady = CreateEvent(&sa, TRUE, FALSE, NULL);
 									hEventMessageThreadReady = CreateEvent(&sa, TRUE, FALSE, NULL);
 									hEventProxyProcessReady = CreateEvent(&sa, TRUE, FALSE, NULL);
@@ -978,7 +1168,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									{
 									case WAIT_OBJECT_0:
 										{
-											MessageBox(NULL, L"Failed to create message-only window.", L"FontLoaderEx", MB_ICONERROR);
+											MessageBoxCentered(NULL, L"Failed to create message-only window.", L"FontLoaderEx", MB_ICONERROR);
 
 											WaitForSingleObject(hMessageThread, INFINITE);
 											CloseHandle(hMessageThread);
@@ -993,9 +1183,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									break;
 								continue_721EFBC1:
 
-									//Run proxy process, send handle to current process and target process, HWND to message window, handle to synchronization objects and timeout as arguments to proxy process
-									HANDLE hCurrentProcessDuplicated{};
-									HANDLE hTargetProcessDuplicated{};
+									// Run proxy process, send handles to current process and target process, HWND to message window, handles to synchronization objects and timeout as arguments to proxy process
 									DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(), &hCurrentProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
 									DuplicateHandle(GetCurrentProcess(), SelectedProcessInfo.hProcess, GetCurrentProcess(), &hTargetProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
 									std::wstringstream strParams{};
@@ -1009,10 +1197,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									if (!CreateProcess(LR"(..\Debug\FontLoaderExProxy.exe)", lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
 #else
 									if (!CreateProcess(LR"(..\x64\Debug\FontLoaderExProxy.exe)", lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
-#endif
+#endif // _WIN64
 #else
 									if (!CreateProcess(LR"(FontLoaderExProxy.exe)", lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
-#endif
+#endif // _DEBUG
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
 										CloseHandle(hCurrentProcessDuplicated);
@@ -1025,7 +1213,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										break;
 									}
 
-									//Wait for proxy process to ready
+									// Wait for proxy process to ready
 									WaitForSingleObject(hEventProxyProcessReady, INFINITE);
 									CloseHandle(hEventProxyProcessReady);
 									CloseHandle(hEventMessageThreadReady);
@@ -1037,11 +1225,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 									Message.str(L"");
 
-									//Wait for message-only window to recieve HWND to proxy process
+									// Wait for message-only window to recieve HWND to proxy process
 									WaitForSingleObject(hEventProxyProcessHWNDRevieved, INFINITE);
 									CloseHandle(hEventProxyProcessHWNDRevieved);
 
-									//Wait for proxy process to enable SeDebugPrivilege
+									// Wait for proxy process to enable SeDebugPrivilege
 									WaitForSingleObject(hEventProxyProcessDebugPrivilegeEnablingFinished, INFINITE);
 									CloseHandle(hEventProxyProcessDebugPrivilegeEnablingFinished);
 									switch (ProxyDebugPrivilegeEnablingResult)
@@ -1050,9 +1238,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										goto continue_90567013;
 									case PROXYPROCESSDEBUGPRIVILEGEENABLING::FAILED:
 										{
-											MessageBox(NULL, L"Failed to enable SeDebugPrivilige for FontLoaderExProxy.", L"FontLoaderEx", MB_ICONERROR);
+											MessageBoxCentered(NULL, L"Failed to enable SeDebugPrivilige for FontLoaderExProxy.", L"FontLoaderEx", MB_ICONERROR);
 
-											//Terminate proxy process
+											// Terminate proxy process
 											COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
 											FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
 											WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
@@ -1066,18 +1254,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											CloseHandle(piProxyProcess.hProcess);
 											piProxyProcess.hProcess = NULL;
 
-											//Terminate message thread
-											SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+											// Terminate message thread
+											PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 											WaitForSingleObject(hMessageThread, INFINITE);
 											DWORD dwMessageThreadExitCode{};
 											GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
 											if (dwMessageThreadExitCode)
 											{
-												MessageBox(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+												MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
 											}
 											CloseHandle(hMessageThread);
 
-											//Close handles to selected process
+											// Close handle to selected process
 											CloseHandle(SelectedProcessInfo.hProcess);
 										}
 										goto break_90567013;
@@ -1088,11 +1276,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									break;
 								continue_90567013:
 
-									//Begin dll injection
+									// Begin dll injection
 									COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::INJECTDLL, 0, NULL };
 									FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
 
-									//Wait for proxy process to inject dll into target process
+									// Wait for proxy process to inject dll into target process
 									WaitForSingleObject(hEventProxyDllInjectionFinished, INFINITE);
 									CloseHandle(hEventProxyDllInjectionFinished);
 									switch (ProxyDllInjectionResult)
@@ -1104,24 +1292,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 
-											//Register proxy AddFont() and RemoveFont() procedure and create synchronization object
+											// Register proxy AddFont() and RemoveFont() procedure and create synchronization objects
 											FontResource::RegisterAddRemoveFontProc(ProxyAddFontProc, ProxyRemoveFontProc);
 											hEventProxyAddFontFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
 											hEventProxyRemoveFontFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
 
-											//Disable EditTimeout and ButtonBroadcastWM_FONTCHANGE
+											// Disable EditTimeout and ButtonBroadcastWM_FONTCHANGE
 											EnableWindow(GetDlgItem(hWndMain, (int)ID::EditTimeout), FALSE);
 											EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
 
-											//Change caption
+											// Change caption
 											std::wstringstream Caption{};
 											Caption << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L")";
 											Button_SetText(hWndButtonSelectProcess, (LPCWSTR)Caption.str().c_str());
 
-											//Set TargetProcessInfo
+											// Set TargetProcessInfo
 											TargetProcessInfo = SelectedProcessInfo;
 
-											//Start watch thread and create synchronization object
+											// Create synchronization object and start watch thread
 											hEventTerminateWatchThread = CreateEvent(NULL, TRUE, FALSE, NULL);
 											hWatchThread = (HANDLE)_beginthreadex(nullptr, 0, ProxyAndTargetProcessWatchThreadProc, nullptr, 0, nullptr);
 										}
@@ -1151,8 +1339,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											iMessageLength = Edit_GetTextLength(hWndEditMessage);
 											Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 											Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+											Message.str(L"");
 
-											//Terminate proxy process
+											// Terminate proxy process
 											COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
 											FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
 											WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
@@ -1166,18 +1355,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											CloseHandle(piProxyProcess.hProcess);
 											piProxyProcess.hProcess = NULL;
 
-											//Terminate message thread
-											SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+											// Terminate message thread
+											PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 											WaitForSingleObject(hMessageThread, INFINITE);
 											DWORD dwMessageThreadExitCode{};
 											GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
 											if (dwMessageThreadExitCode)
 											{
-												MessageBox(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+												MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
 											}
 											CloseHandle(hMessageThread);
 
-											//Close handles to selected process
+											// Close handle to selected process
 											CloseHandle(SelectedProcessInfo.hProcess);
 										}
 										break;
@@ -1185,10 +1374,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										break;
 									}
 								}
-								//Else DIY
+								// Else DIY
 								else
 								{
-									//Check whether target process loads gdi32.dll as AddFontResourceEx() and RemoveFontResourceEx() are in it
+									// Check whether target process loads gdi32.dll as AddFontResourceEx() and RemoveFontResourceEx() are in it
 									HANDLE hModuleSnapshot{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, SelectedProcessInfo.ProcessID) };
 									MODULEENTRY32 me32{ sizeof(MODULEENTRY32) };
 									bool bIsGDI32Loaded{ false };
@@ -1224,7 +1413,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									}
 									CloseHandle(hModuleSnapshot);
 
-									//Inject FontLoaderExInjectionDll(64).dll into target process
+									// Inject FontLoaderExInjectionDll(64).dll into target process
 									if (!InjectModule(SelectedProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
@@ -1241,7 +1430,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 									Message.str(L"");
 
-									//Get base address of FontLoaderExInjectionDll(64).dll in target process
+									// Get base address of FontLoaderExInjectionDll(64).dll in target process
 									HANDLE hModuleSnapshot2{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, SelectedProcessInfo.ProcessID) };
 									MODULEENTRY32 me322{ sizeof(MODULEENTRY32) };
 									BYTE* pModBaseAddr{};
@@ -1277,7 +1466,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									}
 									CloseHandle(hModuleSnapshot2);
 
-									//Calculate addresses of AddFont() and RemoveFont() in target process
+									// Calculate addresses of AddFont() and RemoveFont() in target process
 									HMODULE hModInjectionDll{ LoadLibrary(szInjectionDllName) };
 									void* pLocalAddFontProcAddr{ GetProcAddress(hModInjectionDll, "AddFont") };
 									void* pLocalRemoveFontProcAddr{ GetProcAddress(hModInjectionDll, "RemoveFont") };
@@ -1287,35 +1476,33 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									pfnRemoteAddFontProc = (void*)(pModBaseAddr + AddFontProcOffset);
 									pfnRemoteRemoveFontProc = (void*)(pModBaseAddr + RemoveFontProcOffset);
 
-									//Register remote AddFont() and RemoveFont() procedure
+									// Register remote AddFont() and RemoveFont() procedure
 									FontResource::RegisterAddRemoveFontProc(RemoteAddFontProc, RemoteRemoveFontProc);
 
-									//Change caption
+									// Disable EditTimeout and ButtonBroadcastWM_FONTCHANGE
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::EditTimeout), FALSE);
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
+
+									// Change caption
 									std::wstringstream Caption{};
 									Caption << SelectedProcessInfo.ProcessName << L"(" << SelectedProcessInfo.ProcessID << L")";
 									Button_SetText(hWndButtonSelectProcess, (LPCWSTR)Caption.str().c_str());
 
-									//Set TargetProcessInfo
+									// Set TargetProcessInfo
 									TargetProcessInfo = SelectedProcessInfo;
 
-									//Start watch thread and create synchronization object
+									// Create synchronization object and start watch thread
 									hEventTerminateWatchThread = CreateEvent(NULL, TRUE, FALSE, NULL);
 									hWatchThread = (HANDLE)_beginthreadex(nullptr, 0, TargetProcessWatchThreadProc, nullptr, 0, nullptr);
 								}
 							}
-							//If p == nullptr, clear selected process
+							// If p == nullptr, clear selected process
 							else
 							{
-								//If loaded via proxy
+								// If loaded via proxy
 								if (piProxyProcess.hProcess)
 								{
-									//Terminate watch thread
-									SetEvent(hEventTerminateWatchThread);
-									WaitForSingleObject(hWatchThread, INFINITE);
-									CloseHandle(hEventTerminateWatchThread);
-									CloseHandle(hWatchThread);
-
-									//Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
+									// Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
 									COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
 									FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
 									WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
@@ -1346,7 +1533,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									break;
 								continue_0F70B465:
 
-									//Terminate proxy process
+									// Terminate watch thread
+									SetEvent(hEventTerminateWatchThread);
+									WaitForSingleObject(hWatchThread, INFINITE);
+									CloseHandle(hEventTerminateWatchThread);
+									CloseHandle(hWatchThread);
+
+									// Terminate message thread
+									PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+									WaitForSingleObject(hMessageThread, INFINITE);
+									DWORD dwMessageThreadExitCode{};
+									GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+									if (dwMessageThreadExitCode)
+									{
+										MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+									}
+									CloseHandle(hMessageThread);
+
+									// Terminate proxy process
 									COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
 									FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
 									WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
@@ -1360,44 +1564,29 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									CloseHandle(piProxyProcess.hProcess);
 									piProxyProcess.hProcess = NULL;
 
-									//Terminate message thread
-									SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-									WaitForSingleObject(hMessageThread, INFINITE);
-									DWORD dwMessageThreadExitCode{};
-									GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
-									if (dwMessageThreadExitCode)
-									{
-										MessageBox(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
-									}
-									CloseHandle(hMessageThread);
-
-									//Close handle to target process and synchronization objects
+									// Close handles to target process, duplicated handles and synchronization objects
 									CloseHandle(TargetProcessInfo.hProcess);
 									TargetProcessInfo.hProcess = NULL;
+									CloseHandle(hCurrentProcessDuplicated);
+									CloseHandle(hTargetProcessDuplicated);
 									CloseHandle(hEventProxyAddFontFinished);
 									CloseHandle(hEventProxyRemoveFontFinished);
 
-									//Register default AddFont() and RemoveFont() procedure
+									// Register default AddFont() and RemoveFont() procedure
 									FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
 
-									//Enable EditTimeout and ButtonBroadcastWM_FONTCHANGE
+									// Enable EditTimeout and ButtonBroadcastWM_FONTCHANGE
 									EnableWindow(GetDlgItem(hWndMain, (int)ID::EditTimeout), TRUE);
 									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
 
-									//Revert to default caption
+									// Revert to default caption
 									Button_SetText(hWndButtonSelectProcess, L"Select process");
 								}
 
-								//Else DIY
+								// Else DIY
 								if (TargetProcessInfo.hProcess)
 								{
-									//Terminate watch thread
-									SetEvent(hEventTerminateWatchThread);
-									WaitForSingleObject(hWatchThread, INFINITE);
-									CloseHandle(hEventTerminateWatchThread);
-									CloseHandle(hWatchThread);
-
-									//Unload FontLoaderExInjectionDll(64).dll from target process
+									// Unload FontLoaderExInjectionDll(64).dll from target process
 									if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 									{
 										Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
@@ -1414,14 +1603,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 									}
 
-									//Close handle to target process
+									// Terminate watch thread
+									SetEvent(hEventTerminateWatchThread);
+									WaitForSingleObject(hWatchThread, INFINITE);
+									CloseHandle(hEventTerminateWatchThread);
+									CloseHandle(hWatchThread);
+
+									// Close handle to target process
 									CloseHandle(TargetProcessInfo.hProcess);
 									TargetProcessInfo.hProcess = NULL;
 
-									//Register default AddFont() and RemoveFont() procedure
+									// Register default AddFont() and RemoveFont() procedure
 									FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
 
-									//Revert to default caption
+									// Enable EditTimeout and ButtonBroadcastWM_FONTCHANGE
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::EditTimeout), TRUE);
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+
+									// Revert to default caption
 									Button_SetText(hWndButtonSelectProcess, L"Select process");
 								}
 							}
@@ -1437,37 +1636,37 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			}
 			switch (LOWORD(wParam))
 			{
-				//"Load" menu item
+				// "Load" menu item
 			case ID_MENU_LOAD:
 				{
-					//Simulate clicking "Load" button
+					// Simulate clicking "Load" button
 					SendMessage(GetDlgItem(hWnd, (int)ID::ButtonLoad), BM_CLICK, NULL, NULL);
 				}
 				break;
-				//"Unload" menu item
+				// "Unload" menu item
 			case ID_MENU_UNLOAD:
 				{
-					//Simulate clicking "Unload" button
+					// Simulate clicking "Unload" button
 					SendMessage(GetDlgItem(hWnd, (int)ID::ButtonUnload), BM_CLICK, NULL, NULL);
 				}
 				break;
-				//"Close" menu item
+				// "Close" menu item
 			case ID_MENU_CLOSE:
 				{
-					//Simulate clicking "Close" button
+					// Simulate clicking "Close" button
 					SendMessage(GetDlgItem(hWnd, (int)ID::ButtonClose), BM_CLICK, NULL, NULL);
 				}
 				break;
-				//"Select All" menu item
+				// "Select All" menu item
 			case ID_MENU_SELECTALL:
 				{
-					//Select all items in ListViewFontList
+					// Select all items in ListViewFontList
 					ListView_SetItemState(GetDlgItem(hWndMain, (int)ID::ListViewFontList), -1, LVIS_SELECTED, LVIS_SELECTED);
 				}
-				//"Ctrl+A" accelerator
+				// "Ctrl+A" accelerator
 			case ID_ACCELERATOR_SELECTALL:
 				{
-					//Select all items in ListViewFontList
+					// Select all items in ListViewFontList
 					if (GetFocus() == GetDlgItem(hWndMain, (int)ID::ListViewFontList))
 					{
 						ListView_SetItemState(GetDlgItem(hWndMain, (int)ID::ListViewFontList), -1, LVIS_SELECTED, LVIS_SELECTED);
@@ -1483,16 +1682,34 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		{
 			switch ((ID)wParam)
 			{
+			case ID::ListViewFontList:
+				{
+					switch (((LPNMHDR)lParam)->code)
+					{
+						// Set empty text
+					case LVN_GETEMPTYMARKUP:
+						{
+							((NMLVEMPTYMARKUP*)lParam)->dwFlags = 0;
+							wcscpy_s(((NMLVEMPTYMARKUP*)lParam)->szMarkup, LR"(Click "Open" or drag-drop font files to add fonts.)");
+
+							ret = TRUE;
+						}
+						break;
+					default:
+						break;
+					}
+				}
+				break;
 			case ID::Splitter:
 				{
 					static LONG CursorOffsetY{};
 
 					switch ((SPLITTERNOTIFICATION)((LPNMHDR)lParam)->code)
 					{
-						//Begin dragging Splitter
+						// Begin dragging Splitter
 					case SPLITTERNOTIFICATION::DRAGBEGIN:
 						{
-							//Caculate cursor offset to window top in y orientation
+							// Caculate cursor offset to Splitter top in y orientation
 							HWND hWndSplitter{ ((LPSPLITTERSTRUCT)lParam)->nmhdr.hwndFrom };
 							RECT rectSplitter{}, rectSplitterClient{};
 							GetWindowRect(hWndSplitter, &rectSplitter);
@@ -1501,38 +1718,129 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							MapWindowRect(hWndSplitter, HWND_DESKTOP, &rectSplitterClient);
 							CursorOffsetY += rectSplitterClient.top - rectSplitter.top;
 
-							//Confine cursor to a specific rectangle
+							// Confine cursor to a specific rectangle
+							/*
+							┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+							┃                                                                                                                               ┃
+							┃                                                                                                                               ┃
+							┃	┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓                                         ┃← Desktop
+							┃	┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃                                         ┃
+							┃	┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨                                         ┃
+							┃	┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃                                         ┃
+							┃	┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃                                         ┃
+							┃	┃        │        │        │        │     Select Process     │                    ┃                                         ┃
+							┃	┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────╂────────                                 ┃
+							┃	┃ Font Name                                                        │ State        ┃        ↑                                ┃
+							┃	┠──────────────────────────────────────────────────────────────────┼──────────────┨        │ cyListViewFontListMin          ┃
+							┃	┃                                                                  ┆              ┃        ↓                                ┃
+							┠┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃	┃                                                                  ┆              ┃                             ↑           ┃
+							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                     rectMouseClip.top   ┃
+							┃← rectMouseClip.left	                                               ┆              ┃                                         ┃
+							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                                         ┃
+							┃	┃                                                                  ┆              ┃                                         ┃
+							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                                         ┃
+							┃	┠──────────────────────────────────────────────────────────────────┴──────────────┨                    rectMouseClip.right →┃
+							┃	┠─────────────────────────────────────────────────────────────────────────────┬───┨                                         ┃
+							┃	┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃                                         ┃
+							┃	┃                                                                             ├───┨                                         ┃
+							┃	┃ How to load fonts to Windows:                                               │▒▒▒┃                                         ┃
+							┃	┃ 1.Drag-drop font files onto the icon of this application.                   │▒▒▒┃                                         ┃
+							┃	┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▒▒▒┃                                         ┃
+							┃	┃  view, then click "Load" button.                                            │▒▒▒┃                                         ┃
+							┃	┃                                                                             ├───┨                                         ┃
+							┃	┃ How to unload fonts from Windows:                                           │   ┃                                         ┃
+							┃	┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃                                         ┃
+							┃	┃ upper-right cornor.                                                         │   ┃                                         ┃
+							┃	┃                                                                             │   ┃                                         ┃
+							┃	┃ How to load fonts to process:                                               │   ┃                                         ┃
+							┃	┃ 1.Click "Click to select process", select a process.                        │   ┃                    rectMouseClip.bottom ┃
+							┃	┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │   ┃                             ↓           ┃
+							┠┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼───╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃	┃ view, then click "Load" button.                                             │ ↓ ┃        } cyEditMessageMin               ┃
+							┃	┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┹────────                                 ┃
+							┃                                                                                                                               ┃
+							┃                                                                                                                               ┃
+							┃                                                                                                                               ┃
+							┃                                                                                                                               ┃
+							┃                                                                                                                               ┃
+							┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+							*/
+
+							// Calculate the minimal heights of ListViewFontList and EditMessage
+							HWND hWndListViewFontList{ GetDlgItem(hWnd,(int)ID::ListViewFontList) };
+							RECT rectListViewFontList{}, rectListViewFontListClient{};
+							GetWindowRect(hWndListViewFontList, &rectListViewFontList);
+							GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+							RECT rectHeaderListViewFontList{};
+							GetWindowRect(ListView_GetHeader(hWndListViewFontList), &rectHeaderListViewFontList);
+							MapWindowRect(HWND_DESKTOP, hWndListViewFontList, &rectHeaderListViewFontList);
+							bool bIsInserted{ false };
+							if (ListView_GetItemCount(hWndListViewFontList) == 0)
+							{
+								bIsInserted = true;
+
+								LVITEM lvi{};
+								ListView_InsertItem(hWndListViewFontList, &lvi);
+							}
+							RECT rectListViewFontListItem{};
+							ListView_GetItemRect(hWndListViewFontList, 0, &rectListViewFontListItem, LVIR_BOUNDS);
+							if (bIsInserted)
+							{
+								ListView_DeleteAllItems(hWndListViewFontList);
+							}
+							LONG cyListViewFontListMin{ rectHeaderListViewFontList.bottom + (rectListViewFontListItem.bottom - rectListViewFontListItem.top) + ((rectListViewFontList.bottom - rectListViewFontList.top) - (rectListViewFontListClient.bottom - rectListViewFontListClient.top)) };
+
+							HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
+							HDC hDCEditMessage{ GetDC(hWndEditMessage) };
+							HDC hDCEditMessageMemory{ CreateCompatibleDC(hDCEditMessage) };
+							SelectFont(hDCEditMessageMemory, GetWindowFont(hWndEditMessage));
+							TEXTMETRIC tm{};
+							GetTextMetrics(hDCEditMessageMemory, &tm);
+							DeleteDC(hDCEditMessageMemory);
+							ReleaseDC(hWndEditMessage, hDCEditMessage);
+							RECT rectEditMessage{}, rectEditMessageClient{};
+							GetWindowRect(hWndEditMessage, &rectEditMessage);
+							GetClientRect(hWndEditMessage, &rectEditMessageClient);
+							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
+
+							// Calculate confine rectangle
 							RECT rectMainClient{}, rectDesktop{}, rectButtonOpen{};
 							GetClientRect(hWnd, &rectMainClient);
 							MapWindowRect(hWnd, HWND_DESKTOP, &rectMainClient);
 							GetWindowRect(GetDesktopWindow(), &rectDesktop);
 							GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rectButtonOpen);
-							RECT rectMouseClip{ rectDesktop.left, rectMainClient.top + (rectButtonOpen.bottom - rectButtonOpen.top) + CursorOffsetY, rectDesktop.right, rectMainClient.bottom - ((rectSplitter.bottom - rectSplitter.top) - CursorOffsetY) };
+							RECT rectMouseClip{ rectDesktop.left, rectMainClient.top + (rectButtonOpen.bottom - rectButtonOpen.top) + cyListViewFontListMin + CursorOffsetY, rectDesktop.right, rectMainClient.bottom - ((rectSplitter.bottom - rectSplitter.top) - CursorOffsetY) - cyEditMessageMin };
+
 							ClipCursor(&rectMouseClip);
 						}
 						break;
-						//Dragging Splitter
+						// Dragging Splitter
 					case SPLITTERNOTIFICATION::DRAGGING:
 						{
-							//Convert cursor coordinates from Splitter to main window
+							// Convert cursor coordinates from Splitter to main window
 							POINT ptCursor{ ((LPSPLITTERSTRUCT)lParam)->ptCursor };
 							MapWindowPoints(((LPSPLITTERSTRUCT)lParam)->nmhdr.hwndFrom, hWnd, &ptCursor, 1);
 
-							//Move Splitter
+							// Move Splitter
 							HWND hWndSplitter{ ((LPSPLITTERSTRUCT)lParam)->nmhdr.hwndFrom };
 							RECT rectSplitter{};
 							GetWindowRect(hWndSplitter, &rectSplitter);
 							MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
 							MoveWindow(hWndSplitter, 0, ptCursor.y - CursorOffsetY, rectSplitter.right - rectSplitter.left, rectSplitter.bottom - rectSplitter.top, TRUE);
 
-							//Resize ListViewFontList
+							// Resize ListViewFontList
 							HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
 							RECT rectListViewFontList{};
 							GetWindowRect(hWndListViewFontList, &rectListViewFontList);
 							MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
 							MoveWindow(hWndListViewFontList, 0, rectListViewFontList.top, rectListViewFontList.right - rectListViewFontList.left, ptCursor.y - CursorOffsetY - rectListViewFontList.top, TRUE);
 
-							//Resize EditMessage
+							RECT rectListViewFontListClient{};
+							GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+							ListView_SetColumnWidth(hWndListViewFontList, 0, rectListViewFontListClient.right - rectListViewFontListClient.left - ListView_GetColumnWidth(hWndListViewFontList, 1));
+
+							// Resize EditMessage
 							HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
 							RECT rectEditMessage{}, rectMainClient{};
 							GetWindowRect(hWndEditMessage, &rectEditMessage);
@@ -1541,16 +1849,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							MoveWindow(hWndEditMessage, 0, ptCursor.y + (rectSplitter.bottom - rectSplitter.top) - CursorOffsetY, rectEditMessage.right - rectEditMessage.left, rectMainClient.bottom - rectSplitter.bottom, TRUE);
 						}
 						break;
-						//End dragging Splitter
+						// End dragging Splitter
 					case SPLITTERNOTIFICATION::DRAGEND:
 						{
-							//Free cursor
+							// Free cursor
 							ClipCursor(NULL);
 
-							//Redraw controls
-							RECT rectClientMain{};
-							GetClientRect(hWnd, &rectClientMain);
-							InvalidateRect(hWnd, &rectClientMain, FALSE);
+							// Redraw controls
+							InvalidateRect(hWnd, NULL, FALSE);
 						}
 						break;
 					default:
@@ -1565,7 +1871,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_CONTEXTMENU:
 		{
-			//Show context menu on ListViewFontList
+			// Show context menu in ListViewFontList
 			if ((HWND)wParam == GetDlgItem(hWnd, (int)ID::ListViewFontList))
 			{
 				POINT ptMenu{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
@@ -1589,43 +1895,707 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 						ptMenu = ptSelectionMark;
 					}
 				}
-
 				TrackPopupMenu(hMenuContextListViewFontList, TPM_LEFTALIGN | TPM_RIGHTBUTTON, ptMenu.x, ptMenu.y, 0, hWnd, NULL);
 			}
+			else
+			{
+				ret = DefWindowProc(hWnd, Msg, wParam, lParam);
+			}
+		}
+		break;
+	case WM_WINDOWPOSCHANGING:
+		{
+			// Get client rectangle before main windows changes size
+			GetClientRect(((LPWINDOWPOS)lParam)->hwnd, &rectMainClientOld);
+
+			ret = DefWindowProc(hWnd, Msg, wParam, lParam);
+		}
+		break;
+	case WM_SIZING:
+		{
+			// Get sizing edge
+			SizingEdge = wParam;
 		}
 		break;
 	case WM_SIZE:
 		{
-			switch (wParam)
+			// Resize controls
+			switch (PreviousShowCmd)
 			{
-				//Resize controls
-			case SIZE_MAXIMIZED:
-			case SIZE_RESTORED:
+				// If previous window state is restored
+			case SW_SHOWDEFAULT:
+			case SW_SHOWNORMAL:
+			case SW_RESTORE:
 				{
-					//Resize Splitter
-					HWND hWndSplitter{ GetDlgItem(hWnd, (int)ID::Splitter) };
-					RECT rectSplitter{};
-					GetWindowRect(hWndSplitter, &rectSplitter);
-					MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
-					MoveWindow(hWndSplitter, rectSplitter.left, rectSplitter.top, LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+					switch (wParam)
+					{
+						// Resize controls in respective ways by SizingEdge
+					case SIZE_RESTORED:
+						{
+							switch (SizingEdge)
+							{
+								// Resize ListViewFontList and keep the height of EditMessage as far as possible
+							case WMSZ_TOP:
+							case WMSZ_TOPLEFT:
+							case WMSZ_TOPRIGHT:
+								{
+									/*
+																															 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+																															 ┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃
+																															 ┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨
+									┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓      ┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃
+									┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃      ┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃
+									┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨      ┃        │        │        │        │     Select Process     │                    ┃
+									┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃      ┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨
+									┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃      ┃ Font Name                                                        │ State        ┃
+									┃        │        │        │        │     Select Process     │                    ┃      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
+									┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨      ┃                                                                  ┆              ┃
+									┃ Font Name                                                        │ State        ┃      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
+									┠──────────────────────────────────────────────────────────────────┼──────────────┨      ┃                                                                  ┆              ┃
+									┃                                                                  ┆              ┃      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┃                                                                  ┆              ┃
+									┃                                                                  ┆              ┃      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┃                                                                  ┆              ┃
+									┃                                                                  ┆              ┃      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┃                                                                  ┆              ┃
+									┃                                                                  ┆              ┃      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┃                                                                  ┆              ┃
+									┠──────────────────────────────────────────────────────────────────┴──────────────┨  =>  ┠──────────────────────────────────────────────────────────────────┴──────────────┨
+									┠─────────────────────────────────────────────────────────────────────────────┬───┨      ┠─────────────────────────────────────────────────────────────────────────────┬───┨
+									┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃      ┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃
+									┃                                                                             ├───┨      ┃                                                                             ├───┨
+									┃ How to load fonts to Windows:                                               │▒▒▒┃      ┃ How to load fonts to Windows:                                               │▒▒▒┃
+									┃ 1.Drag-drop font files onto the icon of this application.                   │▒▒▒┃      ┃ 1.Drag-drop font files onto the icon of this application.                   │▒▒▒┃
+									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▒▒▒┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▒▒▒┃
+									┃  view, then click "Load" button.                                            │▒▒▒┃      ┃  view, then click "Load" button.                                            │▒▒▒┃
+									┃                                                                             ├───┨      ┃                                                                             ├───┨
+									┃ How to unload fonts from Windows:                                           │   ┃      ┃ How to unload fonts from Windows:                                           │   ┃
+									┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃
+									┃ upper-right cornor.                                                         │   ┃      ┃ upper-right cornor.                                                         │   ┃
+									┃                                                                             │   ┃      ┃                                                                             │   ┃
+									┃ How to load fonts to process:                                               │   ┃      ┃ How to load fonts to process:                                               │   ┃
+									┃ 1.Click "Click to select process", select a process.                        │   ┃      ┃ 1.Click "Click to select process", select a process.                        │   ┃
+									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list ├───┨      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list ├───┨
+									┃ view, then click "Load" button.                                             │ ↓ ┃      ┃ view, then click "Load" button.                                             │ ↓ ┃
+									┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛      ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
+									*/
 
-					//Resize ListViewFontList
-					HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
-					RECT rectListViewFontList{};
-					GetWindowRect(hWndListViewFontList, &rectListViewFontList);
-					MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
-					MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), rectListViewFontList.bottom - rectListViewFontList.top, TRUE);
+									// Resize ListViewFontList
+									RECT rectButtonOpen{}, rectSplitter{}, rectEditMessage{};
+									GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rectButtonOpen);
+									GetWindowRect(GetDlgItem(hWnd, (int)ID::Splitter), &rectSplitter);
+									GetWindowRect(GetDlgItem(hWnd, (int)ID::EditMessage), &rectEditMessage);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rectButtonOpen);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
 
-					RECT rectListViewFontListClient{};
-					GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
-					ListView_SetColumnWidth(hWndListViewFontList, 0, rectListViewFontListClient.right - rectListViewFontListClient.left - ListView_GetColumnWidth(hWndListViewFontList, 1));
+									// Calculate the minimal height of ListViewFontList
+									bool bIsListViewFontListMinimized{ false };
+									HWND hWndListViewFontList{ GetDlgItem(hWnd,(int)ID::ListViewFontList) };
+									RECT rectListViewFontList{}, rectListViewFontListClient{};
+									GetWindowRect(hWndListViewFontList, &rectListViewFontList);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
+									GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+									RECT rectHeaderListViewFontList{};
+									GetWindowRect(ListView_GetHeader(hWndListViewFontList), &rectHeaderListViewFontList);
+									MapWindowRect(HWND_DESKTOP, hWndListViewFontList, &rectHeaderListViewFontList);
+									bool bIsInserted{ false };
+									if (ListView_GetItemCount(hWndListViewFontList) == 0)
+									{
+										bIsInserted = true;
 
-					//Resize EditMessage
-					HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
-					RECT rectEditMessage{};
-					GetWindowRect(hWndEditMessage, &rectEditMessage);
-					MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
-					MoveWindow(hWndEditMessage, rectEditMessage.left, rectEditMessage.top, LOWORD(lParam), HIWORD(lParam) - rectSplitter.bottom, TRUE);
+										LVITEM lvi{};
+										ListView_InsertItem(hWndListViewFontList, &lvi);
+									}
+									RECT rectListViewFontListItem{};
+									ListView_GetItemRect(hWndListViewFontList, 0, &rectListViewFontListItem, LVIR_BOUNDS);
+									if (bIsInserted)
+									{
+										ListView_DeleteAllItems(hWndListViewFontList);
+									}
+									LONG cyListViewFontListMin{ rectHeaderListViewFontList.bottom + (rectListViewFontListItem.bottom - rectListViewFontListItem.top) + ((rectListViewFontList.bottom - rectListViewFontList.top) - (rectListViewFontListClient.bottom - rectListViewFontListClient.top)) };
+
+									if (HIWORD(lParam) - rectButtonOpen.bottom - (rectSplitter.bottom - rectSplitter.top) - (rectEditMessage.bottom - rectEditMessage.top) < cyListViewFontListMin)
+									{
+										bIsListViewFontListMinimized = true;
+
+										MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), cyListViewFontListMin, TRUE);
+									}
+									else
+									{
+										MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), HIWORD(lParam) - rectButtonOpen.bottom - (rectSplitter.bottom - rectSplitter.top) - (rectEditMessage.bottom - rectEditMessage.top), TRUE);
+									}
+
+									GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+									ListView_SetColumnWidth(hWndListViewFontList, 0, rectListViewFontListClient.right - rectListViewFontListClient.left - ListView_GetColumnWidth(hWndListViewFontList, 1));
+
+									// Resize Splitter
+									HWND hWndSplitter{ GetDlgItem(hWnd, (int)ID::Splitter) };
+									if (bIsListViewFontListMinimized)
+									{
+										MoveWindow(hWndSplitter, rectSplitter.left, rectButtonOpen.bottom + cyListViewFontListMin, LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+									}
+									else
+									{
+										MoveWindow(hWndSplitter, rectSplitter.left, HIWORD(lParam) - (rectSplitter.bottom - rectSplitter.top) - (rectEditMessage.bottom - rectEditMessage.top), LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+									}
+
+									// Resize EditMessage
+									HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
+									if (bIsListViewFontListMinimized)
+									{
+										MoveWindow(hWndEditMessage, rectEditMessage.left, rectButtonOpen.bottom + cyListViewFontListMin + (rectSplitter.bottom - rectSplitter.top), LOWORD(lParam), HIWORD(lParam) - (rectButtonOpen.bottom + cyListViewFontListMin + (rectSplitter.bottom - rectSplitter.top)), TRUE);
+									}
+									else
+									{
+										MoveWindow(hWndEditMessage, rectEditMessage.left, HIWORD(lParam) - (rectEditMessage.bottom - rectEditMessage.top), LOWORD(lParam), rectEditMessage.bottom - rectEditMessage.top, TRUE);
+									}
+								}
+								break;
+								// Resize EditMessage and keep the height of ListViewFontList as far as possible
+							case WMSZ_BOTTOM:
+							case WMSZ_BOTTOMLEFT:
+							case WMSZ_BOTTOMRIGHT:
+								{
+									/*
+									┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓      ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+									┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃      ┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃
+									┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨      ┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨
+									┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃      ┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃
+									┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃      ┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃
+									┃        │        │        │        │     Select Process     │                    ┃      ┃        │        │        │        │     Select Process     │                    ┃
+									┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨      ┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨
+									┃ Font Name                                                        │ State        ┃      ┃ Font Name                                                        │ State        ┃
+									┠──────────────────────────────────────────────────────────────────┼──────────────┨      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
+									┃                                                                  ┆              ┃      ┃                                                                  ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
+									┃                                                                  ┆              ┃      ┃                                                                  ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┃                                                                  ┆              ┃      ┃                                                                  ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┃                                                                  ┆              ┃      ┃                                                                  ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┠──────────────────────────────────────────────────────────────────┴──────────────┨  =>  ┠──────────────────────────────────────────────────────────────────┴──────────────┨
+									┠─────────────────────────────────────────────────────────────────────────────┬───┨      ┠─────────────────────────────────────────────────────────────────────────────┬───┨
+									┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃      ┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃
+									┃                                                                             ├───┨      ┃                                                                             ├───┨
+									┃ How to load fonts to Windows:                                               │▒▒▒┃      ┃ How to load fonts to Windows:                                               │▒▒▒┃
+									┃ 1.Drag-drop font files onto the icon of this application.                   │▒▒▒┃      ┃ 1.Drag-drop font files onto the icon of this application.                   │▒▒▒┃
+									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▒▒▒┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▒▒▒┃
+									┃  view, then click "Load" button.                                            │▒▒▒┃      ┃  view, then click "Load" button.                                            │▒▒▒┃
+									┃                                                                             ├───┨      ┃                                                                             │▒▒▒┃
+									┃ How to unload fonts from Windows:                                           │   ┃      ┃ How to unload fonts from Windows:                                           │▒▒▒┃
+									┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the      ├───┨
+									┃ upper-right cornor.                                                         │   ┃      ┃ upper-right cornor.                                                         │   ┃
+									┃                                                                             │   ┃      ┃                                                                             │   ┃
+									┃ How to load fonts to process:                                               │   ┃      ┃ How to load fonts to process:                                               │   ┃
+									┃ 1.Click "Click to select process", select a process.                        │   ┃      ┃ 1.Click "Click to select process", select a process.                        │   ┃
+									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list ├───┨      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │   ┃
+									┃ view, then click "Load" button.                                             │ ↓ ┃      ┃ view, then click "Load" button.                                             │   ┃
+									┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛      ┃ How to unload fonts from process:                                           │   ┃
+																															 ┃ Select all fonts then click "Unload" or "Close" button or the X at the      ├───┨
+																															 ┃  upper-right cornor or terminate selected process.                          │ ↓ ┃
+																															 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
+									*/
+
+									// Resize EditMessage
+									// Calculate the minimal height of EditMessage
+									bool bIsEditMessageMinimized{ false };
+									HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
+									HDC hDCEditMessage{ GetDC(hWndEditMessage) };
+									HDC hDCEditMessageMemory{ CreateCompatibleDC(hDCEditMessage) };
+									SelectFont(hDCEditMessageMemory, GetWindowFont(hWndEditMessage));
+									TEXTMETRIC tm{};
+									GetTextMetrics(hDCEditMessageMemory, &tm);
+									DeleteDC(hDCEditMessageMemory);
+									RECT rectEditMessage{}, rectEditMessageClient{};
+									GetWindowRect(hWndEditMessage, &rectEditMessage);
+									GetClientRect(hWndEditMessage, &rectEditMessageClient);
+									LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
+
+									MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
+									if (HIWORD(lParam) - rectEditMessage.top < cyEditMessageMin)
+									{
+										bIsEditMessageMinimized = true;
+
+										MoveWindow(hWndEditMessage, rectEditMessage.left, HIWORD(lParam) - cyEditMessageMin, LOWORD(lParam), cyEditMessageMin, TRUE);
+									}
+									else
+									{
+										MoveWindow(hWndEditMessage, rectEditMessage.left, rectEditMessage.top, LOWORD(lParam), HIWORD(lParam) - rectEditMessage.top, TRUE);
+									}
+
+									// Resize Splitter
+									HWND hWndSplitter{ GetDlgItem(hWnd, (int)ID::Splitter) };
+									RECT rectSplitter{};
+									GetWindowRect(hWndSplitter, &rectSplitter);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
+									if (bIsEditMessageMinimized)
+									{
+										MoveWindow(hWndSplitter, rectSplitter.left, HIWORD(lParam) - cyEditMessageMin - (rectSplitter.bottom - rectSplitter.top), LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+									}
+									else
+									{
+										MoveWindow(hWndSplitter, rectSplitter.left, rectSplitter.top, LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+									}
+
+									// Resize ListViewFontList
+									RECT rectButtonOpen{};
+									GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rectButtonOpen);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rectButtonOpen);
+									HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
+									RECT rectListViewFontList{};
+									GetWindowRect(hWndListViewFontList, &rectListViewFontList);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
+									if (bIsEditMessageMinimized)
+									{
+										MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), HIWORD(lParam) - cyEditMessageMin - (rectSplitter.bottom - rectSplitter.top) - rectButtonOpen.bottom, TRUE);
+									}
+									else
+									{
+										MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), rectListViewFontList.bottom - rectListViewFontList.top, TRUE);
+									}
+
+									RECT rectListViewFontListClient{};
+									GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+									ListView_SetColumnWidth(hWndListViewFontList, 0, rectListViewFontListClient.right - rectListViewFontListClient.left - ListView_GetColumnWidth(hWndListViewFontList, 1));
+								}
+								break;
+								// Just modify width
+							case WMSZ_LEFT:
+							case WMSZ_RIGHT:
+								{
+									/*
+									┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓      ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+									┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃      ┃FontLoaderEx                                                                       ┃_  ┃ □ ┃ x ┃
+									┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨      ┠────────┬────────┬────────┬────────┬───────────────────────────────────┬───────┬───┸───┸───┸───┨
+									┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃      ┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │               ┃
+									┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃      ┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘               ┃
+									┃        │        │        │        │     Select Process     │                    ┃      ┃        │        │        │        │     Select Process     │                                  ┃
+									┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨      ┠────────┴────────┴────────┴────────┴────────────────────────┴───────────────────┬──────────────┨
+									┃ Font Name                                                        │ State        ┃      ┃ Font Name                                                                      │ State        ┃
+									┠──────────────────────────────────────────────────────────────────┼──────────────┨      ┠────────────────────────────────────────────────────────────────────────────────┼──────────────┨
+									┃                                                                  ┆              ┃      ┃                                                                                ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┃                                                                  ┆              ┃      ┃                                                                                ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┃                                                                  ┆              ┃      ┃                                                                                ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┃                                                                  ┆              ┃      ┃                                                                                ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┠──────────────────────────────────────────────────────────────────┴──────────────┨  =>  ┠────────────────────────────────────────────────────────────────────────────────┴──────────────┨
+									┠─────────────────────────────────────────────────────────────────────────────┬───┨      ┠───────────────────────────────────────────────────────────────────────────────────────────┬───┨
+									┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃      ┃ Temporarily load fonts to Windows or specific process                                     │ ↑ ┃
+									┃                                                                             ├───┨      ┃                                                                                           ├───┨
+									┃ How to load fonts to Windows:                                               │▒▒▒┃      ┃ How to load fonts to Windows:                                                             │▒▒▒┃
+									┃ 1.Drag-drop font files onto the icon of this application.                   │▒▒▒┃      ┃ 1.Drag-drop font files onto the icon of this application.                                 │▒▒▒┃
+									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▒▒▒┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then    │▒▒▒┃
+									┃  view, then click "Load" button.                                            │▒▒▒┃      ┃  click "Load" button.                                                                     ├───┨
+									┃                                                                             ├───┨      ┃                                                                                           │   ┃
+									┃ How to unload fonts from Windows:                                           │   ┃      ┃ How to unload fonts from Windows:                                                         │   ┃
+									┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.│   ┃
+									┃ upper-right cornor.                                                         │   ┃      ┃                                                                                           │   ┃
+									┃                                                                             │   ┃      ┃ How to load fonts to process:                                                             │   ┃
+									┃ How to load fonts to process:                                               │   ┃      ┃ 1.Click "Click to select process", select a process.                                      │   ┃
+									┃ 1.Click "Click to select process", select a process.                        │   ┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then    │   ┃
+									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list ├───┨      ┃  click "Load" button.                                                                     ├───┨
+									┃ view, then click "Load" button.                                             │ ↓ ┃      ┃                                                                                           │ ↓ ┃
+									┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛      ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
+									*/
+
+									// Resize ListViewFontList
+									HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
+									RECT rectListViewFontList{};
+									GetWindowRect(hWndListViewFontList, &rectListViewFontList);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
+									MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), rectListViewFontList.bottom - rectListViewFontList.top, TRUE);
+
+									RECT rectListViewFontListClient{};
+									GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+									ListView_SetColumnWidth(hWndListViewFontList, 0, rectListViewFontListClient.right - rectListViewFontListClient.left - ListView_GetColumnWidth(hWndListViewFontList, 1));
+
+									// Resize Splitter
+									HWND hWndSplitter{ GetDlgItem(hWnd, (int)ID::Splitter) };
+									RECT rectSplitter{};
+									GetWindowRect(hWndSplitter, &rectSplitter);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
+									MoveWindow(hWndSplitter, rectSplitter.left, rectSplitter.top, LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+
+									// Resize EditMessage
+									HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
+									RECT rectEditMessage{};
+									GetWindowRect(hWndEditMessage, &rectEditMessage);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
+									MoveWindow(hWndEditMessage, rectEditMessage.left, rectEditMessage.top, LOWORD(lParam), rectEditMessage.bottom - rectEditMessage.top, TRUE);
+								}
+								break;
+							default:
+								break;
+							}
+
+							PreviousShowCmd = SW_RESTORE;
+						}
+						break;
+						// Proportionally scale the position of splitter
+					case SIZE_MAXIMIZED:
+						{
+							/*
+							┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+							┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃
+							┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨
+							┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃
+							┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃
+							┃        │        │        │        │     Select Process     │                    ┃
+							┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨
+							┃ Font Name                                                        │ State        ┃
+							┠──────────────────────────────────────────────────────────────────┼──────────────┨
+							┃                                                                  ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃                                                                  ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃                                                                  ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃                                                                  ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┠──────────────────────────────────────────────────────────────────┴──────────────┨  =>
+							┠─────────────────────────────────────────────────────────────────────────────┬───┨
+							┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃
+							┃                                                                             ├───┨
+							┃ How to load fonts to Windows:                                               │▒▒▒┃
+							┃ 1.Drag-drop font files onto the icon of this application.                   │▒▒▒┃
+							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▒▒▒┃
+							┃  view, then click "Load" button.                                            │▒▒▒┃
+							┃                                                                             ├───┨
+							┃ How to unload fonts from Windows:                                           │   ┃
+							┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃
+							┃ upper-right cornor.                                                         │   ┃
+							┃                                                                             │   ┃
+							┃ How to load fonts to process:                                               │   ┃
+							┃ 1.Click "Click to select process", select a process.                        │   ┃
+							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list ├───┨
+							┃  view, then click "Load" button.                                            │ ↓ ┃
+							┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
+
+							┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+							┃FontLoaderEx                                                                                                       ┃_  ┃ □ ┃ x ┃
+							┠────────┬────────┬────────┬────────┬───────────────────────────────────┬───────┬───────────────────────────────────┸───┸───┸───┨
+							┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │                                               ┃
+							┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘                                               ┃
+							┃        │        │        │        │     Select Process     │                                                                  ┃
+							┠────────┴────────┴────────┴────────┴────────────────────────┴───────────────────────────────────────────────────┬──────────────┨
+							┃ Font Name                                                                                                      │ State        ┃
+							┠────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────┨
+							┃	                                                                                                             │              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃	                                                                                                             │              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃	                                                                                                             │              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃	                                                                                                             │              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃	                                                                                                             │              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃	                                                                                                             │              ┃
+							┠────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┨
+							┠───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬───┨
+							┃ Temporarily load fonts to Windows or specific process                                                                     │ ↑ ┃
+							┃                                                                                                                           ├───┨
+							┃ How to load fonts to Windows:                                                                                             │▒▒▒┃
+							┃ 1.Drag-drop font files onto the icon of this application.                                                                 │▒▒▒┃
+							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.               │▒▒▒┃
+							┃	                                                                                                                        │▒▒▒┃
+							┃ How to unload fonts from Windows:                                                                                         │▒▒▒┃
+							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.                                │▒▒▒┃
+							┃                                                                                                                           │▒▒▒┃
+							┃ How to load fonts to process:                                                                                             ├───┨
+							┃ 1.Click "Click to select process", select a process.                                                                      │   ┃
+							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.               │   ┃
+							┃                                                                                                                           │   ┃
+							┃ How to unload fonts from process:	                                                                                        │   ┃
+							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor or terminate selected process.	│   ┃
+							┃                                                                                                                           │   ┃
+							┃ UI description:                                                                                                           │   ┃
+							┃ "Open": Add fonts to the list view.                                                                                       │   ┃
+							┃ "Close": Remove selected fonts from Windows or target process and the list view.                                          │   ┃
+							┃ "Load": Add selected fonts to Windows or target process.                                                                  │   ┃
+							┃ "Unload": Remove selected fonts from Windows or target process.	                                                        ├───┨
+							┃ "Broadcast WM_FONTCHANGE": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.│ ↓ ┃
+							┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
+							*/
+
+							// Resize Splitter
+							HWND hWndSplitter{ GetDlgItem(hWnd, (int)ID::Splitter) };
+							RECT rectButtonOpen{}, rectListViewFontList{}, rectSplitter{}, rectEditMessage{};
+							GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rectButtonOpen);
+							GetWindowRect(GetDlgItem(hWnd, (int)ID::ListViewFontList), &rectListViewFontList);
+							GetWindowRect(hWndSplitter, &rectSplitter);
+							GetWindowRect(GetDlgItem(hWnd, (int)ID::EditMessage), &rectEditMessage);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rectButtonOpen);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
+
+							LONG ySplitterTopNew{ (((rectSplitter.top - rectButtonOpen.bottom) + (rectSplitter.bottom - rectButtonOpen.bottom)) * (HIWORD(lParam) - rectButtonOpen.bottom)) / (((rectMainClientOld.bottom - rectMainClientOld.top) - rectButtonOpen.bottom) * 2) - ((rectSplitter.bottom - rectSplitter.top) / 2) + rectButtonOpen.bottom };
+							MoveWindow(hWndSplitter, rectSplitter.left, ySplitterTopNew, LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+
+							// Resize ListViewFontList
+							HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
+							MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), ySplitterTopNew - rectButtonOpen.bottom, TRUE);
+
+							RECT rectListViewFontListClient{};
+							GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+							ListView_SetColumnWidth(hWndListViewFontList, 0, rectListViewFontListClient.right - rectListViewFontListClient.left - ListView_GetColumnWidth(hWndListViewFontList, 1));
+
+							// Resize EditMessage
+							HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
+							MoveWindow(hWndEditMessage, rectEditMessage.left, ySplitterTopNew + (rectSplitter.bottom - rectSplitter.top), LOWORD(lParam), HIWORD(lParam) - (ySplitterTopNew + (rectSplitter.bottom - rectSplitter.top)), TRUE);
+
+							PreviousShowCmd = SW_MAXIMIZE;
+						}
+						break;
+						// Do nothing
+					case SIZE_MINIMIZED:
+						{
+							PreviousShowCmd = SW_MINIMIZE;
+						}
+						break;
+					default:
+						break;
+					}
+				}
+				break;
+				// If previous window state is maximized
+			case SW_MAXIMIZE:
+				{
+					switch (wParam)
+					{
+						// Proportionally scale the position of splitter
+					case SIZE_RESTORED:
+						{
+							/*
+							┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+							┃FontLoaderEx                                                                                                       ┃_  ┃ □ ┃ x ┃
+							┠────────┬────────┬────────┬────────┬───────────────────────────────────┬───────┬───────────────────────────────────┸───┸───┸───┨
+							┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │                                               ┃
+							┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘                                               ┃
+							┃        │        │        │        │     Select Process     │                                                                  ┃
+							┠────────┴────────┴────────┴────────┴────────────────────────┴───────────────────────────────────────────────────┬──────────────┨
+							┃ Font Name                                                                                                      │ State        ┃
+							┠────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────┨
+							┃	                                                                                                             │              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃	                                                                                                             │              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃	                                                                                                             │              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃	                                                                                                             │              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃	                                                                                                             │              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃	                                                                                                             │              ┃
+							┠────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┨  =>
+							┠───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬───┨
+							┃ Temporarily load fonts to Windows or specific process                                                                     │ ↑ ┃
+							┃                                                                                                                           ├───┨
+							┃ How to load fonts to Windows:                                                                                             │▒▒▒┃
+							┃ 1.Drag-drop font files onto the icon of this application.                                                                 │▒▒▒┃
+							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.               │▒▒▒┃
+							┃	                                                                                                                        │▒▒▒┃
+							┃ How to unload fonts from Windows:                                                                                         │▒▒▒┃
+							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.                                │▒▒▒┃
+							┃                                                                                                                           │▒▒▒┃
+							┃ How to load fonts to process:                                                                                             ├───┨
+							┃ 1.Click "Click to select process", select a process.                                                                      │   ┃
+							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.               │   ┃
+							┃                                                                                                                           │   ┃
+							┃ How to unload fonts from process:	                                                                                        │   ┃
+							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor or terminate selected process.	│   ┃
+							┃                                                                                                                           │   ┃
+							┃ UI description:                                                                                                           │   ┃
+							┃ "Open": Add fonts to the list view.                                                                                       │   ┃
+							┃ "Close": Remove selected fonts from Windows or target process and the list view.                                          │   ┃
+							┃ "Load": Add selected fonts to Windows or target process.                                                                  │   ┃
+							┃ "Unload": Remove selected fonts from Windows or target process.	                                                        ├───┨
+							┃ "Broadcast WM_FONTCHANGE": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.│ ↓ ┃
+							┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
+
+							┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+							┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃
+							┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨
+							┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃
+							┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃
+							┃        │        │        │        │     Select Process     │                    ┃
+							┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨
+							┃ Font Name                                                        │ State        ┃
+							┠──────────────────────────────────────────────────────────────────┼──────────────┨
+							┃                                                                  ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃                                                                  ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃                                                                  ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃                                                                  ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┠──────────────────────────────────────────────────────────────────┴──────────────┨
+							┠─────────────────────────────────────────────────────────────────────────────┬───┨
+							┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃
+							┃                                                                             ├───┨
+							┃ How to load fonts to Windows:                                               │▒▒▒┃
+							┃ 1.Drag-drop font files onto the icon of this application.                   │▒▒▒┃
+							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▒▒▒┃
+							┃  view, then click "Load" button.                                            │▒▒▒┃
+							┃                                                                             ├───┨
+							┃ How to unload fonts from Windows:                                           │   ┃
+							┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃
+							┃ upper-right cornor.                                                         │   ┃
+							┃                                                                             │   ┃
+							┃ How to load fonts to process:                                               │   ┃
+							┃ 1.Click "Click to select process", select a process.                        │   ┃
+							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list ├───┨
+							┃  view, then click "Load" button.                                            │ ↓ ┃
+							┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
+							*/
+
+							// Calculate minimal height of ListViewFontList and EditMessage
+							HWND hWndListViewFontList{ GetDlgItem(hWnd,(int)ID::ListViewFontList) };
+							RECT rectListViewFontList{}, rectListViewFontListClient{};
+							GetWindowRect(hWndListViewFontList, &rectListViewFontList);
+							GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+							RECT rectHeaderListViewFontList{};
+							GetWindowRect(ListView_GetHeader(hWndListViewFontList), &rectHeaderListViewFontList);
+							MapWindowRect(HWND_DESKTOP, hWndListViewFontList, &rectHeaderListViewFontList);
+							bool bIsInserted{ false };
+							if (ListView_GetItemCount(hWndListViewFontList) == 0)
+							{
+								bIsInserted = true;
+
+								LVITEM lvi{};
+								ListView_InsertItem(hWndListViewFontList, &lvi);
+							}
+							RECT rectListViewFontListItem{};
+							ListView_GetItemRect(hWndListViewFontList, 0, &rectListViewFontListItem, LVIR_BOUNDS);
+							if (bIsInserted)
+							{
+								ListView_DeleteAllItems(hWndListViewFontList);
+							}
+							LONG cyListViewFontListMin{ rectHeaderListViewFontList.bottom + (rectListViewFontListItem.bottom - rectListViewFontListItem.top) + ((rectListViewFontList.bottom - rectListViewFontList.top) - (rectListViewFontListClient.bottom - rectListViewFontListClient.top)) };
+
+							HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
+							HDC hDCEditMessage{ GetDC(hWndEditMessage) };
+							HDC hDCEditMessageMemory{ CreateCompatibleDC(hDCEditMessage) };
+							SelectFont(hDCEditMessageMemory, GetWindowFont(hWndEditMessage));
+							TEXTMETRIC tm{};
+							GetTextMetrics(hDCEditMessageMemory, &tm);
+							DeleteDC(hDCEditMessageMemory);
+							RECT rectEditMessage{}, rectEditMessageClient{};
+							GetWindowRect(hWndEditMessage, &rectEditMessage);
+							GetClientRect(hWndEditMessage, &rectEditMessageClient);
+							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
+
+							// Calculate new position of splitter
+							HWND hWndSplitter{ GetDlgItem(hWnd, (int)ID::Splitter) };
+							RECT rectButtonOpen{}, rectSplitter{};
+							GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rectButtonOpen);
+							GetWindowRect(hWndSplitter, &rectSplitter);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rectButtonOpen);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
+
+							LONG ySplitterTopNew{ (((rectSplitter.top - rectButtonOpen.bottom) + (rectSplitter.bottom - rectButtonOpen.bottom)) * (HIWORD(lParam) - rectButtonOpen.bottom)) / (((rectMainClientOld.bottom - rectMainClientOld.top) - rectButtonOpen.bottom) * 2) - ((rectSplitter.bottom - rectSplitter.top) / 2) + rectButtonOpen.bottom };
+							LONG cyListViewFontListNew{ ySplitterTopNew - rectButtonOpen.bottom };
+							LONG cyEditMessageNew{ HIWORD(lParam) - (ySplitterTopNew + (rectSplitter.bottom - rectSplitter.top)) };
+
+							// If cyListViewFontListNew < cyListViewFontListMin, keep the minimal height of ListViewFontList
+							if (cyListViewFontListNew < cyListViewFontListMin)
+							{
+								// Resize ListViewFontList
+								HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
+								MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), cyListViewFontListMin, TRUE);
+
+								RECT rectListViewFontListClient{};
+								GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+								ListView_SetColumnWidth(hWndListViewFontList, 0, rectListViewFontListClient.right - rectListViewFontListClient.left - ListView_GetColumnWidth(hWndListViewFontList, 1));
+
+								// Resize Splitter
+								MoveWindow(hWndSplitter, rectSplitter.left, rectButtonOpen.bottom + cyListViewFontListMin, LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+
+								// Resize EditMessage
+								HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
+								MoveWindow(hWndEditMessage, rectEditMessage.left, rectButtonOpen.bottom + cyListViewFontListMin + (rectSplitter.bottom - rectSplitter.top), LOWORD(lParam), HIWORD(lParam) - (rectButtonOpen.bottom + cyListViewFontListMin + (rectSplitter.bottom - rectSplitter.top)), TRUE);
+							}
+							// If cyEditMessageNew < cyEditMessageMin, keep the minimal height of EditMessage
+							else if (cyEditMessageNew < cyEditMessageMin)
+							{
+								// Resize EditMessage
+								HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
+								MoveWindow(hWndEditMessage, rectEditMessage.left, HIWORD(lParam) - cyEditMessageMin, LOWORD(lParam), cyEditMessageMin, TRUE);
+
+								// Resize Splitter
+								MoveWindow(hWndSplitter, rectSplitter.left, HIWORD(lParam) - (cyEditMessageMin + (rectSplitter.bottom - rectSplitter.top)), LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+
+								// Resize ListViewFontList
+								HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
+								MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), HIWORD(lParam) - (cyEditMessageMin + (rectSplitter.bottom - rectSplitter.top) + rectButtonOpen.bottom), TRUE);
+
+								RECT rectListViewFontListClient{};
+								GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+								ListView_SetColumnWidth(hWndListViewFontList, 0, rectListViewFontListClient.right - rectListViewFontListClient.left - ListView_GetColumnWidth(hWndListViewFontList, 1));
+							}
+							// Else resize as usual
+							else
+							{
+								// Resize Splitter
+								MoveWindow(hWndSplitter, rectSplitter.left, ySplitterTopNew, LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+
+								// Resize ListViewFontList
+								HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
+								MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), cyListViewFontListNew, TRUE);
+
+								RECT rectListViewFontListClient{};
+								GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+								ListView_SetColumnWidth(hWndListViewFontList, 0, rectListViewFontListClient.right - rectListViewFontListClient.left - ListView_GetColumnWidth(hWndListViewFontList, 1));
+
+								// Resize EditMessage
+								HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
+								MoveWindow(hWndEditMessage, rectEditMessage.left, ySplitterTopNew + (rectSplitter.bottom - rectSplitter.top), LOWORD(lParam), cyEditMessageNew, TRUE);
+							}
+
+							PreviousShowCmd = SW_RESTORE;
+						}
+						break;
+						// Do nothing
+					case SIZE_MINIMIZED:
+						{
+							PreviousShowCmd = SW_MINIMIZE;
+						}
+						break;
+					default:
+						break;
+					}
+				}
+				break;
+				// If previous window state is minimized
+			case SW_MINIMIZE:
+			case SW_FORCEMINIMIZE:
+			case SW_SHOWMINIMIZED:
+				{
+					// Do nothing
+					switch (wParam)
+					{
+					case SIZE_RESTORED:
+						{
+							PreviousShowCmd = SW_RESTORE;
+						}
+						break;
+					case SIZE_MAXIMIZED:
+						{
+							PreviousShowCmd = SW_MAXIMIZE;
+						}
+						break;
+					default:
+						break;
+					}
 				}
 				break;
 			default:
@@ -1635,8 +2605,83 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_GETMINMAXINFO:
 		{
-			//Limit minimize window size
-			((LPMINMAXINFO)lParam)->ptMinTrackSize = { 700, 700 };
+			// Limit minimize window size
+			/*
+			┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+			┃FontLoaderEx                                                       ┃_  ┃ □ ┃ x ┃
+			┠────────┬────────┬────────┬────────┬───────────────────────────────┸───╀───┸───╂───────
+			┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   ┃       ↑
+			┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┨       │ cyButtonOpen
+			┃        │        │        │        │     Select Process     │                  ┃       ↓
+			┠────────┴────────┴────────┴────────┴────────────────────────┴───┬──────────────╂───────
+			┃ Font Name                                                      │ State        ┃       ↑
+			┠────────────────────────────────────────────────────────────────┼──────────────┨       │ cyListViewFontListMin
+			┃                                                                ┆              ┃       ↓
+			┠────────────────────────────────────────────────────────────────┴──────────────╂───────
+			┠───────────────────────────────────────────────────────────────────────────┬───╂───────
+			┃ Temporarily load fonts to Windows or specific process                     ├───┨       } cyEditMessagemin
+			┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━╉───────
+			│                         rectEditTimeout.right                                 │
+			│←─────────────────────────────────────────────────────────────────────────────→│
+			│                                                                               │
+
+			*/
+
+			// Get ButtonOpen window rectangle
+			RECT rectButtonOpen{};
+			GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rectButtonOpen);
+			MapWindowRect(HWND_DESKTOP, hWnd, &rectButtonOpen);
+
+			// Calculate the minimal height of ListViewFontList
+			HWND hWndListViewFontList{ GetDlgItem(hWnd,(int)ID::ListViewFontList) };
+			RECT rectListViewFontList{}, rectListViewFontListClient{};
+			GetWindowRect(hWndListViewFontList, &rectListViewFontList);
+			GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+			RECT rectHeaderListViewFontList{};
+			GetWindowRect(ListView_GetHeader(hWndListViewFontList), &rectHeaderListViewFontList);
+			MapWindowRect(HWND_DESKTOP, hWndListViewFontList, &rectHeaderListViewFontList);
+			bool bIsInserted{ false };
+			if (ListView_GetItemCount(hWndListViewFontList) == 0)
+			{
+				bIsInserted = true;
+
+				LVITEM lvi{};
+				ListView_InsertItem(hWndListViewFontList, &lvi);
+			}
+			RECT rectListViewFontListItem{};
+			ListView_GetItemRect(hWndListViewFontList, 0, &rectListViewFontListItem, LVIR_BOUNDS);
+			if (bIsInserted)
+			{
+				ListView_DeleteAllItems(hWndListViewFontList);
+			}
+			LONG cyListViewFontListMin{ rectHeaderListViewFontList.bottom + (rectListViewFontListItem.bottom - rectListViewFontListItem.top) + ((rectListViewFontList.bottom - rectListViewFontList.top) - (rectListViewFontListClient.bottom - rectListViewFontListClient.top)) };
+
+			// Get Splitter window rectangle
+			RECT rectSplitter{};
+			GetWindowRect(GetDlgItem(hWnd, (int)ID::Splitter), &rectSplitter);
+
+			// Calculate the minimal height of Editmessage
+			HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
+			HDC hDCEditMessage{ GetDC(hWndEditMessage) };
+			HDC hDCEditMessageMemory{ CreateCompatibleDC(hDCEditMessage) };
+			SelectFont(hDCEditMessageMemory, GetWindowFont(hWndEditMessage));
+			TEXTMETRIC tm{};
+			GetTextMetrics(hDCEditMessageMemory, &tm);
+			DeleteDC(hDCEditMessageMemory);
+			RECT rectEditMessage{}, rectEditMessageClient{};
+			GetWindowRect(hWndEditMessage, &rectEditMessage);
+			GetClientRect(hWndEditMessage, &rectEditMessageClient);
+			LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
+
+			// Get EditTimeout window rectangle
+			RECT rectEditTimeout{};
+			GetWindowRect(GetDlgItem(hWnd, (int)ID::EditTimeout), &rectEditTimeout);
+			MapWindowRect(HWND_DESKTOP, hWnd, &rectEditTimeout);
+
+			// Calculate minimal window size
+			RECT rectMainMin{ 0, 0, rectEditTimeout.right, rectButtonOpen.bottom + cyListViewFontListMin + (rectSplitter.bottom - rectSplitter.top) + cyEditMessageMin };
+			AdjustWindowRect(&rectMainMin, (DWORD)GetWindowLongPtr(hWnd, GWL_STYLE), FALSE);
+			((LPMINMAXINFO)lParam)->ptMinTrackSize = { rectMainMin.right - rectMainMin.left, rectMainMin.bottom - rectMainMin.top };
 		}
 		break;
 	default:
@@ -1649,7 +2694,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	return ret;
 }
 
-LRESULT CALLBACK ListViewProc(HWND hWndListView, UINT Msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
 {
 	LRESULT ret{};
 
@@ -1657,7 +2702,9 @@ LRESULT CALLBACK ListViewProc(HWND hWndListView, UINT Msg, WPARAM wParam, LPARAM
 	{
 	case WM_DROPFILES:
 		{
-			//Process drag-drop and open fonts
+			// Process drag-drop and open fonts
+			bool bIsFontListEmptyBefore{ FontList.empty() };
+
 			HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)ID::ListViewFontList) };
 			HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
 
@@ -1673,6 +2720,7 @@ LRESULT CALLBACK ListViewProc(HWND hWndListView, UINT Msg, WPARAM wParam, LPARAM
 				if (PathMatchSpec(szFileName, L"*.ttf") || PathMatchSpec(szFileName, L"*.ttc") || PathMatchSpec(szFileName, L"*.otf"))
 				{
 					FontList.push_back(szFileName);
+
 					lvi.iSubItem = 0;
 					lvi.pszText = szFileName;
 					ListView_InsertItem(hWndListViewFontList, &lvi);
@@ -1695,18 +2743,61 @@ LRESULT CALLBACK ListViewProc(HWND hWndListView, UINT Msg, WPARAM wParam, LPARAM
 
 			DragFinish((HDROP)wParam);
 
-			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
-			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
-			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
-			EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_ENABLED);
-			EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_ENABLED);
-			EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-			EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_ENABLED);
+			if (bIsFontListEmptyBefore)
+			{
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_ENABLED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_ENABLED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_ENABLED);
+			}
 		}
 		break;
 	default:
 		{
-			ret = CallWindowProc(OldListViewProc, hWndListView, Msg, wParam, lParam);
+			ret = DefSubclassProc(hWndListViewFontList, Msg, wParam, lParam);
+		}
+		break;
+	}
+
+	return ret;
+}
+
+LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+{
+	LRESULT ret{};
+
+	switch (Msg)
+	{
+	case WM_CONTEXTMENU:
+		{
+			// Delete "Undo", "Cut", "Paste" and "Delete" menu items
+			HWINEVENTHOOK hWinEventHook{ SetWinEventHook(EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_MENUPOPUPSTART, NULL,
+				[](HWINEVENTHOOK hWinEventHook, DWORD Event, HWND hWnd, LONG idObject, LONG idChild, DWORD idEventThread, DWORD dwmsEventTime)
+				{
+					if (idObject == OBJID_CLIENT && idChild == CHILDID_SELF)
+					{
+						HMENU hMenuContextEdit{ (HMENU)SendMessage(hWnd, MN_GETHMENU, NULL, NULL) };
+
+						DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);
+						DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);
+						DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);
+						DeleteMenu(hMenuContextEdit, 1, MF_BYPOSITION);
+						DeleteMenu(hMenuContextEdit, 1, MF_BYPOSITION);
+					}
+				},
+				GetCurrentProcessId(), GetCurrentThreadId(), WINEVENT_OUTOFCONTEXT) };
+
+			ret = DefSubclassProc(hWndEditMessage, Msg, wParam, lParam);
+
+			UnhookWinEvent(hWinEventHook);
+		}
+		break;
+	default:
+		{
+			ret = DefSubclassProc(hWndEditMessage, Msg, wParam, lParam);
 		}
 		break;
 	}
@@ -1734,7 +2825,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 			SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
 			HFONT hFont{ CreateFontIndirect(&ncm.lfMessageFont) };
 
-			//Initialize ListViewProcessList
+			// Initialize ListViewProcessList
 			HWND hWndListViewProcessList{ GetDlgItem(hWndDialog, IDC_LIST1) };
 			SetWindowFont(hWndListViewProcessList, hFont, TRUE);
 			SetWindowLongPtr(hWndListViewProcessList, GWL_STYLE, GetWindowLongPtr(hWndListViewProcessList, GWL_STYLE) | LVS_REPORT | LVS_SINGLESEL);
@@ -1747,15 +2838,15 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 			ListView_InsertColumn(hWndListViewProcessList, 1, &lvc2);
 			ListView_SetExtendedListViewStyle(hWndListViewProcessList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 
-			//Initialize ButtonOK
+			// Initialize ButtonOK
 			HWND hWndButtonOK{ GetDlgItem(hWndDialog, IDOK) };
 			SetWindowFont(hWndButtonOK, hFont, TRUE);
 
-			//Initialize ButtonCancel
+			// Initialize ButtonCancel
 			HWND hWndButtonCancel{ GetDlgItem(hWndDialog, IDCANCEL) };
 			SetWindowFont(hWndButtonCancel, hFont, TRUE);
 
-			//Fill ProcessList
+			// Fill ProcessList
 			ProcessList.clear();
 			PROCESSENTRY32 pe32{ sizeof(PROCESSENTRY32) };
 			HANDLE hProcessSnapshot{ CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
@@ -1784,7 +2875,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 		{
 			switch (LOWORD(wParam))
 			{
-				//Return selected process
+				// Return selected process
 			case IDOK:
 				{
 					HWND hWndListViewProcessList{ GetDlgItem(hWndDialog, IDC_LIST1) };
@@ -1804,7 +2895,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 					ret = (INT_PTR)TRUE;
 				}
 				break;
-				//Return null
+				// Return null
 			case IDCANCEL:
 				{
 					EndDialog(hWndDialog, NULL);
@@ -1825,11 +2916,11 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 				{
 					switch (((LPNMLISTVIEW)lParam)->hdr.code)
 					{
-						//Sort items
+						// Sort items
 					case LVN_COLUMNCLICK:
 						{
 							HWND hWndListViewProcessList{ GetDlgItem(hWndDialog, IDC_LIST1) };
-							HWND hWndHeader{ ListView_GetHeader(hWndListViewProcessList) };
+							HWND hWndHeaderListViewProcessList{ ListView_GetHeader(hWndListViewProcessList) };
 
 							HDITEM hdi{ HDI_FORMAT };
 
@@ -1837,7 +2928,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 							{
 							case 0:
 								{
-									//Sort items by Process
+									// Sort items by Process
 									bOrderByProcessAscending ?
 										std::sort(ProcessList.begin(), ProcessList.end(),
 											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
@@ -1847,7 +2938,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 												{
 													return true;
 												}
-												if (i > 0)
+												else if (i > 0)
 												{
 													return false;
 												}
@@ -1855,8 +2946,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 												{
 													return false;
 												}
-											})
-										:
+											}) :
 										std::sort(ProcessList.begin(), ProcessList.end(),
 											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
 											{
@@ -1865,7 +2955,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 												{
 													return true;
 												}
-												if (i >= 0)
+												else if (i >= 0)
 												{
 													return false;
 												}
@@ -1873,23 +2963,22 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 												{
 													return false;
 												}
-											})
-										;
+											});
 
-									//Add arrow to the header in list view
-									Header_GetItem(hWndHeader, 1, &hdi);
+									// Add arrow to the header in list view
+									Header_GetItem(hWndHeaderListViewProcessList, 1, &hdi);
 									hdi.fmt = hdi.fmt & ~(HDF_SORTDOWN | HDF_SORTUP);
-									Header_SetItem(hWndHeader, 1, &hdi);
-									Header_GetItem(hWndHeader, 0, &hdi);
+									Header_SetItem(hWndHeaderListViewProcessList, 1, &hdi);
+									Header_GetItem(hWndHeaderListViewProcessList, 0, &hdi);
 									bOrderByProcessAscending ? hdi.fmt = (hdi.fmt & ~HDF_SORTDOWN) | HDF_SORTUP : hdi.fmt = (hdi.fmt & ~HDF_SORTUP) | HDF_SORTDOWN;
-									Header_SetItem(hWndHeader, 0, &hdi);
+									Header_SetItem(hWndHeaderListViewProcessList, 0, &hdi);
 
 									bOrderByProcessAscending = !bOrderByProcessAscending;
 								}
 								break;
 							case 1:
 								{
-									//Sort items by PID
+									// Sort items by PID
 									bOrderByPIDAscending ?
 										std::sort(ProcessList.begin(), ProcessList.end(),
 											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
@@ -1904,13 +2993,13 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 									})
 										;
 
-									//Add arrow to the header in list view
-									Header_GetItem(hWndHeader, 0, &hdi);
+									// Add arrow to the header in list view
+									Header_GetItem(hWndHeaderListViewProcessList, 0, &hdi);
 									hdi.fmt = hdi.fmt & ~(HDF_SORTDOWN | HDF_SORTUP);
-									Header_SetItem(hWndHeader, 0, &hdi);
-									Header_GetItem(hWndHeader, 1, &hdi);
+									Header_SetItem(hWndHeaderListViewProcessList, 0, &hdi);
+									Header_GetItem(hWndHeaderListViewProcessList, 1, &hdi);
 									bOrderByPIDAscending ? hdi.fmt = (hdi.fmt & ~HDF_SORTDOWN) | HDF_SORTUP : hdi.fmt = (hdi.fmt & ~HDF_SORTUP) | HDF_SORTDOWN;
-									Header_SetItem(hWndHeader, 1, &hdi);
+									Header_SetItem(hWndHeaderListViewProcessList, 1, &hdi);
 
 									bOrderByPIDAscending = !bOrderByPIDAscending;
 								}
@@ -1919,7 +3008,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 								break;
 							}
 
-							//Reset contents of list view
+							// Reset contents of list view
 							LVITEM lvi{ LVIF_TEXT, 0 };
 							for (auto& i : ProcessList)
 							{
@@ -1936,10 +3025,10 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 							ret = (INT_PTR)TRUE;
 						}
 						break;
-						//Select double-clicked item
+						// Select double-clicked item
 					case NM_DBLCLK:
 						{
-							//Simulate clicking "OK" button
+							// Simulate clicking "OK" button
 							SendMessage(GetDlgItem(hWndDialog, IDOK), BM_CLICK, NULL, NULL);
 
 							ret = (INT_PTR)TRUE;
@@ -1962,11 +3051,39 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 	return ret;
 }
 
+int MessageBoxCentered(HWND hWnd, LPCTSTR lpText, LPCTSTR lpCaption, UINT uType)
+{
+	// Center message box at its parent window
+	HHOOK hHookCBT{ SetWindowsHookEx(WH_CBT,
+		[](int nCode, WPARAM wParam, LPARAM lParam) -> LRESULT
+		{
+			if (nCode == HCBT_CREATEWND)
+			{
+				if (((LPCREATESTRUCT)((LPCBT_CREATEWND)lParam)->lpcs)->lpszClass == (LPWSTR)(ATOM)32770)	// #32770 = dialog box class
+				{
+					RECT rectParent{};
+					GetWindowRect(((LPCREATESTRUCT)((LPCBT_CREATEWND)lParam)->lpcs)->hwndParent, &rectParent);
+					((LPCREATESTRUCT)((LPCBT_CREATEWND)lParam)->lpcs)->x = rectParent.left + ((rectParent.right - rectParent.left) - ((LPCREATESTRUCT)((LPCBT_CREATEWND)lParam)->lpcs)->cx) / 2;
+					((LPCREATESTRUCT)((LPCBT_CREATEWND)lParam)->lpcs)->y = rectParent.top + ((rectParent.bottom - rectParent.top) - ((LPCREATESTRUCT)((LPCBT_CREATEWND)lParam)->lpcs)->cy) / 2;
+				}
+			}
+
+			return 0;
+		},
+		0, GetCurrentThreadId()) };
+
+	int ret{ MessageBox(hWnd, lpText, lpCaption, uType) };
+
+	UnhookWindowsHookEx(hHookCBT);
+
+	return ret;
+}
+
 bool EnableDebugPrivilege()
 {
 	bool bRet{};
 
-	//Enable SeDebugPrivilege
+	// Enable SeDebugPrivilege
 	do
 	{
 		HANDLE hToken{};
@@ -1985,8 +3102,8 @@ bool EnableDebugPrivilege()
 			break;
 		}
 
-		TOKEN_PRIVILEGES tkp{ 1 , {luid, SE_PRIVILEGE_ENABLED} };
-		if (!AdjustTokenPrivileges(hToken, FALSE, &tkp, sizeof(tkp), NULL, NULL))
+		TOKEN_PRIVILEGES tp{ 1 , {luid, SE_PRIVILEGE_ENABLED} };
+		if (!AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(tp), NULL, NULL))
 		{
 			CloseHandle(hToken);
 
@@ -2005,7 +3122,7 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 {
 	bool bRet{};
 
-	//Inject dll into target process
+	// Inject dll into target process
 	do
 	{
 		WCHAR szDllPath[MAX_PATH]{};
@@ -2013,6 +3130,7 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 		PathRemoveFileSpec(szDllPath);
 		PathAppend(szDllPath, szModuleName);
 
+		// Allocate buffer in target process
 		LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
 		if (!lpRemoteBuffer)
 		{
@@ -2020,6 +3138,7 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 			break;
 		}
 
+		// Write dll name to remote buffer
 		if (!WriteProcessMemory(hProcess, lpRemoteBuffer, (LPVOID)szDllPath, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), NULL))
 		{
 			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
@@ -2037,6 +3156,7 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 			break;
 		}
 
+		// Create remote thread to inject dll
 		LPTHREAD_START_ROUTINE addr{ (LPTHREAD_START_ROUTINE)GetProcAddress(hModule, "LoadLibraryW") };
 		HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, addr, lpRemoteBuffer, 0, NULL) };
 		if (!hRemoteThread)
@@ -2046,7 +3166,6 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 			bRet = false;
 			break;
 		}
-
 		if (WaitForSingleObject(hRemoteThread, Timeout) == WAIT_TIMEOUT)
 		{
 			CloseHandle(hRemoteThread);
@@ -2057,7 +3176,7 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 		}
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
-		//Get exit code of remote thread
+		// Get exit code of remote thread
 		DWORD dwRemoteThreadExitCode{};
 		if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
 		{
@@ -2086,9 +3205,10 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 {
 	bool bRet{};
 
-	//Find HMODULE of szModuleName in target process
+	// Unload dll from target process
 	do
 	{
+		// Find HMODULE of szModuleName in target process
 		HANDLE hModuleSnapshot{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetProcessId(hProcess)) };
 		MODULEENTRY32 me32{ sizeof(MODULEENTRY32) };
 		HMODULE hModInjectionDll{};
@@ -2116,7 +3236,6 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 		}
 		CloseHandle(hModuleSnapshot);
 
-		//Unload FontLoaderExInjectionDll(64).dll from target process
 		HMODULE hModule{ GetModuleHandle(L"Kernel32") };
 		if (!hModule)
 		{
@@ -2124,6 +3243,7 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 			break;
 		}
 
+		// Create remote thread to unload dll
 		LPTHREAD_START_ROUTINE addr{ (LPTHREAD_START_ROUTINE)GetProcAddress(hModule, "FreeLibrary") };
 		HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, addr, (LPVOID)hModInjectionDll, 0, NULL) };
 		if (!hRemoteThread)
@@ -2139,7 +3259,7 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 			break;
 		}
 
-		//Get exit code of remote thread
+		// Get exit code of remote thread
 		DWORD dwRemoteThreadExitCode{};
 		if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
 		{
@@ -2161,4 +3281,81 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 	} while (false);
 
 	return bRet;
+}
+
+std::wstring GetUniqueName(const std::wstring& string, Scope scope)
+{
+	// Create an unique string by scope
+	std::wstring strRet{};
+
+	switch (scope)
+	{
+		// On the same computer
+	case Scope::Machine:
+		{
+			strRet = string;
+		}
+		break;
+		// On the same desktop
+	case Scope::Desktop:
+		{
+			std::wstringstream ssTemp{};
+			ssTemp << string;
+
+			DWORD dwLength{};
+			HDESK hDesk{ GetThreadDesktop(GetCurrentThreadId()) };
+			GetUserObjectInformation(hDesk, UOI_NAME, NULL, 0, &dwLength);
+			std::unique_ptr<BYTE[]> data{ new BYTE[dwLength]{} };
+			GetUserObjectInformation(hDesk, UOI_NAME, data.get(), dwLength, &dwLength);
+			ssTemp << L"-" << (LPCWSTR)data.get();
+
+			strRet = ssTemp.str();
+		}
+		break;
+		// In the same login session
+	case Scope::Session:
+		{
+			std::wstringstream ssTemp{};
+			ssTemp << string;
+
+			HANDLE hTokenProcess{};
+			DWORD dwLength{};
+			OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hTokenProcess);
+			GetTokenInformation(hTokenProcess, TokenStatistics, NULL, 0, &dwLength);
+			std::unique_ptr<BYTE[]> lpBuffer{ new BYTE[dwLength]{} };
+			GetTokenInformation(hTokenProcess, TokenStatistics, lpBuffer.get(), dwLength, &dwLength);
+			LUID luid{ ((PTOKEN_STATISTICS)lpBuffer.get())->AuthenticationId };
+			ssTemp << L"-" << std::setiosflags(std::ios::internal) << std::setfill(L'0') << std::setw(8) << std::hex << luid.HighPart << luid.LowPart;
+
+			strRet = ssTemp.str();
+		}
+		break;
+		// By the same user account
+	case Scope::User:
+		{
+			std::wstringstream ssTemp{};
+			ssTemp << string;
+
+			HANDLE hTokenProcess{};
+			DWORD dwLength{};
+			OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hTokenProcess);
+			GetTokenInformation(hTokenProcess, TokenUser, NULL, 0, &dwLength);
+			std::unique_ptr<BYTE[]> lpBuffer{ new BYTE[dwLength]{} };
+			GetTokenInformation(hTokenProcess, TokenUser, lpBuffer.get(), dwLength, &dwLength);
+			LPWSTR lpszSID{};
+			ConvertSidToStringSid(((PTOKEN_USER)lpBuffer.get())->User.Sid, &lpszSID);
+			ssTemp << L"-" << lpszSID;
+			LocalFree(lpszSID);
+
+			strRet = ssTemp.str();
+		}
+		break;
+	default:
+		{
+			strRet = string;
+		}
+		break;
+	}
+
+	return strRet;
 }

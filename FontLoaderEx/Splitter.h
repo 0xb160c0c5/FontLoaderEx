@@ -1,6 +1,8 @@
-﻿//Splitter user control
+﻿// Splitter user control
 
 #pragma once
+
+#include <windows.h>
 
 #if !defined(UNICODE) || !defined(_UNICODE)
 	#error Unicode character set required
