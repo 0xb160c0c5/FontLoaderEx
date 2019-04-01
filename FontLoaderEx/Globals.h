@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <list>
+#include <string>
 #include "FontResource.h"
 
 extern std::list<FontResource> FontList;
@@ -11,9 +12,7 @@ extern HMENU hMenuContextListViewFontList;
 
 enum class ID : WORD { ButtonOpen = 20, ButtonClose, ButtonLoad, ButtonUnload, ButtonBroadcastWM_FONTCHANGE, StaticTimeout, EditTimeout, ButtonSelectProcess, ListViewFontList, Splitter, EditMessage };
 
-enum class USERMESSAGE : UINT {DRAGDROPWORKINGTHREADTERMINATED = WM_USER + 0x100, BUTTONCLOSEWORKINGTHREADTERMINATED, BUTTONLOADWORKINGTHREADTERMINATED, BUTTONUNLOADWORKINGTHREADTERMINATED, CLOSEWORKINGTHREADTERMINATED, TERMINATEWATCHTHREAD, WATCHTHREADTERMINATED, TERMINATEMESSAGETHREAD };
-
-extern bool bDragDropHasFonts;
+enum class USERMESSAGE : UINT {DRAGDROPWORKERTHREADTERMINATED = WM_USER + 0x100, BUTTONCLOSEWORKERTHREADTERMINATED, BUTTONLOADWORKERTHREADTERMINATED, BUTTONUNLOADWORKERTHREADTERMINATED, CLOSEWORKERTHREADTERMINATED, TERMINATEWATCHTHREAD, WATCHTHREADTERMINATED, TERMINATEMESSAGETHREAD };
 
 extern void DragDropWorkerThreadProc(void* lpParameter);
 extern void CloseWorkerThreadProc(void* lpParameter);
@@ -24,8 +23,8 @@ extern unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter);
 extern unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter);
 extern unsigned int __stdcall MessageThreadProc(void* lpParameter);
 
-extern HANDLE hWatchThread;
-extern HANDLE hMessageThread;
+extern HANDLE hThreadWatch;
+extern HANDLE hThreadMessage;
 
 struct ProcessInfo
 {
@@ -42,8 +41,8 @@ extern PROCESS_INFORMATION piProxyProcess;
 extern HWND hWndProxy;
 extern HWND hWndMessage;
 
-extern HANDLE hCurrentProcessDuplicated;
-extern HANDLE hTargetProcessDuplicated;
+extern HANDLE hProcessCurrentDuplicated;
+extern HANDLE hProcessTargetDuplicated;
 
 extern HANDLE hEventParentProcessRunning;
 extern HANDLE hEventMessageThreadNotReady;

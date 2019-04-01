@@ -3,11 +3,17 @@
 #include <CommCtrl.h>
 #include <list>
 #include <sstream>
+#include <atomic>
 #include "FontResource.h"
 #include "Globals.h"
 #include "resource.h"
 
-// Process drag-drop font files onto the application icon stage II working thread
+std::atomic<bool> bIsWorkerThreadRunning{ false };
+std::atomic<bool> bIsTargetProcessTerminated{ false };
+HANDLE hEventWorkerThreadAboutToTerminate{};
+HANDLE hEventWatchThreadAboutToTerminate{};
+
+// Process drag-drop font files onto the application icon stage II worker thread
 void DragDropWorkerThreadProc(void* lpParameter)
 {
 	HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)ID::ListViewFontList) };
@@ -54,8 +60,6 @@ void DragDropWorkerThreadProc(void* lpParameter)
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-	bDragDropHasFonts = false;
-
 	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
 	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
 	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
@@ -64,12 +68,15 @@ void DragDropWorkerThreadProc(void* lpParameter)
 	EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_ENABLED);
 	EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_ENABLED);
 
-	PostMessage(hWndMain, (UINT)USERMESSAGE::DRAGDROPWORKINGTHREADTERMINATED, NULL, NULL);
+	PostMessage(hWndMain, (UINT)USERMESSAGE::DRAGDROPWORKERTHREADTERMINATED, NULL, NULL);
 }
 
-// Close working thread
+// Close worker thread
 void CloseWorkerThreadProc(void* lpParameter)
 {
+	bIsWorkerThreadRunning = true;
+	hEventWorkerThreadAboutToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
+
 	HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)ID::ListViewFontList) };
 	HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
 	HWND hWndButtonBroadcastWM_FONTCHANGE{ GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE) };
@@ -77,7 +84,8 @@ void CloseWorkerThreadProc(void* lpParameter)
 	std::wstringstream Message{};
 	int iMessageLength{};
 
-	bool bIsUnloadSuccessful{ true };
+	bool bIsUnloadingSuccessful{ true };
+	bool bIsUnloadingInterrupted{ false };
 	bool bIsFontListChanged{ false };
 
 	LVITEM lvi{ LVIF_TEXT, 0, 1 };
@@ -87,35 +95,53 @@ void CloseWorkerThreadProc(void* lpParameter)
 	{
 		if (iter->IsLoaded())
 		{
-			if (iter->Unload())
+			if (bIsTargetProcessTerminated)
 			{
-				bIsFontListChanged = true;
-
-				ListView_DeleteItem(hWndListViewFontList, i);
-
-				Message << iter->GetFontName() << L" successfully unloaded and closed\r\n";
+				// If target process terminated, wait for watch thread to terminate first
 				iMessageLength = Edit_GetTextLength(hWndEditMessage);
 				Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-				Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-				Message.str(L"");
+				Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-				iter = FontList.erase(iter);
+				SetEvent(hEventWorkerThreadAboutToTerminate);
+				WaitForSingleObject(hEventWatchThreadAboutToTerminate, INFINITE);
+				CloseHandle(hEventWatchThreadAboutToTerminate);
+
+				bIsUnloadingInterrupted = true;
+
+				break;
 			}
 			else
 			{
-				bIsUnloadSuccessful = false;
+				if (iter->Unload())
+				{
+					bIsFontListChanged = true;
 
-				lvi.iItem = i;
-				lvi.pszText = (LPWSTR)L"Unload failed";
-				ListView_SetItem(hWndListViewFontList, &lvi);
+					ListView_DeleteItem(hWndListViewFontList, i);
 
-				Message << L"Failed to unload " << iter->GetFontName() << L"\r\n";
-				iMessageLength = Edit_GetTextLength(hWndEditMessage);
-				Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-				Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-				Message.str(L"");
+					Message << iter->GetFontName() << L" successfully unloaded and closed\r\n";
+					iMessageLength = Edit_GetTextLength(hWndEditMessage);
+					Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+					Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+					Message.str(L"");
 
-				iter++;
+					iter = FontList.erase(iter);
+				}
+				else
+				{
+					bIsUnloadingSuccessful = false;
+
+					lvi.iItem = i;
+					lvi.pszText = (LPWSTR)L"Unload failed";
+					ListView_SetItem(hWndListViewFontList, &lvi);
+
+					Message << L"Failed to unload " << iter->GetFontName() << L"\r\n";
+					iMessageLength = Edit_GetTextLength(hWndEditMessage);
+					Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+					Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+					Message.str(L"");
+
+					iter++;
+				}
 			}
 		}
 		else
@@ -144,13 +170,17 @@ void CloseWorkerThreadProc(void* lpParameter)
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-	// If some fonts are not unloaded, prompt user whether inisit to exit.
-	PostMessage(hWndMain, (UINT)USERMESSAGE::CLOSEWORKINGTHREADTERMINATED, (WPARAM)bIsUnloadSuccessful, NULL);
+	PostMessage(hWndMain, (UINT)USERMESSAGE::CLOSEWORKERTHREADTERMINATED, (WPARAM)bIsUnloadingSuccessful, (LPARAM)bIsUnloadingInterrupted);
+
+	bIsWorkerThreadRunning = false;
 }
 
-// Unload and close selected fonts working thread
+// Unload and close selected fonts worker thread
 void ButtonCloseWorkerThreadProc(void* lpParameter)
 {
+	bIsWorkerThreadRunning = true;
+	hEventWorkerThreadAboutToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
+
 	HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)ID::ListViewFontList) };
 	HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
 	HWND hWndButtonBroadcastWM_FONTCHANGE{ GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE) };
@@ -169,33 +199,49 @@ void ButtonCloseWorkerThreadProc(void* lpParameter)
 		{
 			if (iter->IsLoaded())
 			{
-				if (iter->Unload())
+				if (bIsTargetProcessTerminated)
 				{
-					bIsFontListChanged = true;
-
-					ListView_DeleteItem(hWndListViewFontList, i);
-
-					Message << iter->GetFontName() << L" successfully unloaded and closed\r\n";
+					// If target process terminated, wait for watch thread to terminate first
 					iMessageLength = Edit_GetTextLength(hWndEditMessage);
 					Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-					Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-					Message.str(L"");
+					Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-					iter = FontList.erase(iter);
+					SetEvent(hEventWorkerThreadAboutToTerminate);
+					WaitForSingleObject(hEventWatchThreadAboutToTerminate, INFINITE);
+					CloseHandle(hEventWatchThreadAboutToTerminate);
+
+					break;
 				}
 				else
 				{
-					lvi.iItem = i;
-					lvi.pszText = (LPWSTR)L"Unload failed";
-					ListView_SetItem(hWndListViewFontList, &lvi);
+					if (iter->Unload())
+					{
+						bIsFontListChanged = true;
 
-					Message << L"Failed to unload " << iter->GetFontName() << L"\r\n";
-					iMessageLength = Edit_GetTextLength(hWndEditMessage);
-					Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-					Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-					Message.str(L"");
+						ListView_DeleteItem(hWndListViewFontList, i);
 
-					iter++;
+						Message << iter->GetFontName() << L" successfully unloaded and closed\r\n";
+						iMessageLength = Edit_GetTextLength(hWndEditMessage);
+						Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+						Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+						Message.str(L"");
+
+						iter = FontList.erase(iter);
+					}
+					else
+					{
+						lvi.iItem = i;
+						lvi.pszText = (LPWSTR)L"Unload failed";
+						ListView_SetItem(hWndListViewFontList, &lvi);
+
+						Message << L"Failed to unload " << iter->GetFontName() << L"\r\n";
+						iMessageLength = Edit_GetTextLength(hWndEditMessage);
+						Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+						Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+						Message.str(L"");
+
+						iter++;
+					}
 				}
 			}
 			else
@@ -229,12 +275,17 @@ void ButtonCloseWorkerThreadProc(void* lpParameter)
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-	PostMessage(hWndMain, (UINT)USERMESSAGE::BUTTONCLOSEWORKINGTHREADTERMINATED, NULL, NULL);
+	PostMessage(hWndMain, (UINT)USERMESSAGE::BUTTONCLOSEWORKERTHREADTERMINATED, NULL, NULL);
+
+	bIsWorkerThreadRunning = false;
 }
 
-// Load selected fonts working thread
+// Load selected fonts worker thread
 void ButtonLoadWorkerThreadProc(void* lpParameter)
 {
+	bIsWorkerThreadRunning = true;
+	hEventWorkerThreadAboutToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
+
 	HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)ID::ListViewFontList) };
 	HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
 	HWND hWndButtonBroadcastWM_FONTCHANGE{ GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE) };
@@ -250,23 +301,40 @@ void ButtonLoadWorkerThreadProc(void* lpParameter)
 	{
 		if ((ListView_GetItemState(hWndListViewFontList, i, LVIS_SELECTED) & LVIS_SELECTED) && (!(iter->IsLoaded())))
 		{
-			lvi.iItem = i;
-			if (iter->Load())
+			if (bIsTargetProcessTerminated)
 			{
-				bIsFontListChanged = true;
+				// If target process terminated, wait for watch thread to terminate first
+				iMessageLength = Edit_GetTextLength(hWndEditMessage);
+				Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+				Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-				lvi.pszText = (LPWSTR)L"Loaded";
-				ListView_SetItem(hWndListViewFontList, &lvi);
+				SetEvent(hEventWorkerThreadAboutToTerminate);
+				WaitForSingleObject(hEventWatchThreadAboutToTerminate, INFINITE);
+				CloseHandle(hEventWatchThreadAboutToTerminate);
 
-				Message << iter->GetFontName() << L" successfully loaded\r\n";
+				break;
 			}
 			else
 			{
-				lvi.pszText = (LPWSTR)L"Load failed";
-				ListView_SetItem(hWndListViewFontList, &lvi);
+				lvi.iItem = i;
+				if (iter->Load())
+				{
+					bIsFontListChanged = true;
 
-				Message << L"Failed to load " << iter->GetFontName() << L"\r\n";
+					lvi.pszText = (LPWSTR)L"Loaded";
+					ListView_SetItem(hWndListViewFontList, &lvi);
+
+					Message << iter->GetFontName() << L" successfully loaded\r\n";
+				}
+				else
+				{
+					lvi.pszText = (LPWSTR)L"Load failed";
+					ListView_SetItem(hWndListViewFontList, &lvi);
+
+					Message << L"Failed to load " << iter->GetFontName() << L"\r\n";
+				}
 			}
+
 		}
 		iMessageLength = Edit_GetTextLength(hWndEditMessage);
 		Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
@@ -287,12 +355,17 @@ void ButtonLoadWorkerThreadProc(void* lpParameter)
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-	PostMessage(hWndMain, (UINT)USERMESSAGE::BUTTONLOADWORKINGTHREADTERMINATED, NULL, NULL);
+	PostMessage(hWndMain, (UINT)USERMESSAGE::BUTTONLOADWORKERTHREADTERMINATED, NULL, NULL);
+
+	bIsWorkerThreadRunning = false;
 }
 
-// Unload selected fonts working thread
+// Unload selected fonts worker thread
 void ButtonUnloadWorkerThreadProc(void* lpParameter)
 {
+	bIsWorkerThreadRunning = true;
+	hEventWorkerThreadAboutToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
+
 	HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)ID::ListViewFontList) };
 	HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
 	HWND hWndButtonBroadcastWM_FONTCHANGE{ GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE) };
@@ -308,22 +381,38 @@ void ButtonUnloadWorkerThreadProc(void* lpParameter)
 	{
 		if ((ListView_GetItemState(hWndListViewFontList, i, LVIS_SELECTED) & LVIS_SELECTED) && (iter->IsLoaded()))
 		{
-			lvi.iItem = i;
-			if (iter->Unload())
+			if (bIsTargetProcessTerminated)
 			{
-				bIsFontListChanged = true;
+				// If target process terminated, wait for watch thread to terminate first
+				iMessageLength = Edit_GetTextLength(hWndEditMessage);
+				Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+				Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-				lvi.pszText = (LPWSTR)L"Unloaded";
-				ListView_SetItem(hWndListViewFontList, &lvi);
+				SetEvent(hEventWorkerThreadAboutToTerminate);
+				WaitForSingleObject(hEventWatchThreadAboutToTerminate, INFINITE);
+				CloseHandle(hEventWatchThreadAboutToTerminate);
 
-				Message << iter->GetFontName() << L" successfully unloaded\r\n";
+				break;
 			}
 			else
 			{
-				lvi.pszText = (LPWSTR)L"Unload failed";
-				ListView_SetItem(hWndListViewFontList, &lvi);
+				lvi.iItem = i;
+				if (iter->Unload())
+				{
+					bIsFontListChanged = true;
 
-				Message << L"Failed to unload " << iter->GetFontName() << L"\r\n";
+					lvi.pszText = (LPWSTR)L"Unloaded";
+					ListView_SetItem(hWndListViewFontList, &lvi);
+
+					Message << iter->GetFontName() << L" successfully unloaded\r\n";
+				}
+				else
+				{
+					lvi.pszText = (LPWSTR)L"Unload failed";
+					ListView_SetItem(hWndListViewFontList, &lvi);
+
+					Message << L"Failed to unload " << iter->GetFontName() << L"\r\n";
+				}
 			}
 		}
 		iMessageLength = Edit_GetTextLength(hWndEditMessage);
@@ -345,12 +434,17 @@ void ButtonUnloadWorkerThreadProc(void* lpParameter)
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-	PostMessage(hWndMain, (UINT)USERMESSAGE::BUTTONUNLOADWORKINGTHREADTERMINATED, NULL, NULL);
+	PostMessage(hWndMain, (UINT)USERMESSAGE::BUTTONUNLOADWORKERTHREADTERMINATED, NULL, NULL);
+
+	bIsWorkerThreadRunning = false;
 }
 
 // Target process watch thread
 unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 {
+	// Create synchronization object
+	hEventWatchThreadAboutToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
+
 	// Wait for target process or termination event
 	HANDLE handles[]{ TargetProcessInfo.hProcess, hEventTerminateWatchThread };
 	switch (WaitForMultipleObjects(2, handles, FALSE, INFINITE))
@@ -366,26 +460,35 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 		break;
 	}
 
-	HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
+	// Singal worker thread and wait for worker thread to ready to exit
+	if (bIsWorkerThreadRunning)
+	{
+		bIsTargetProcessTerminated = true;
+		WaitForSingleObject(hEventWorkerThreadAboutToTerminate, INFINITE);
+		CloseHandle(hEventWorkerThreadAboutToTerminate);
+	}
 
 	// Disable controls
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), FALSE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), FALSE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), FALSE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), FALSE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), FALSE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), FALSE);
-	EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+	if (!bIsWorkerThreadRunning)
+	{
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), FALSE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), FALSE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), FALSE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), FALSE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), FALSE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), FALSE);
+		EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+	}
 
 	// Clear FontList and ListViewFontList
 	FontResource::RegisterAddRemoveFontProc(NullAddFontProc, NullRemoveFontProc);
 	FontList.clear();
 	ListView_DeleteAllItems(GetDlgItem(hWndMain, (int)ID::ListViewFontList));
 
+	HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
 	std::wstringstream Message{};
 	int iMessageLength{};
-
 	Message << L"Target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L") terminated.\r\n\r\n";
 	iMessageLength = Edit_GetTextLength(hWndEditMessage);
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
@@ -400,21 +503,28 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 	// Close handle to target process and duplicated handles
 	CloseHandle(TargetProcessInfo.hProcess);
 	TargetProcessInfo.hProcess = NULL;
-	CloseHandle(hCurrentProcessDuplicated);
-	CloseHandle(hTargetProcessDuplicated);
+	CloseHandle(hProcessCurrentDuplicated);
+	CloseHandle(hProcessTargetDuplicated);
 
 	// Enable controls
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), TRUE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
-	EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-	EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_GRAYED);
-	EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_GRAYED);
-	EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-	EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_GRAYED);
+	if (!bIsWorkerThreadRunning)
+	{
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), TRUE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+		EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+		EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_GRAYED);
+		EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_GRAYED);
+		EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+		EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_GRAYED);
+	}
 
 	PostMessage(hWndMain, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, NULL, NULL);
+
+	// Singal worker thread to ready to continue
+	SetEvent(hEventWatchThreadAboutToTerminate);
+	bIsTargetProcessTerminated = false;
 
 	return 0;
 }
@@ -422,6 +532,9 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 // Proxy process and target process watch thread
 unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 {
+	// Create synchronization object
+	hEventWatchThreadAboutToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
+
 	// Wait for proxy process or target process or termination event
 	enum class Termination { Proxy, Target };
 	Termination t{};
@@ -448,26 +561,35 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 		break;
 	}
 
-	HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
+	// Singal worker thread and wait for worker thread to ready to exit
+	if (bIsWorkerThreadRunning)
+	{
+		bIsTargetProcessTerminated = true;
+		WaitForSingleObject(hEventWorkerThreadAboutToTerminate, INFINITE);
+		CloseHandle(hEventWorkerThreadAboutToTerminate);
+	}
 
 	// Disable controls
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), FALSE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), FALSE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), FALSE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), FALSE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), FALSE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), FALSE);
-	EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+	if (!bIsWorkerThreadRunning)
+	{
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), FALSE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), FALSE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), FALSE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), FALSE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), FALSE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), FALSE);
+		EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+	}
 
 	// Clear FontList and ListViewFontList
 	FontResource::RegisterAddRemoveFontProc(NullAddFontProc, NullRemoveFontProc);
 	FontList.clear();
 	ListView_DeleteAllItems(GetDlgItem(hWndMain, (int)ID::ListViewFontList));
 
+	HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
 	std::wstringstream Message{};
 	int iMessageLength{};
-
 	switch (t)
 	{
 		// If proxy process terminates, just print message
@@ -503,7 +625,7 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 
 	// Terminate message thread
 	SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-	WaitForSingleObject(hMessageThread, INFINITE);
+	WaitForSingleObject(hThreadMessage, INFINITE);
 
 	// Register default AddFont() and RemoveFont() procedures
 	FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
@@ -517,23 +639,30 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	CloseHandle(TargetProcessInfo.hProcess);
 	piProxyProcess.hProcess = NULL;
 	TargetProcessInfo.hProcess = NULL;
-	CloseHandle(hCurrentProcessDuplicated);
-	CloseHandle(hTargetProcessDuplicated);
+	CloseHandle(hProcessCurrentDuplicated);
+	CloseHandle(hProcessTargetDuplicated);
 	CloseHandle(hEventProxyAddFontFinished);
 	CloseHandle(hEventProxyRemoveFontFinished);
 
 	// Enable controls
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), TRUE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
-	EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-	EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_GRAYED);
-	EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_GRAYED);
-	EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-	EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_GRAYED);
+	if (!bIsWorkerThreadRunning)
+	{
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), TRUE);
+		EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+		EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+		EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_GRAYED);
+		EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_GRAYED);
+		EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+		EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_GRAYED);
+	}
 
 	PostMessage(hWndMain, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, NULL, NULL);
+
+	// Singal worker thread to ready to continue
+	SetEvent(hEventWatchThreadAboutToTerminate);
+	bIsTargetProcessTerminated = false;
 
 	return 0;
 }

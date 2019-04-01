@@ -155,12 +155,12 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM IPa
 void* pfnRemoteAddFontProc{};
 void* pfnRemoteRemoveFontProc{};
 
-HANDLE hWatchThread{};
-HANDLE hMessageThread{};
+HANDLE hThreadWatch{};
+HANDLE hThreadMessage{};
 HANDLE hProxyProcess{};
 
-HANDLE hCurrentProcessDuplicated{};
-HANDLE hTargetProcessDuplicated{};
+HANDLE hProcessCurrentDuplicated{};
+HANDLE hProcessTargetDuplicated{};
 
 HANDLE hEventParentProcessRunning{};
 HANDLE hEventMessageThreadNotReady{};
@@ -184,8 +184,8 @@ DWORD dwTimeout{};
 int MessageBoxCentered(HWND hWnd, LPCTSTR lpText, LPCTSTR lpCaption, UINT uType);
 
 bool EnableDebugPrivilege();
-bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout);
-bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout);
+bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout);
+bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout);
 
 #ifdef _WIN64
 const WCHAR szInjectionDllName[]{ L"FontLoaderExInjectionDll64.dll" };
@@ -207,214 +207,54 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 	switch ((USERMESSAGE)Msg)
 	{
-	case USERMESSAGE::CLOSEWORKINGTHREADTERMINATED:
+	case USERMESSAGE::CLOSEWORKERTHREADTERMINATED:
 		{
 			HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
 
-			if (wParam)
+			// If unloading is interrupted, just re-enable and re-disable controls
+			if (lParam)
 			{
-				std::wstringstream Message{};
-				int iMessageLength{};
-
-				// If loaded via proxy
-				if (piProxyProcess.hProcess)
-				{
-					// Terminate watch thread
-					SetEvent(hEventTerminateWatchThread);
-					WaitForSingleObject(hWatchThread, INFINITE);
-					CloseHandle(hEventTerminateWatchThread);
-					CloseHandle(hWatchThread);
-
-					// Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
-					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
-					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
-					WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
-					CloseHandle(hEventProxyDllPullingFinished);
-					switch (ProxyDllPullingResult)
-					{
-					case PROXYDLLPULL::SUCCESSFUL:
-						goto continue_DAA249E0;
-					case PROXYDLLPULL::FAILED:
-						{
-							Message << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-							iMessageLength = Edit_GetTextLength(hWndEditMessage);
-							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-
-							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
-							EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
-							EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
-							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
-							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
-							if (!TargetProcessInfo.hProcess)
-							{
-								EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
-							}
-						}
-						goto break_DAA249E0;
-					default:
-						break;
-					}
-				break_DAA249E0:
-					break;
-				continue_DAA249E0:
-
-					// Terminate proxy process
-					COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
-					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
-					WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
-					CloseHandle(piProxyProcess.hThread);
-					CloseHandle(piProxyProcess.hProcess);
-					piProxyProcess.hProcess = NULL;
-
-					// Terminate message thread
-					PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-					WaitForSingleObject(hMessageThread, INFINITE);
-					DWORD dwMessageThreadExitCode{};
-					GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
-					if (dwMessageThreadExitCode)
-					{
-						MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
-					}
-					CloseHandle(hMessageThread);
-
-					// Close handle to target process and duplicated handles
-					CloseHandle(TargetProcessInfo.hProcess);
-					TargetProcessInfo.hProcess = NULL;
-					CloseHandle(hCurrentProcessDuplicated);
-					CloseHandle(hTargetProcessDuplicated);
-				}
-
-				// Else DIY
-				if (TargetProcessInfo.hProcess)
-				{
-					// Terminate watch thread
-					SetEvent(hEventTerminateWatchThread);
-					WaitForSingleObject(hWatchThread, INFINITE);
-					CloseHandle(hEventTerminateWatchThread);
-					CloseHandle(hWatchThread);
-
-					// Unload FontLoaderExInjectionDll(64).dll from target process
-					if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
-					{
-						Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-						iMessageLength = Edit_GetTextLength(hWndEditMessage);
-						Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-						Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-
-						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
-						EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
-						EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
-						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
-						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
-						if (!TargetProcessInfo.hProcess)
-						{
-							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
-						}
-						break;
-					}
-
-					// Close handle to target process
-					CloseHandle(TargetProcessInfo.hProcess);
-					TargetProcessInfo.hProcess = NULL;
-				}
-
-				DestroyWindow(hWnd);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::EditTimeout), TRUE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), TRUE);
+				EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+				EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_GRAYED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_GRAYED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_GRAYED);
 			}
+			// If unloading is not interrupted
 			else
 			{
-				switch (MessageBoxCentered(hWnd, L"Some fonts are not successfully unloaded.\r\n\r\nDo you still want to exit?", L"FontLoaderEx", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1 | MB_APPLMODAL))
+				// If unloading successful, do cleanup
+				if (wParam)
 				{
-				case IDYES:
+					std::wstringstream Message{};
+					int iMessageLength{};
+
+					// If loaded via proxy
+					if (piProxyProcess.hProcess)
 					{
-						std::wstringstream Message{};
-						int iMessageLength{};
+						// Terminate watch thread
+						SetEvent(hEventTerminateWatchThread);
+						WaitForSingleObject(hThreadWatch, INFINITE);
+						CloseHandle(hEventTerminateWatchThread);
+						CloseHandle(hThreadWatch);
 
-						// If loaded via proxy
-						if (piProxyProcess.hProcess)
+						// Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
+						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
+						FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
+						WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
+						CloseHandle(hEventProxyDllPullingFinished);
+						switch (ProxyDllPullingResult)
 						{
-							// Terminate watch thread
-							SetEvent(hEventTerminateWatchThread);
-							WaitForSingleObject(hWatchThread, INFINITE);
-							CloseHandle(hEventTerminateWatchThread);
-							CloseHandle(hWatchThread);
-
-							// Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
-							COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
-							FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
-							WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
-							CloseHandle(hEventProxyDllPullingFinished);
-							switch (ProxyDllPullingResult)
+						case PROXYDLLPULL::SUCCESSFUL:
+							goto continue_DAA249E0;
+						case PROXYDLLPULL::FAILED:
 							{
-							case PROXYDLLPULL::SUCCESSFUL:
-								goto continue_C82EA5C2;
-							case PROXYDLLPULL::FAILED:
-								{
-									Message << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
-									iMessageLength = Edit_GetTextLength(hWndEditMessage);
-									Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
-									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
-
-									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
-									EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
-									EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
-									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
-									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
-									if (!TargetProcessInfo.hProcess)
-									{
-										EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
-									}
-								}
-								goto break_C82EA5C2;
-							default:
-								break;
-							}
-						break_C82EA5C2:
-							break;
-						continue_C82EA5C2:
-
-							// Terminate proxy process
-							COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
-							FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
-							WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
-							CloseHandle(piProxyProcess.hThread);
-							CloseHandle(piProxyProcess.hProcess);
-							piProxyProcess.hProcess = NULL;
-
-							// Terminate message thread
-							PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-							WaitForSingleObject(hMessageThread, INFINITE);
-							DWORD dwMessageThreadExitCode{};
-							GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
-							if (dwMessageThreadExitCode)
-							{
-								MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
-							}
-							CloseHandle(hMessageThread);
-
-							// Close handle to target process and duplicated handles
-							CloseHandle(TargetProcessInfo.hProcess);
-							TargetProcessInfo.hProcess = NULL;
-							CloseHandle(hCurrentProcessDuplicated);
-							CloseHandle(hTargetProcessDuplicated);
-						}
-
-						// Else DIY
-						if (TargetProcessInfo.hProcess)
-						{
-							// Terminate watch thread
-							SetEvent(hEventTerminateWatchThread);
-							WaitForSingleObject(hWatchThread, INFINITE);
-							CloseHandle(hEventTerminateWatchThread);
-							CloseHandle(hWatchThread);
-
-							// Unload FontLoaderExInjectionDll(64).dll from target process
-							if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
-							{
-								Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+								Message << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
 								iMessageLength = Edit_GetTextLength(hWndEditMessage);
 								Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 								Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
@@ -429,38 +269,219 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								{
 									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
 								}
+							}
+							goto break_DAA249E0;
+						default:
+							break;
+						}
+					break_DAA249E0:
+						break;
+					continue_DAA249E0:
+
+						// Terminate proxy process
+						COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
+						FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
+						WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
+						CloseHandle(piProxyProcess.hThread);
+						CloseHandle(piProxyProcess.hProcess);
+						piProxyProcess.hProcess = NULL;
+
+						// Terminate message thread
+						PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+						WaitForSingleObject(hThreadMessage, INFINITE);
+						DWORD dwMessageThreadExitCode{};
+						GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
+						if (dwMessageThreadExitCode)
+						{
+							MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+						}
+						CloseHandle(hThreadMessage);
+
+						// Close handle to target process and duplicated handles
+						CloseHandle(TargetProcessInfo.hProcess);
+						TargetProcessInfo.hProcess = NULL;
+						CloseHandle(hProcessCurrentDuplicated);
+						CloseHandle(hProcessTargetDuplicated);
+					}
+
+					// Else DIY
+					if (TargetProcessInfo.hProcess)
+					{
+						// Terminate watch thread
+						SetEvent(hEventTerminateWatchThread);
+						WaitForSingleObject(hThreadWatch, INFINITE);
+						CloseHandle(hEventTerminateWatchThread);
+						CloseHandle(hThreadWatch);
+
+						// Unload FontLoaderExInjectionDll(64).dll from target process
+						if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
+						{
+							Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+							iMessageLength = Edit_GetTextLength(hWndEditMessage);
+							Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+							Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+							EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+							if (!TargetProcessInfo.hProcess)
+							{
+								EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+							}
+							break;
+						}
+
+						// Close handle to target process
+						CloseHandle(TargetProcessInfo.hProcess);
+						TargetProcessInfo.hProcess = NULL;
+					}
+
+					DestroyWindow(hWnd);
+				}
+				else
+				{
+					// Else, prompt user whether inisit to exit
+					switch (MessageBoxCentered(hWnd, L"Some fonts are not successfully unloaded.\r\n\r\nDo you still want to exit?", L"FontLoaderEx", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1 | MB_APPLMODAL))
+					{
+					case IDYES:
+						{
+							std::wstringstream Message{};
+							int iMessageLength{};
+
+							// If loaded via proxy
+							if (piProxyProcess.hProcess)
+							{
+								// Terminate watch thread
+								SetEvent(hEventTerminateWatchThread);
+								WaitForSingleObject(hThreadWatch, INFINITE);
+								CloseHandle(hEventTerminateWatchThread);
+								CloseHandle(hThreadWatch);
+
+								// Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
+								COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
+								FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
+								WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
+								CloseHandle(hEventProxyDllPullingFinished);
+								switch (ProxyDllPullingResult)
+								{
+								case PROXYDLLPULL::SUCCESSFUL:
+									goto continue_C82EA5C2;
+								case PROXYDLLPULL::FAILED:
+									{
+										Message << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+										iMessageLength = Edit_GetTextLength(hWndEditMessage);
+										Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+										Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+
+										EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+										EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+										EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+										EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+										EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+										EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+										if (!TargetProcessInfo.hProcess)
+										{
+											EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+										}
+									}
+									goto break_C82EA5C2;
+								default:
+									break;
+								}
+							break_C82EA5C2:
 								break;
+							continue_C82EA5C2:
+
+								// Terminate proxy process
+								COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
+								FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
+								WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
+								CloseHandle(piProxyProcess.hThread);
+								CloseHandle(piProxyProcess.hProcess);
+								piProxyProcess.hProcess = NULL;
+
+								// Terminate message thread
+								PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+								WaitForSingleObject(hThreadMessage, INFINITE);
+								DWORD dwMessageThreadExitCode{};
+								GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
+								if (dwMessageThreadExitCode)
+								{
+									MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
+								}
+								CloseHandle(hThreadMessage);
+
+								// Close handle to target process and duplicated handles
+								CloseHandle(TargetProcessInfo.hProcess);
+								TargetProcessInfo.hProcess = NULL;
+								CloseHandle(hProcessCurrentDuplicated);
+								CloseHandle(hProcessTargetDuplicated);
 							}
 
-							// Close handle to target process
-							CloseHandle(TargetProcessInfo.hProcess);
-							TargetProcessInfo.hProcess = NULL;
-						}
+							// Else DIY
+							if (TargetProcessInfo.hProcess)
+							{
+								// Terminate watch thread
+								SetEvent(hEventTerminateWatchThread);
+								WaitForSingleObject(hThreadWatch, INFINITE);
+								CloseHandle(hEventTerminateWatchThread);
+								CloseHandle(hThreadWatch);
 
-						DestroyWindow(hWnd);
-					}
-					break;
-				case IDNO:
-					{
-						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
-						EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
-						EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
-						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
-						EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
-						if (!TargetProcessInfo.hProcess)
-						{
-							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+								// Unload FontLoaderExInjectionDll(64).dll from target process
+								if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
+								{
+									Message << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.ProcessName << L"(" << TargetProcessInfo.ProcessID << L").\r\n\r\n";
+									iMessageLength = Edit_GetTextLength(hWndEditMessage);
+									Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
+									Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
+
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+									EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+									if (!TargetProcessInfo.hProcess)
+									{
+										EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+									}
+									break;
+								}
+
+								// Close handle to target process
+								CloseHandle(TargetProcessInfo.hProcess);
+								TargetProcessInfo.hProcess = NULL;
+							}
+
+							DestroyWindow(hWnd);
 						}
+						break;
+					case IDNO:
+						{
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
+							EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
+							EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
+							if (!TargetProcessInfo.hProcess)
+							{
+								EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+							}
+						}
+						break;
+					default:
+						break;
 					}
-					break;
-				default:
-					break;
 				}
 			}
+			
 		}
 		break;
-	case USERMESSAGE::BUTTONCLOSEWORKINGTHREADTERMINATED:
+	case USERMESSAGE::BUTTONCLOSEWORKERTHREADTERMINATED:
 		{
 			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
 			EnableWindow(GetDlgItem(hWndMain, (int)ID::ListViewFontList), TRUE);
@@ -492,9 +513,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		break;
-	case USERMESSAGE::DRAGDROPWORKINGTHREADTERMINATED:
-	case USERMESSAGE::BUTTONLOADWORKINGTHREADTERMINATED:
-	case USERMESSAGE::BUTTONUNLOADWORKINGTHREADTERMINATED:
+	case USERMESSAGE::DRAGDROPWORKERTHREADTERMINATED:
+	case USERMESSAGE::BUTTONLOADWORKERTHREADTERMINATED:
+	case USERMESSAGE::BUTTONUNLOADWORKERTHREADTERMINATED:
 		{
 			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonOpen), TRUE);
 			EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
@@ -694,6 +715,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				EnableMenuItem(GetSystemMenu(hWndMain, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
 				_beginthread(DragDropWorkerThreadProc, 0, nullptr);
+
+				bDragDropHasFonts = false;
 			}
 		}
 		break;
@@ -749,20 +772,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 					// Terminate watch thread
 					SetEvent(hEventTerminateWatchThread);
-					WaitForSingleObject(hWatchThread, INFINITE);
+					WaitForSingleObject(hThreadWatch, INFINITE);
 					CloseHandle(hEventTerminateWatchThread);
-					CloseHandle(hWatchThread);
+					CloseHandle(hThreadWatch);
 
 					// Terminate message thread
 					PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-					WaitForSingleObject(hMessageThread, INFINITE);
+					WaitForSingleObject(hThreadMessage, INFINITE);
 					DWORD dwMessageThreadExitCode{};
-					GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+					GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
 					if (dwMessageThreadExitCode)
 					{
 						MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
 					}
-					CloseHandle(hMessageThread);
+					CloseHandle(hThreadMessage);
 
 					// Terminate proxy process
 					COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
@@ -775,8 +798,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					// Close handle to target process and duplicated handles
 					CloseHandle(TargetProcessInfo.hProcess);
 					TargetProcessInfo.hProcess = NULL;
-					CloseHandle(hCurrentProcessDuplicated);
-					CloseHandle(hTargetProcessDuplicated);
+					CloseHandle(hProcessCurrentDuplicated);
+					CloseHandle(hProcessTargetDuplicated);
 				}
 				// Else DIY
 				if (TargetProcessInfo.hProcess)
@@ -793,9 +816,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 					// Terminate watch thread
 					SetEvent(hEventTerminateWatchThread);
-					WaitForSingleObject(hWatchThread, INFINITE);
+					WaitForSingleObject(hThreadWatch, INFINITE);
 					CloseHandle(hEventTerminateWatchThread);
-					CloseHandle(hWatchThread);
+					CloseHandle(hThreadWatch);
 
 					// Close handle to target process
 					CloseHandle(TargetProcessInfo.hProcess);
@@ -1065,20 +1088,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 									// Terminate watch thread
 									SetEvent(hEventTerminateWatchThread);
-									WaitForSingleObject(hWatchThread, INFINITE);
+									WaitForSingleObject(hThreadWatch, INFINITE);
 									CloseHandle(hEventTerminateWatchThread);
-									CloseHandle(hWatchThread);
+									CloseHandle(hThreadWatch);
 
 									// Terminate message thread
 									PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-									WaitForSingleObject(hMessageThread, INFINITE);
+									WaitForSingleObject(hThreadMessage, INFINITE);
 									DWORD dwMessageThreadExitCode{};
-									GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+									GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
 									if (dwMessageThreadExitCode)
 									{
 										MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
 									}
-									CloseHandle(hMessageThread);
+									CloseHandle(hThreadMessage);
 
 									// Terminate proxy process
 									COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
@@ -1124,9 +1147,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 									// Terminate watch thread
 									SetEvent(hEventTerminateWatchThread);
-									WaitForSingleObject(hWatchThread, INFINITE);
+									WaitForSingleObject(hThreadWatch, INFINITE);
 									CloseHandle(hEventTerminateWatchThread);
-									CloseHandle(hWatchThread);
+									CloseHandle(hThreadWatch);
 
 									// Close handle to target process
 									CloseHandle(TargetProcessInfo.hProcess);
@@ -1162,7 +1185,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									hEventProxyProcessHWNDRevieved = CreateEvent(NULL, TRUE, FALSE, NULL);
 									hEventProxyDllInjectionFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
 									hEventProxyDllPullingFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
-									hMessageThread = (HANDLE)_beginthreadex(nullptr, 0, MessageThreadProc, (void*)GetWindowLongPtr(hWnd, GWLP_HINSTANCE), 0, nullptr);
+									hThreadMessage = (HANDLE)_beginthreadex(nullptr, 0, MessageThreadProc, (void*)GetWindowLongPtr(hWnd, GWLP_HINSTANCE), 0, nullptr);
 									HANDLE handles[]{ hEventMessageThreadNotReady, hEventMessageThreadReady };
 									switch (WaitForMultipleObjects(2, handles, FALSE, INFINITE))
 									{
@@ -1170,8 +1193,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										{
 											MessageBoxCentered(NULL, L"Failed to create message-only window.", L"FontLoaderEx", MB_ICONERROR);
 
-											WaitForSingleObject(hMessageThread, INFINITE);
-											CloseHandle(hMessageThread);
+											WaitForSingleObject(hThreadMessage, INFINITE);
+											CloseHandle(hThreadMessage);
 										}
 										goto break_721EFBC1;
 									case WAIT_OBJECT_0 + 1:
@@ -1256,14 +1279,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 											// Terminate message thread
 											PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-											WaitForSingleObject(hMessageThread, INFINITE);
+											WaitForSingleObject(hThreadMessage, INFINITE);
 											DWORD dwMessageThreadExitCode{};
-											GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+											GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
 											if (dwMessageThreadExitCode)
 											{
 												MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
 											}
-											CloseHandle(hMessageThread);
+											CloseHandle(hThreadMessage);
 
 											// Close handle to selected process
 											CloseHandle(SelectedProcessInfo.hProcess);
@@ -1311,7 +1334,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 											// Create synchronization object and start watch thread
 											hEventTerminateWatchThread = CreateEvent(NULL, TRUE, FALSE, NULL);
-											hWatchThread = (HANDLE)_beginthreadex(nullptr, 0, ProxyAndTargetProcessWatchThreadProc, nullptr, 0, nullptr);
+											hThreadWatch = (HANDLE)_beginthreadex(nullptr, 0, ProxyAndTargetProcessWatchThreadProc, nullptr, 0, nullptr);
 										}
 										break;
 									case PROXYDLLINJECTION::FAILED:
@@ -1357,14 +1380,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 											// Terminate message thread
 											PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-											WaitForSingleObject(hMessageThread, INFINITE);
+											WaitForSingleObject(hThreadMessage, INFINITE);
 											DWORD dwMessageThreadExitCode{};
-											GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+											GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
 											if (dwMessageThreadExitCode)
 											{
 												MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
 											}
-											CloseHandle(hMessageThread);
+											CloseHandle(hThreadMessage);
 
 											// Close handle to selected process
 											CloseHandle(SelectedProcessInfo.hProcess);
@@ -1493,7 +1516,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 									// Create synchronization object and start watch thread
 									hEventTerminateWatchThread = CreateEvent(NULL, TRUE, FALSE, NULL);
-									hWatchThread = (HANDLE)_beginthreadex(nullptr, 0, TargetProcessWatchThreadProc, nullptr, 0, nullptr);
+									hThreadWatch = (HANDLE)_beginthreadex(nullptr, 0, TargetProcessWatchThreadProc, nullptr, 0, nullptr);
 								}
 							}
 							// If p == nullptr, clear selected process
@@ -1535,20 +1558,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 									// Terminate watch thread
 									SetEvent(hEventTerminateWatchThread);
-									WaitForSingleObject(hWatchThread, INFINITE);
+									WaitForSingleObject(hThreadWatch, INFINITE);
 									CloseHandle(hEventTerminateWatchThread);
-									CloseHandle(hWatchThread);
+									CloseHandle(hThreadWatch);
 
 									// Terminate message thread
 									PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-									WaitForSingleObject(hMessageThread, INFINITE);
+									WaitForSingleObject(hThreadMessage, INFINITE);
 									DWORD dwMessageThreadExitCode{};
-									GetExitCodeThread(hMessageThread, &dwMessageThreadExitCode);
+									GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
 									if (dwMessageThreadExitCode)
 									{
 										MessageBoxCentered(NULL, L"Message thread exited abnormally.", L"FontLoaderEx", MB_ICONERROR);
 									}
-									CloseHandle(hMessageThread);
+									CloseHandle(hThreadMessage);
 
 									// Terminate proxy process
 									COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
@@ -1605,9 +1628,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 									// Terminate watch thread
 									SetEvent(hEventTerminateWatchThread);
-									WaitForSingleObject(hWatchThread, INFINITE);
+									WaitForSingleObject(hThreadWatch, INFINITE);
 									CloseHandle(hEventTerminateWatchThread);
-									CloseHandle(hWatchThread);
+									CloseHandle(hThreadWatch);
 
 									// Close handle to target process
 									CloseHandle(TargetProcessInfo.hProcess);
@@ -1690,7 +1713,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					case LVN_GETEMPTYMARKUP:
 						{
 							((NMLVEMPTYMARKUP*)lParam)->dwFlags = 0;
-							wcscpy_s(((NMLVEMPTYMARKUP*)lParam)->szMarkup, LR"(Click "Open" or drag-drop font files to add fonts.)");
+							wcscpy_s(((NMLVEMPTYMARKUP*)lParam)->szMarkup, LR"(Click "Open" or drag-drop font files here to add fonts.)");
 
 							ret = TRUE;
 						}
@@ -1905,7 +1928,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_WINDOWPOSCHANGING:
 		{
-			// Get client rectangle before main windows changes size
+			// Get client rectangle before main window changes size
 			GetClientRect(((LPWINDOWPOS)lParam)->hwnd, &rectMainClientOld);
 
 			ret = DefWindowProc(hWnd, Msg, wParam, lParam);
@@ -2773,7 +2796,7 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Msg, WPARAM 
 	{
 	case WM_CONTEXTMENU:
 		{
-			// Delete "Undo", "Cut", "Paste" and "Delete" menu items
+			// Delete "Undo", "Cut", "Paste" and "Delete" menu items from context menu
 			HWINEVENTHOOK hWinEventHook{ SetWinEventHook(EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_MENUPOPUPSTART, NULL,
 				[](HWINEVENTHOOK hWinEventHook, DWORD Event, HWND hWnd, LONG idObject, LONG idChild, DWORD idEventThread, DWORD dwmsEventTime)
 				{
@@ -3081,9 +3104,9 @@ int MessageBoxCentered(HWND hWnd, LPCTSTR lpText, LPCTSTR lpCaption, UINT uType)
 
 bool EnableDebugPrivilege()
 {
+	// Enable SeDebugPrivilege
 	bool bRet{};
 
-	// Enable SeDebugPrivilege
 	do
 	{
 		HANDLE hToken{};
@@ -3118,11 +3141,12 @@ bool EnableDebugPrivilege()
 	return bRet;
 }
 
-bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
+bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 {
+	// Inject dll into target process
+
 	bool bRet{};
 
-	// Inject dll into target process
 	do
 	{
 		WCHAR szDllPath[MAX_PATH]{};
@@ -3166,7 +3190,7 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 			bRet = false;
 			break;
 		}
-		if (WaitForSingleObject(hRemoteThread, Timeout) == WAIT_TIMEOUT)
+		if (WaitForSingleObject(hRemoteThread, dwTimeout) == WAIT_TIMEOUT)
 		{
 			CloseHandle(hRemoteThread);
 			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
@@ -3201,11 +3225,12 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 	return bRet;
 }
 
-bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
+bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 {
+	// Unload dll from target process
+
 	bool bRet{};
 
-	// Unload dll from target process
 	do
 	{
 		// Find HMODULE of szModuleName in target process
@@ -3251,7 +3276,7 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 			bRet = false;
 			break;
 		}
-		if (WaitForSingleObject(hRemoteThread, Timeout) == WAIT_TIMEOUT)
+		if (WaitForSingleObject(hRemoteThread, dwTimeout) == WAIT_TIMEOUT)
 		{
 			CloseHandle(hRemoteThread);
 
@@ -3305,9 +3330,14 @@ std::wstring GetUniqueName(const std::wstring& string, Scope scope)
 			DWORD dwLength{};
 			HDESK hDesk{ GetThreadDesktop(GetCurrentThreadId()) };
 			GetUserObjectInformation(hDesk, UOI_NAME, NULL, 0, &dwLength);
-			std::unique_ptr<BYTE[]> data{ new BYTE[dwLength]{} };
-			GetUserObjectInformation(hDesk, UOI_NAME, data.get(), dwLength, &dwLength);
-			ssTemp << L"-" << (LPCWSTR)data.get();
+			std::unique_ptr<BYTE[]> lpBuffer{ new BYTE[dwLength]{} };
+			GetUserObjectInformation(hDesk, UOI_NAME, lpBuffer.get(), dwLength, &dwLength);
+			ssTemp << L"-" << (LPCWSTR)lpBuffer.get();
+			HWINSTA hWinSta{ GetProcessWindowStation() };
+			GetUserObjectInformation(hWinSta, UOI_NAME, NULL, 0, &dwLength);
+			std::unique_ptr<BYTE[]> lpBuffer2{ new BYTE[dwLength] };
+			GetUserObjectInformation(hWinSta, UOI_NAME, lpBuffer2.get(), dwLength, &dwLength);
+			ssTemp << L"-" << (LPCWSTR)lpBuffer2.get();
 
 			strRet = ssTemp.str();
 		}
@@ -3326,6 +3356,7 @@ std::wstring GetUniqueName(const std::wstring& string, Scope scope)
 			GetTokenInformation(hTokenProcess, TokenStatistics, lpBuffer.get(), dwLength, &dwLength);
 			LUID luid{ ((PTOKEN_STATISTICS)lpBuffer.get())->AuthenticationId };
 			ssTemp << L"-" << std::setiosflags(std::ios::internal) << std::setfill(L'0') << std::setw(8) << std::hex << luid.HighPart << luid.LowPart;
+			CloseHandle(hTokenProcess);
 
 			strRet = ssTemp.str();
 		}
@@ -3346,6 +3377,7 @@ std::wstring GetUniqueName(const std::wstring& string, Scope scope)
 			ConvertSidToStringSid(((PTOKEN_USER)lpBuffer.get())->User.Sid, &lpszSID);
 			ssTemp << L"-" << lpszSID;
 			LocalFree(lpszSID);
+			CloseHandle(hTokenProcess);
 
 			strRet = ssTemp.str();
 		}

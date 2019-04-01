@@ -83,9 +83,9 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	return (int)Msg.wParam;
 }
 
-HANDLE hParentProcess{};
-HANDLE hTargetProcess{};
-HWND hWndParentProcessMessage{};
+HANDLE hProcessParent{};
+HANDLE hProcessTarget{};
+HWND hWndParentMessage{};
 
 HANDLE hEventMessageThreadReady{};
 HANDLE hEventProxyProcessReady{};
@@ -109,19 +109,19 @@ const WCHAR szInjectionDllName[]{ L"FontLoaderExInjectionDll64.dll" };
 const WCHAR szInjectionDllName[]{ L"FontLoaderExInjectionDll.dll" };
 #endif // _WIN64
 
-bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout);
-bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout);
-DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t nParamSize);
+bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout);
+bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout);
+DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize);
 bool EnableDebugPrivilege();
 
 HANDLE hEventTerminateWatchThread{};
-HANDLE hWatchThread{};
+HANDLE hThreadWatch{};
 
 // Parent process watch thread
 unsigned int __stdcall ParentProcessWatchThreadProc(void* lpParameter)
 {
 	// Wait for parent process or termination event
-	HANDLE handles[]{ hParentProcess, hEventTerminateWatchThread };
+	HANDLE handles[]{ hProcessParent, hEventTerminateWatchThread };
 	switch (WaitForMultipleObjects(2, handles, FALSE, INFINITE))
 	{
 	case WAIT_OBJECT_0:
@@ -156,9 +156,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		{
 			// Terminate watch thread
 			SetEvent(hEventTerminateWatchThread);
-			WaitForSingleObject(hWatchThread, INFINITE);
+			WaitForSingleObject(hThreadWatch, INFINITE);
 			CloseHandle(hEventTerminateWatchThread);
-			CloseHandle(hWatchThread);
+			CloseHandle(hThreadWatch);
 
 			// Destroy message-only window
 			DestroyWindow(hWnd);
@@ -178,9 +178,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 #pragma warning(push)
 #pragma warning(disable:4312)
 			// Get handles to parent process and message window
-			hParentProcess = (HANDLE)std::wcstoul(argv[0], nullptr, 10);
-			hTargetProcess = (HANDLE)std::wcstoul(argv[1], nullptr, 10);
-			hWndParentProcessMessage = (HWND)std::wcstoul(argv[2], nullptr, 10);
+			hProcessParent = (HANDLE)std::wcstoul(argv[0], nullptr, 10);
+			hProcessTarget = (HANDLE)std::wcstoul(argv[1], nullptr, 10);
+			hWndParentMessage = (HWND)std::wcstoul(argv[2], nullptr, 10);
 
 			// Get handles to synchronization objects
 			hEventMessageThreadReady = (HANDLE)std::wcstoul(argv[3], nullptr, 10);
@@ -198,7 +198,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 			// Send HWND to message window to parent process
 			COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::PROXYPROCESSHWNDSENT, sizeof(HWND), &hWnd };
-			FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds2, SendMessage);
+			FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds2, SendMessage);
 
 			// Enable SeDebugPrivilege
 			PROXYPROCESSDEBUGPRIVILEGEENABLING i{};
@@ -206,17 +206,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			if (EnableDebugPrivilege())
 			{
 				i = PROXYPROCESSDEBUGPRIVILEGEENABLING::SUCCESSFUL;
-				FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+				FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
 			}
 			else
 			{
 				i = PROXYPROCESSDEBUGPRIVILEGEENABLING::FAILED;
-				FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+				FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
 			}
 
 			// Start watch thread and create synchronization object
 			hEventTerminateWatchThread = CreateEvent(NULL, TRUE, FALSE, NULL);
-			hWatchThread = (HANDLE)_beginthreadex(nullptr, 0, ParentProcessWatchThreadProc, (void*)hWnd, 0, nullptr);
+			hThreadWatch = (HANDLE)_beginthreadex(nullptr, 0, ParentProcessWatchThreadProc, (void*)hWnd, 0, nullptr);
 		}
 		break;
 	case WM_COPYDATA:
@@ -227,7 +227,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			case COPYDATA::INJECTDLL:
 				{
 					// Check whether target process loads gdi32.dll as AddFontResourceEx() and RemoveFontResourceEx() are in it
-					HANDLE hModuleSnapshot{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetThreadId(hTargetProcess)) };
+					HANDLE hModuleSnapshot{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetThreadId(hProcessTarget)) };
 					MODULEENTRY32 me32{ sizeof(MODULEENTRY32) };
 					bool bIsGDI32Loaded{ false };
 					if (!Module32First(hModuleSnapshot, &me32))
@@ -236,7 +236,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 						PROXYDLLINJECTION i{ PROXYDLLINJECTION::FAILEDTOENUMERATEMODULES };
 						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(PROXYDLLINJECTION), (void*)&i };
-						FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+						FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
 						break;
 					}
 					do
@@ -253,22 +253,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 						PROXYDLLINJECTION i{ PROXYDLLINJECTION::GDI32NOTLOADED };
 						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(PROXYDLLINJECTION), (void*)&i };
-						FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+						FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
 						break;
 					}
 					CloseHandle(hModuleSnapshot);
 
 					// Inject FontLoaderExInjectionDll(64).dll into target process
-					if (!InjectModule(hTargetProcess, szInjectionDllName, dwTimeout))
+					if (!InjectModule(hProcessTarget, szInjectionDllName, dwTimeout))
 					{
 						PROXYDLLINJECTION i{ PROXYDLLINJECTION::FAILED };
 						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(PROXYDLLINJECTION), (void*)&i };
-						FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+						FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
 						break;
 					}
 
 					// Get base address of FontLoaderExInjectionDll(64).dll in target process
-					HANDLE hModuleSnapshot2{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetProcessId(hTargetProcess)) };
+					HANDLE hModuleSnapshot2{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetProcessId(hProcessTarget)) };
 					MODULEENTRY32 me322{ sizeof(MODULEENTRY32) };
 					BYTE* pModBaseAddr{};
 					if (!Module32First(hModuleSnapshot2, &me322))
@@ -277,7 +277,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 						PROXYDLLINJECTION i{ PROXYDLLINJECTION::MODULENOTFOUND };
 						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(PROXYDLLINJECTION), (void*)&i };
-						FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+						FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
 						break;
 					}
 					do
@@ -294,7 +294,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 						PROXYDLLINJECTION i{ PROXYDLLINJECTION::MODULENOTFOUND };
 						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(PROXYDLLINJECTION), (void*)&i };
-						FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+						FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
 						break;
 					}
 					CloseHandle(hModuleSnapshot2);
@@ -312,14 +312,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					// Send success messsage to parent process
 					PROXYDLLINJECTION i{ PROXYDLLINJECTION::SUCCESSFUL };
 					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(PROXYDLLINJECTION), (void*)&i };
-					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+					FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
 				}
 				break;
 				// Pull dll
 			case COPYDATA::PULLDLL:
 				{
 					PROXYDLLPULL i{};
-					if (PullModule(hTargetProcess, szInjectionDllName, dwTimeout))
+					if (PullModule(hProcessTarget, szInjectionDllName, dwTimeout))
 					{
 						i = PROXYDLLPULL::SUCCESSFUL;
 					}
@@ -328,14 +328,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 						i = PROXYDLLPULL::FAILED;
 					}
 					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLPULLINGFINISHED, sizeof(PROXYDLLPULL), (void*)&i };
-					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+					FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
 				}
 				break;
 				// Load font
 			case COPYDATA::ADDFONT:
 				{
 					ADDFONT i{};
-					if (CallRemoteProc(hTargetProcess, pfnRemoteAddFontProc, ((PCOPYDATASTRUCT)lParam)->lpData, ((PCOPYDATASTRUCT)lParam)->cbData))
+					if (CallRemoteProc(hProcessTarget, pfnRemoteAddFontProc, ((PCOPYDATASTRUCT)lParam)->lpData, ((PCOPYDATASTRUCT)lParam)->cbData))
 					{
 						i = ADDFONT::SUCCESSFUL;
 					}
@@ -344,14 +344,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 						i = ADDFONT::FAILED;
 					}
 					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::ADDFONTFINISHED, sizeof(ADDFONT), (void*)&i };
-					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+					FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
 				}
 				break;
 				// Unload font
 			case COPYDATA::REMOVEFONT:
 				{
 					REMOVEFONT i{};
-					if (CallRemoteProc(hTargetProcess, pfnRemoteRemoveFontProc, ((PCOPYDATASTRUCT)lParam)->lpData, ((PCOPYDATASTRUCT)lParam)->cbData))
+					if (CallRemoteProc(hProcessTarget, pfnRemoteRemoveFontProc, ((PCOPYDATASTRUCT)lParam)->lpData, ((PCOPYDATASTRUCT)lParam)->cbData))
 					{
 						i = REMOVEFONT::SUCCESSFUL;
 					}
@@ -360,7 +360,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 						i = REMOVEFONT::FAILED;
 					}
 					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::REMOVEFONTFINISHED, sizeof(REMOVEFONT), (void*)&i };
-					FORWARD_WM_COPYDATA(hWndParentProcessMessage, hWnd, &cds, SendMessage);
+					FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
 				}
 				break;
 				// Terminate self
@@ -376,8 +376,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_DESTROY:
 		{
-			CloseHandle(hParentProcess);
-			CloseHandle(hTargetProcess);
+			CloseHandle(hProcessParent);
+			CloseHandle(hProcessTarget);
 
 			PostQuitMessage(0);
 		}
@@ -392,20 +392,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	return ret;
 }
 
-DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t nParamSize)
+DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize)
 {
 	DWORD dwRet{};
 
 	do
 	{
-		LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, nParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
+		LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, cbParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
 		if (!lpRemoteBuffer)
 		{
 			dwRet = 0;
 			break;
 		}
 
-		if (!WriteProcessMemory(hProcess, lpRemoteBuffer, lpParameter, nParamSize, NULL))
+		if (!WriteProcessMemory(hProcess, lpRemoteBuffer, lpParameter, cbParamSize, NULL))
 		{
 			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
@@ -442,9 +442,10 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 
 bool EnableDebugPrivilege()
 {
+	// Enable SeDebugPrivilege
+
 	bool bRet{};
 
-	// Enable SeDebugPrivilege
 	do
 	{
 		HANDLE hToken{};
@@ -479,11 +480,12 @@ bool EnableDebugPrivilege()
 	return bRet;
 }
 
-bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
+bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 {
+	// Inject dll into target process
+
 	bool bRet{};
 
-	// Inject dll into target process
 	do
 	{
 		WCHAR szDllPath[MAX_PATH]{};
@@ -527,7 +529,7 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 			bRet = false;
 			break;
 		}
-		if (WaitForSingleObject(hRemoteThread, Timeout) == WAIT_TIMEOUT)
+		if (WaitForSingleObject(hRemoteThread, dwTimeout) == WAIT_TIMEOUT)
 		{
 			CloseHandle(hRemoteThread);
 			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
@@ -562,11 +564,12 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 	return bRet;
 }
 
-bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
+bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 {
+	// Unload dll from target process
+
 	bool bRet{};
 
-	// Unload dll from target process
 	do
 	{
 		// Find HMODULE of szModuleName in target process
@@ -612,7 +615,7 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD Timeout)
 			bRet = false;
 			break;
 		}
-		if (WaitForSingleObject(hRemoteThread, Timeout) == WAIT_TIMEOUT)
+		if (WaitForSingleObject(hRemoteThread, dwTimeout) == WAIT_TIMEOUT)
 		{
 			CloseHandle(hRemoteThread);
 

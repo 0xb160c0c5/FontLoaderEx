@@ -4,16 +4,16 @@
 #include <string>
 
 #ifdef _DEBUG
-	#define ADDFONT_WAIT_MILLISEC 300
-	#define REMOVEFONT_WAIT_MILLISEC 300
+#define ADDFONT_WAIT_MILLISEC 300
+#define REMOVEFONT_WAIT_MILLISEC 300
 #endif // _DEBUG
 
 class FontResource
 {
 public:
-	typedef bool (*pfnAddFontProc)(const wchar_t* lpFontName);
-	typedef bool (*pfnRemoveFontProc)(const wchar_t* lpFontName);
-	static void RegisterAddRemoveFontProc(pfnAddFontProc AddFontProc, pfnRemoveFontProc RemoveFontProc);
+	typedef bool(*AddFontProc)(const wchar_t* lpFontName);
+	typedef bool(*RemoveFontProc)(const wchar_t* lpFontName);
+	static void RegisterAddRemoveFontProc(AddFontProc AddFontProc, RemoveFontProc RemoveFontProc);
 	FontResource(const std::wstring& FontName);
 	FontResource(const wchar_t* FontName);
 	bool Load();
@@ -22,8 +22,8 @@ public:
 	bool IsLoaded();
 	~FontResource();
 private:
-	static pfnAddFontProc AddFontProc_;
-	static pfnRemoveFontProc RemoveFontProc_;
+	static AddFontProc AddFontProc_;
+	static RemoveFontProc RemoveFontProc_;
 	std::wstring strFontName_;
 	bool bIsLoaded_ = FALSE;
 };

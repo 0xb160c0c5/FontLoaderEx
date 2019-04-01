@@ -4,8 +4,8 @@
 #include "FontResource.h"
 #include "Globals.h"
 
-FontResource::pfnAddFontProc FontResource::AddFontProc_{};
-FontResource::pfnRemoveFontProc FontResource::RemoveFontProc_{};
+FontResource::AddFontProc FontResource::AddFontProc_{};
+FontResource::RemoveFontProc FontResource::RemoveFontProc_{};
 
 HWND hWndProxy{};
 
@@ -15,20 +15,20 @@ HANDLE hEventProxyRemoveFontFinished{};
 ADDFONT ProxyAddFontResult{};
 REMOVEFONT ProxyRemoveFontResult{};
 
-DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t nParamSize)
+DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize)
 {
 	DWORD dwRet{};
 
 	do
 	{
-		LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, nParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
+		LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, cbParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
 		if (!lpRemoteBuffer)
 		{
 			dwRet = 0;
 			break;
 		}
 
-		if (!WriteProcessMemory(hProcess, lpRemoteBuffer, lpParameter, nParamSize, NULL))
+		if (!WriteProcessMemory(hProcess, lpRemoteBuffer, lpParameter, cbParamSize, NULL))
 		{
 			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
@@ -180,7 +180,7 @@ FontResource::~FontResource()
 	}
 }
 
-void FontResource::RegisterAddRemoveFontProc(pfnAddFontProc AddFontProc, pfnRemoveFontProc RemoveFontProc)
+void FontResource::RegisterAddRemoveFontProc(AddFontProc AddFontProc, RemoveFontProc RemoveFontProc)
 {
 	AddFontProc_ = AddFontProc;
 	RemoveFontProc_ = RemoveFontProc;
