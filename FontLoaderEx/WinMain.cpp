@@ -36,8 +36,8 @@ HMENU hMenuContextListViewFontList{};
 bool bDragDropHasFonts{ false };
 
 // Create an unique string by scope
-enum class Scope { Machine, Desktop, Session, User };
-std::wstring GetUniqueName(const std::wstring& string, Scope scope);
+enum class Scope { Machine, User, Session, WindowStation, Desktop };
+std::wstring GetUniqueName(LPCWSTR lpszString, Scope scope);
 
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
@@ -57,9 +57,9 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 				strMessage << L"on the same machine.";
 			}
 			break;
-		case Scope::Desktop:
+		case Scope::User:
 			{
-				strMessage << L"on the same desktop.";
+				strMessage << L"by the same user.";
 			}
 			break;
 		case Scope::Session:
@@ -67,9 +67,14 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 				strMessage << L"in the same session.";
 			}
 			break;
-		case Scope::User:
+		case Scope::WindowStation:
 			{
-				strMessage << L"by the same user.";
+				strMessage << L"in the same window station.";
+			}
+			break;
+		case Scope::Desktop:
+			{
+				strMessage << L"on the same desktop.";
 			}
 			break;
 		default:
@@ -478,7 +483,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					}
 				}
 			}
-			
 		}
 		break;
 	case USERMESSAGE::BUTTONCLOSEWORKERTHREADTERMINATED:
@@ -505,6 +509,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				if (i.IsLoaded())
 				{
 					bIsSomeFontsLoaded = true;
+					break;
 				}
 			}
 			if (!bIsSomeFontsLoaded)
@@ -533,6 +538,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				if (i.IsLoaded())
 				{
 					bIsSomeFontsLoaded = true;
+					break;
 				}
 			}
 			if (!bIsSomeFontsLoaded)
@@ -1825,7 +1831,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							RECT rectEditMessage{}, rectEditMessageClient{};
 							GetWindowRect(hWndEditMessage, &rectEditMessage);
 							GetClientRect(hWndEditMessage, &rectEditMessageClient);
-							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
+							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
 
 							// Calculate confine rectangle
 							RECT rectMainClient{}, rectDesktop{}, rectButtonOpen{};
@@ -2134,7 +2140,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									RECT rectEditMessage{}, rectEditMessageClient{};
 									GetWindowRect(hWndEditMessage, &rectEditMessage);
 									GetClientRect(hWndEditMessage, &rectEditMessageClient);
-									LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
+									LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
 
 									MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
 									if (HIWORD(lParam) - rectEditMessage.top < cyEditMessageMin)
@@ -2513,7 +2519,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							RECT rectEditMessage{}, rectEditMessageClient{};
 							GetWindowRect(hWndEditMessage, &rectEditMessage);
 							GetClientRect(hWndEditMessage, &rectEditMessageClient);
-							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
+							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
 
 							// Calculate new position of splitter
 							HWND hWndSplitter{ GetDlgItem(hWnd, (int)ID::Splitter) };
@@ -2694,7 +2700,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			RECT rectEditMessage{}, rectEditMessageClient{};
 			GetWindowRect(hWndEditMessage, &rectEditMessage);
 			GetClientRect(hWndEditMessage, &rectEditMessageClient);
-			LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
+			LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
 
 			// Get EditTimeout window rectangle
 			RECT rectEditTimeout{};
@@ -3005,16 +3011,14 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 									bOrderByPIDAscending ?
 										std::sort(ProcessList.begin(), ProcessList.end(),
 											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-									{
-										return value1.ProcessID < value2.ProcessID;
-									})
-										:
+											{
+												return value1.ProcessID < value2.ProcessID;
+											}) :
 										std::sort(ProcessList.begin(), ProcessList.end(),
 											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-									{
-										return value1.ProcessID > value2.ProcessID;
-									})
-										;
+											{
+												return value1.ProcessID > value2.ProcessID;
+											});
 
 									// Add arrow to the header in list view
 									Header_GetItem(hWndHeaderListViewProcessList, 0, &hdi);
@@ -3308,64 +3312,22 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 	return bRet;
 }
 
-std::wstring GetUniqueName(const std::wstring& string, Scope scope)
+std::wstring GetUniqueName(LPCWSTR lpszString, Scope scope)
 {
 	// Create an unique string by scope
-	std::wstring strRet{};
+	std::wstringstream ssRet{};
 
-	switch (scope)
+	// On the same computer
+	if (scope == Scope::Machine)
 	{
-		// On the same computer
-	case Scope::Machine:
+		ssRet << LR"(Global\)" << lpszString;
+	}
+	else
+	{
+		do
 		{
-			strRet = string;
-		}
-		break;
-		// On the same desktop
-	case Scope::Desktop:
-		{
-			std::wstringstream ssTemp{};
-			ssTemp << string;
-
-			DWORD dwLength{};
-			HDESK hDesk{ GetThreadDesktop(GetCurrentThreadId()) };
-			GetUserObjectInformation(hDesk, UOI_NAME, NULL, 0, &dwLength);
-			std::unique_ptr<BYTE[]> lpBuffer{ new BYTE[dwLength]{} };
-			GetUserObjectInformation(hDesk, UOI_NAME, lpBuffer.get(), dwLength, &dwLength);
-			ssTemp << L"-" << (LPCWSTR)lpBuffer.get();
-			HWINSTA hWinSta{ GetProcessWindowStation() };
-			GetUserObjectInformation(hWinSta, UOI_NAME, NULL, 0, &dwLength);
-			std::unique_ptr<BYTE[]> lpBuffer2{ new BYTE[dwLength] };
-			GetUserObjectInformation(hWinSta, UOI_NAME, lpBuffer2.get(), dwLength, &dwLength);
-			ssTemp << L"-" << (LPCWSTR)lpBuffer2.get();
-
-			strRet = ssTemp.str();
-		}
-		break;
-		// In the same login session
-	case Scope::Session:
-		{
-			std::wstringstream ssTemp{};
-			ssTemp << string;
-
-			HANDLE hTokenProcess{};
-			DWORD dwLength{};
-			OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hTokenProcess);
-			GetTokenInformation(hTokenProcess, TokenStatistics, NULL, 0, &dwLength);
-			std::unique_ptr<BYTE[]> lpBuffer{ new BYTE[dwLength]{} };
-			GetTokenInformation(hTokenProcess, TokenStatistics, lpBuffer.get(), dwLength, &dwLength);
-			LUID luid{ ((PTOKEN_STATISTICS)lpBuffer.get())->AuthenticationId };
-			ssTemp << L"-" << std::setiosflags(std::ios::internal) << std::setfill(L'0') << std::setw(8) << std::hex << luid.HighPart << luid.LowPart;
-			CloseHandle(hTokenProcess);
-
-			strRet = ssTemp.str();
-		}
-		break;
-		// By the same user account
-	case Scope::User:
-		{
-			std::wstringstream ssTemp{};
-			ssTemp << string;
+			// By the same user
+			ssRet << LR"(Local\)" << lpszString;
 
 			HANDLE hTokenProcess{};
 			DWORD dwLength{};
@@ -3375,19 +3337,64 @@ std::wstring GetUniqueName(const std::wstring& string, Scope scope)
 			GetTokenInformation(hTokenProcess, TokenUser, lpBuffer.get(), dwLength, &dwLength);
 			LPWSTR lpszSID{};
 			ConvertSidToStringSid(((PTOKEN_USER)lpBuffer.get())->User.Sid, &lpszSID);
-			ssTemp << L"-" << lpszSID;
+			ssRet << lpszSID;
 			LocalFree(lpszSID);
-			CloseHandle(hTokenProcess);
 
-			strRet = ssTemp.str();
-		}
-		break;
-	default:
-		{
-			strRet = string;
-		}
-		break;
+			if (scope == Scope::User)
+			{
+				CloseHandle(hTokenProcess);
+				break;
+			}
+
+			// In the same login session
+			ssRet << L"--";
+
+			DWORD dwLength2{};
+			GetTokenInformation(hTokenProcess, TokenStatistics, NULL, 0, &dwLength2);
+			std::unique_ptr<BYTE[]> lpBuffer2{ new BYTE[dwLength2]{} };
+			GetTokenInformation(hTokenProcess, TokenStatistics, lpBuffer2.get(), dwLength2, &dwLength2);
+			LUID luid{ ((PTOKEN_STATISTICS)lpBuffer2.get())->AuthenticationId };
+			ssRet << std::setiosflags(std::ios::internal) << std::setfill(L'0') << std::setw(8) << std::hex << luid.HighPart << luid.LowPart;
+
+			if (scope == Scope::Session)
+			{
+				CloseHandle(hTokenProcess);
+				break;
+			}
+
+			// In the same window station
+			ssRet << L"--";
+
+			DWORD dwLength3{};
+			HWINSTA hWinStaProcess{ GetProcessWindowStation() };
+			GetUserObjectInformation(hWinStaProcess, UOI_NAME, NULL, 0, &dwLength3);
+			std::unique_ptr<BYTE[]> lpBuffer3{ new BYTE[dwLength3]{} };
+			GetUserObjectInformation(hWinStaProcess, UOI_NAME, lpBuffer3.get(), dwLength3, &dwLength3);
+			ssRet << (LPCWSTR)lpBuffer3.get();
+
+			if (scope == Scope::WindowStation)
+			{
+				break;
+			}
+
+			// On the same desktop
+			ssRet << L"--";
+
+			DWORD dwLength4{};
+			HDESK hDeskProcess{ GetThreadDesktop(GetCurrentThreadId()) };
+			GetUserObjectInformation(hDeskProcess, UOI_NAME, NULL, 0, &dwLength4);
+			std::unique_ptr<BYTE[]> lpBuffer4{ new BYTE[dwLength4] };
+			GetUserObjectInformation(hDeskProcess, UOI_NAME, lpBuffer4.get(), dwLength4, &dwLength4);
+			ssRet << (LPCWSTR)lpBuffer4.get();
+
+			if (scope == Scope::Desktop)
+			{
+				break;
+			}
+
+			ssRet.str(L"");
+		} while (false);
 	}
 
-	return strRet;
+	return ssRet.str();
 }

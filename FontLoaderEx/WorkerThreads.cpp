@@ -60,14 +60,6 @@ void DragDropWorkerThreadProc(void* lpParameter)
 	Edit_SetSel(hWndEditMessage, iMessageLength, iMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonClose), TRUE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonLoad), TRUE);
-	EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonUnload), TRUE);
-	EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_ENABLED);
-	EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_ENABLED);
-	EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-	EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_ENABLED);
-
 	PostMessage(hWndMain, (UINT)USERMESSAGE::DRAGDROPWORKERTHREADTERMINATED, NULL, NULL);
 }
 
