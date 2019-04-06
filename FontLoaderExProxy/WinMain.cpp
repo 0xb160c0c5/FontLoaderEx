@@ -10,9 +10,9 @@
 #include <tlhelp32.h>
 #include <shlwapi.h>
 #include <process.h>
+#include <cwchar>
 #include <string>
 #include <sstream>
-#include <cwchar>
 
 const WCHAR szWindowName[]{ L"FontLoaderExProxy" };
 
@@ -121,7 +121,7 @@ const WCHAR szInjectionDllName[]{ L"FontLoaderExInjectionDll.dll" };
 bool EnableDebugPrivilege();
 bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout);
 bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout);
-DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize);
+DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize, DWORD dwTimeout);
 
 HANDLE hEventTerminateWatchThread{};
 HANDLE hThreadWatch{};
@@ -352,7 +352,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			case COPYDATA::ADDFONT:
 				{
 					ADDFONT i{};
-					if (CallRemoteProc(hProcessTarget, pfnRemoteAddFontProc, ((PCOPYDATASTRUCT)lParam)->lpData, ((PCOPYDATASTRUCT)lParam)->cbData))
+					if (CallRemoteProc(hProcessTarget, pfnRemoteAddFontProc, ((PCOPYDATASTRUCT)lParam)->lpData, ((PCOPYDATASTRUCT)lParam)->cbData, INFINITE))
 					{
 						i = ADDFONT::SUCCESSFUL;
 					}
@@ -368,7 +368,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			case COPYDATA::REMOVEFONT:
 				{
 					REMOVEFONT i{};
-					if (CallRemoteProc(hProcessTarget, pfnRemoteRemoveFontProc, ((PCOPYDATASTRUCT)lParam)->lpData, ((PCOPYDATASTRUCT)lParam)->cbData))
+					if (CallRemoteProc(hProcessTarget, pfnRemoteRemoveFontProc, ((PCOPYDATASTRUCT)lParam)->lpData, ((PCOPYDATASTRUCT)lParam)->cbData, INFINITE))
 					{
 						i = REMOVEFONT::SUCCESSFUL;
 					}
@@ -452,82 +452,18 @@ bool EnableDebugPrivilege()
 bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 {
 	// Inject dll into target process
-
 	bool bRet{};
 
 	do
 	{
+		// Make full path to module
 		WCHAR szDllPath[MAX_PATH]{};
 		GetModuleFileName(NULL, szDllPath, MAX_PATH);
 		PathRemoveFileSpec(szDllPath);
 		PathAppend(szDllPath, szModuleName);
 
-		// Allocate buffer in target process
-		LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
-		if (!lpRemoteBuffer)
-		{
-			bRet = false;
-			break;
-		}
-
-		// Write dll name to remote buffer
-		if (!WriteProcessMemory(hProcess, lpRemoteBuffer, (LPVOID)szDllPath, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), NULL))
-		{
-			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-
-			bRet = false;
-			break;
-		}
-
-		HMODULE hModule{ GetModuleHandle(L"Kernel32") };
-		if (!hModule)
-		{
-			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-
-			bRet = false;
-			break;
-		}
-
-		// Create remote thread to inject dll
-		LPTHREAD_START_ROUTINE addr{ (LPTHREAD_START_ROUTINE)GetProcAddress(hModule, "LoadLibraryW") };
-		HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, addr, lpRemoteBuffer, 0, NULL) };
-		if (!hRemoteThread)
-		{
-			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-
-			bRet = false;
-			break;
-		}
-		if (WaitForSingleObject(hRemoteThread, dwTimeout) == WAIT_TIMEOUT)
-		{
-			CloseHandle(hRemoteThread);
-			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-
-			bRet = false;
-			break;
-		}
-		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-
-		// Get exit code of remote thread
-		DWORD dwRemoteThreadExitCode{};
-		if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
-		{
-			CloseHandle(hRemoteThread);
-
-			bRet = false;
-			break;
-		}
-
-		if (!dwRemoteThreadExitCode)
-		{
-			CloseHandle(hRemoteThread);
-
-			bRet = false;
-			break;
-		}
-		CloseHandle(hRemoteThread);
-
-		bRet = true;
+		// Call LoadLibraryW with module full path to inject dll into hProcess
+		bRet = CallRemoteProc(hProcess, GetProcAddress(GetModuleHandle(L"Kernel32"), "LoadLibraryW"), (void*)szDllPath, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), dwTimeout);
 	} while (false);
 
 	return bRet;
@@ -536,7 +472,6 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 {
 	// Unload dll from target process
-
 	bool bRet{};
 
 	do
@@ -569,74 +504,48 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 		}
 		CloseHandle(hModuleSnapshot);
 
-		HMODULE hModule{ GetModuleHandle(L"Kernel32") };
-		if (!hModule)
-		{
-			bRet = false;
-			break;
-		}
-
-		// Create remote thread to unload dll
-		LPTHREAD_START_ROUTINE addr{ (LPTHREAD_START_ROUTINE)GetProcAddress(hModule, "FreeLibrary") };
-		HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, addr, (LPVOID)hModInjectionDll, 0, NULL) };
-		if (!hRemoteThread)
-		{
-			bRet = false;
-			break;
-		}
-		if (WaitForSingleObject(hRemoteThread, dwTimeout) == WAIT_TIMEOUT)
-		{
-			CloseHandle(hRemoteThread);
-
-			bRet = false;
-			break;
-		}
-
-		// Get exit code of remote thread
-		DWORD dwRemoteThreadExitCode{};
-		if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
-		{
-			CloseHandle(hRemoteThread);
-
-			bRet = false;
-			break;
-		}
-		if (!dwRemoteThreadExitCode)
-		{
-			CloseHandle(hRemoteThread);
-
-			bRet = false;
-			break;
-		}
-		CloseHandle(hRemoteThread);
-
-		bRet = true;
+		// Call FreeLibrary with HMODULE to unload dll from hProcess
+		bRet = CallRemoteProc(hProcess, GetProcAddress(GetModuleHandle(L"Kernel32"), "FreeLibrary"), (void*)hModInjectionDll, 0, dwTimeout);
 	} while (false);
 
 	return bRet;
 }
 
-DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize)
+DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize, DWORD dwTimeout)
 {
 	DWORD dwRet{};
 
 	do
 	{
-		LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, cbParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
-		if (!lpRemoteBuffer)
+		LPVOID lpRemoteBuffer{};
+
+		// If cbParamSize == 0, directly copy lpParameter to lpRemoteBuffer
+		if (cbParamSize == 0)
 		{
-			dwRet = 0;
-			break;
+			lpRemoteBuffer = lpParameter;
+		}
+		// Else as normal
+		else
+		{
+			// Allocate buffer in target process
+			lpRemoteBuffer = VirtualAllocEx(hProcess, NULL, cbParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+			if (!lpRemoteBuffer)
+			{
+				dwRet = 0;
+				break;
+			}
+
+			// Write parameter to remote buffer
+			if (!WriteProcessMemory(hProcess, lpRemoteBuffer, lpParameter, cbParamSize, NULL))
+			{
+				VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
+
+				dwRet = 0;
+				break;
+			}
 		}
 
-		if (!WriteProcessMemory(hProcess, lpRemoteBuffer, lpParameter, cbParamSize, NULL))
-		{
-			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-
-			dwRet = 0;
-			break;
-		}
-
+		// Create remote thread to call function
 		HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)lpRemoteProcAddr, lpRemoteBuffer, 0, NULL) };
 		if (!hRemoteThread)
 		{
@@ -645,9 +554,19 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 			dwRet = 0;
 			break;
 		}
-		WaitForSingleObject(hRemoteThread, INFINITE);
+
+		// Wait for remote thread to terminate with timeout
+		if (WaitForSingleObject(hRemoteThread, dwTimeout) == WAIT_TIMEOUT)
+		{
+			CloseHandle(hRemoteThread);
+			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
+
+			dwRet = 0;
+			break;
+		}
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
+		// Get exit code of remote thread
 		DWORD dwRemoteThreadExitCode{};
 		if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
 		{

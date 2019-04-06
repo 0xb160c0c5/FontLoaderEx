@@ -15,54 +15,6 @@ HANDLE hEventProxyRemoveFontFinished{};
 ADDFONT ProxyAddFontResult{};
 REMOVEFONT ProxyRemoveFontResult{};
 
-DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize)
-{
-	DWORD dwRet{};
-
-	do
-	{
-		LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, cbParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
-		if (!lpRemoteBuffer)
-		{
-			dwRet = 0;
-			break;
-		}
-
-		if (!WriteProcessMemory(hProcess, lpRemoteBuffer, lpParameter, cbParamSize, NULL))
-		{
-			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-
-			dwRet = 0;
-			break;
-		}
-
-		HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)lpRemoteProcAddr, lpRemoteBuffer, 0, NULL) };
-		if (!hRemoteThread)
-		{
-			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-
-			dwRet = 0;
-			break;
-		}
-		WaitForSingleObject(hRemoteThread, INFINITE);
-		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-
-		DWORD dwRemoteThreadExitCode{};
-		if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
-		{
-			CloseHandle(hRemoteThread);
-
-			dwRet = 0;
-			break;
-		}
-		CloseHandle(hRemoteThread);
-
-		dwRet = dwRemoteThreadExitCode;
-	} while (false);
-
-	return dwRet;
-}
-
 #ifdef _DEBUG
 bool DefaultAddFontProc(const wchar_t* lpszFontName)
 {
@@ -92,12 +44,12 @@ bool DefaultRemoveFontProc(const wchar_t* lpszFontName)
 
 bool RemoteAddFontProc(const wchar_t* lpszFontName)
 {
-	return CallRemoteProc(TargetProcessInfo.hProcess, pfnRemoteAddFontProc, (void*)lpszFontName, (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t));
+	return CallRemoteProc(TargetProcessInfo.hProcess, pfnRemoteAddFontProc, (void*)lpszFontName, (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), INFINITE);
 }
 
 bool RemoteRemoveFontProc(const wchar_t* lpszFontName)
 {
-	return CallRemoteProc(TargetProcessInfo.hProcess, pfnRemoteRemoveFontProc, (void*)lpszFontName, (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t));
+	return CallRemoteProc(TargetProcessInfo.hProcess, pfnRemoteRemoveFontProc, (void*)lpszFontName, (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), INFINITE);
 }
 
 bool ProxyAddFontProc(const wchar_t* lpszFontName)

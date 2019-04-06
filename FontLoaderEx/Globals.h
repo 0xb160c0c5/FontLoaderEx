@@ -77,3 +77,5 @@ extern bool ProxyAddFontProc(const wchar_t* lpFontName);
 extern bool ProxyRemoveFontProc(const wchar_t* lpFontName);
 extern bool NullAddFontProc(const wchar_t* lpFontName);
 extern bool NullRemoveFontProc(const wchar_t* lpFontName);
+
+extern DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize, DWORD dwTimeout);
