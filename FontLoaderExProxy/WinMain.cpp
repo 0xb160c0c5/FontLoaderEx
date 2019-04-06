@@ -10,22 +10,31 @@
 #include <tlhelp32.h>
 #include <shlwapi.h>
 #include <process.h>
+#include <string>
+#include <sstream>
 #include <cwchar>
+
+const WCHAR szWindowName[]{ L"FontLoaderExProxy" };
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam);
 
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
+	std::wstringstream Message{};
+
 #ifdef _DEBUG
 	// Wait for debugger to attach
-	MessageBox(NULL, L"FontLoaderExProxy launched!", L"FontLoaderExProxy", NULL);
+	Message << szWindowName << L" launched!";
+	MessageBox(NULL, Message.str().c_str(), szWindowName, NULL);
+	Message.str(L"");
 #endif // _DEBUG
 
 	// Detect whether FontLoaderEx is running. If not running, launch it.
+	Message << L"Never run " << szWindowName << L" directly, run FontLoaderEx instead.\r\n\r\nDo you want to launch FontloaderEx now?";
 	HANDLE hEventParentProcessRunning{ OpenEvent(EVENT_ALL_ACCESS, FALSE, L"FontLoaderEx_EventParentProcessRunning_B980D8A4-C487-4306-9D17-3BA6A2CCA4A4") };
 	if (!hEventParentProcessRunning)
 	{
-		switch (MessageBox(NULL, L"Never run FontLoaderExProxy directly, run FontLoaderEx instead.\r\n\r\nDo you want to launch FontloaderEx now?", L"FontLoaderExProxy", MB_ICONINFORMATION | MB_YESNO))
+		switch (MessageBox(NULL, Message.str().c_str(), szWindowName, MB_ICONINFORMATION | MB_YESNO))
 		{
 		case IDYES:
 			{
@@ -56,13 +65,13 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	}
 
 	// Create message-only window
-	WNDCLASS wc{ 0, WndProc, 0, 0, hInstance, NULL, NULL, NULL, NULL, L"FontLoaderExProxy" };
+	WNDCLASS wc{ 0, WndProc, 0, 0, hInstance, NULL, NULL, NULL, NULL, szWindowName };
 	if (!RegisterClass(&wc))
 	{
 		return -1;
 	}
 	HWND hWndMain{};
-	if (!(hWndMain = CreateWindow(L"FontLoaderExProxy", L"FontLoaderExProxy", NULL, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInstance, NULL)))
+	if (!(hWndMain = CreateWindow(szWindowName, szWindowName, NULL, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInstance, NULL)))
 	{
 		return -1;
 	}
@@ -109,10 +118,10 @@ const WCHAR szInjectionDllName[]{ L"FontLoaderExInjectionDll64.dll" };
 const WCHAR szInjectionDllName[]{ L"FontLoaderExInjectionDll.dll" };
 #endif // _WIN64
 
+bool EnableDebugPrivilege();
 bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout);
 bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout);
 DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize);
-bool EnableDebugPrivilege();
 
 HANDLE hEventTerminateWatchThread{};
 HANDLE hThreadWatch{};
@@ -175,8 +184,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			int argc{};
 			LPWSTR* argv = CommandLineToArgvW(GetCommandLine(), &argc);
 
-#pragma warning(push)
-#pragma warning(disable:4312)
+#ifdef _WIN64
+			// Get handles to parent process and message window
+			hProcessParent = (HANDLE)std::wcstoull(argv[0], nullptr, 10);
+			hProcessTarget = (HANDLE)std::wcstoull(argv[1], nullptr, 10);
+			hWndParentMessage = (HWND)std::wcstoull(argv[2], nullptr, 10);
+
+			// Get handles to synchronization objects
+			hEventMessageThreadReady = (HANDLE)std::wcstoull(argv[3], nullptr, 10);
+			hEventProxyProcessReady = (HANDLE)std::wcstoull(argv[4], nullptr, 10);
+#else
 			// Get handles to parent process and message window
 			hProcessParent = (HANDLE)std::wcstoul(argv[0], nullptr, 10);
 			hProcessTarget = (HANDLE)std::wcstoul(argv[1], nullptr, 10);
@@ -185,10 +202,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			// Get handles to synchronization objects
 			hEventMessageThreadReady = (HANDLE)std::wcstoul(argv[3], nullptr, 10);
 			hEventProxyProcessReady = (HANDLE)std::wcstoul(argv[4], nullptr, 10);
+#endif	// _WIN64
 
 			// Get timeout
 			dwTimeout = (DWORD)std::wcstoul(argv[5], nullptr, 10);
-#pragma warning(pop)
 
 			// Wait for message thread to ready
 			WaitForSingleObject(hEventMessageThreadReady, INFINITE);
@@ -390,54 +407,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	}
 
 	return ret;
-}
-
-DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize)
-{
-	DWORD dwRet{};
-
-	do
-	{
-		LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, cbParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
-		if (!lpRemoteBuffer)
-		{
-			dwRet = 0;
-			break;
-		}
-
-		if (!WriteProcessMemory(hProcess, lpRemoteBuffer, lpParameter, cbParamSize, NULL))
-		{
-			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-
-			dwRet = 0;
-			break;
-		}
-
-		HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)lpRemoteProcAddr, lpRemoteBuffer, 0, NULL) };
-		if (!hRemoteThread)
-		{
-			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-
-			dwRet = 0;
-			break;
-		}
-		WaitForSingleObject(hRemoteThread, INFINITE);
-		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
-
-		DWORD dwRemoteThreadExitCode{};
-		if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
-		{
-			CloseHandle(hRemoteThread);
-
-			dwRet = 0;
-			break;
-		}
-		CloseHandle(hRemoteThread);
-
-		dwRet = dwRemoteThreadExitCode;
-	} while (false);
-
-	return dwRet;
 }
 
 bool EnableDebugPrivilege()
@@ -645,4 +614,52 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 	} while (false);
 
 	return bRet;
+}
+
+DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize)
+{
+	DWORD dwRet{};
+
+	do
+	{
+		LPVOID lpRemoteBuffer{ VirtualAllocEx(hProcess, NULL, cbParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
+		if (!lpRemoteBuffer)
+		{
+			dwRet = 0;
+			break;
+		}
+
+		if (!WriteProcessMemory(hProcess, lpRemoteBuffer, lpParameter, cbParamSize, NULL))
+		{
+			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
+
+			dwRet = 0;
+			break;
+		}
+
+		HANDLE hRemoteThread{ CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)lpRemoteProcAddr, lpRemoteBuffer, 0, NULL) };
+		if (!hRemoteThread)
+		{
+			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
+
+			dwRet = 0;
+			break;
+		}
+		WaitForSingleObject(hRemoteThread, INFINITE);
+		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
+
+		DWORD dwRemoteThreadExitCode{};
+		if (!GetExitCodeThread(hRemoteThread, &dwRemoteThreadExitCode))
+		{
+			CloseHandle(hRemoteThread);
+
+			dwRet = 0;
+			break;
+		}
+		CloseHandle(hRemoteThread);
+
+		dwRet = dwRemoteThreadExitCode;
+	} while (false);
+
+	return dwRet;
 }

@@ -12,7 +12,7 @@ extern HMENU hMenuContextListViewFontList;
 
 enum class ID : WORD { ButtonOpen = 20, ButtonClose, ButtonLoad, ButtonUnload, ButtonBroadcastWM_FONTCHANGE, StaticTimeout, EditTimeout, ButtonSelectProcess, ListViewFontList, Splitter, EditMessage };
 
-enum class USERMESSAGE : UINT {DRAGDROPWORKERTHREADTERMINATED = WM_USER + 0x100, BUTTONCLOSEWORKERTHREADTERMINATED, BUTTONLOADWORKERTHREADTERMINATED, BUTTONUNLOADWORKERTHREADTERMINATED, CLOSEWORKERTHREADTERMINATED, TERMINATEWATCHTHREAD, WATCHTHREADTERMINATED, TERMINATEMESSAGETHREAD };
+enum class USERMESSAGE : UINT { DRAGDROPWORKERTHREADTERMINATED = WM_USER + 0x100, BUTTONCLOSEWORKERTHREADTERMINATED, BUTTONLOADWORKERTHREADTERMINATED, BUTTONUNLOADWORKERTHREADTERMINATED, CLOSEWORKERTHREADTERMINATED, TERMINATEWATCHTHREAD, WATCHTHREADTERMINATED, TERMINATEMESSAGETHREAD, CHILDWINDOWPOSCHANGED };
 
 extern void DragDropWorkerThreadProc(void* lpParameter);
 extern void CloseWorkerThreadProc(void* lpParameter);
@@ -29,15 +29,15 @@ extern HANDLE hThreadMessage;
 struct ProcessInfo
 {
 	HANDLE hProcess;
-	std::wstring ProcessName;
-	DWORD ProcessID;
+	std::wstring strProcessName;
+	DWORD dwProcessID;
 };
 
 extern ProcessInfo TargetProcessInfo;
 extern void* pfnRemoteAddFontProc;
 extern void* pfnRemoteRemoveFontProc;
 
-extern PROCESS_INFORMATION piProxyProcess;
+extern ProcessInfo ProxyProcessInfo;
 extern HWND hWndProxy;
 extern HWND hWndMessage;
 
