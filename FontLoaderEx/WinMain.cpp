@@ -3389,7 +3389,7 @@ std::wstring GetUniqueName(LPCWSTR lpszString, Scope scope)
 		do
 		{
 			// By the same user
-			ssRet << LR"(Local\)" << lpszString;
+			ssRet << LR"(Local\)" << lpszString << L"--";
 
 			HANDLE hTokenProcess{};
 			DWORD dwLength{};
@@ -3408,15 +3408,12 @@ std::wstring GetUniqueName(LPCWSTR lpszString, Scope scope)
 				break;
 			}
 
-			// In the same login session
+			// In the same session
 			ssRet << L"--";
 
-			DWORD dwLength2{};
-			GetTokenInformation(hTokenProcess, TokenStatistics, NULL, 0, &dwLength2);
-			std::unique_ptr<BYTE[]> lpBuffer2{ new BYTE[dwLength2]{} };
-			GetTokenInformation(hTokenProcess, TokenStatistics, lpBuffer2.get(), dwLength2, &dwLength2);
-			LUID luid{ ((PTOKEN_STATISTICS)lpBuffer2.get())->AuthenticationId };
-			ssRet << std::setiosflags(std::ios::internal) << std::setfill(L'0') << std::setw(8) << std::hex << luid.HighPart << luid.LowPart;
+			DWORD dwSessionID{};
+			ProcessIdToSessionId(GetCurrentProcessId(), &dwSessionID);
+			ssRet << dwSessionID;
 
 			if (scope == Scope::Session)
 			{
@@ -3427,12 +3424,12 @@ std::wstring GetUniqueName(LPCWSTR lpszString, Scope scope)
 			// In the same window station
 			ssRet << L"--";
 
-			DWORD dwLength3{};
+			DWORD dwLength2{};
 			HWINSTA hWinStaProcess{ GetProcessWindowStation() };
-			GetUserObjectInformation(hWinStaProcess, UOI_NAME, NULL, 0, &dwLength3);
-			std::unique_ptr<BYTE[]> lpBuffer3{ new BYTE[dwLength3]{} };
-			GetUserObjectInformation(hWinStaProcess, UOI_NAME, lpBuffer3.get(), dwLength3, &dwLength3);
-			ssRet << (LPCWSTR)lpBuffer3.get();
+			GetUserObjectInformation(hWinStaProcess, UOI_NAME, NULL, 0, &dwLength2);
+			std::unique_ptr<BYTE[]> lpBuffer2{ new BYTE[dwLength2]{} };
+			GetUserObjectInformation(hWinStaProcess, UOI_NAME, lpBuffer2.get(), dwLength2, &dwLength2);
+			ssRet << (LPCWSTR)lpBuffer2.get();
 
 			if (scope == Scope::WindowStation)
 			{
@@ -3442,12 +3439,12 @@ std::wstring GetUniqueName(LPCWSTR lpszString, Scope scope)
 			// On the same desktop
 			ssRet << L"--";
 
-			DWORD dwLength4{};
+			DWORD dwLength3{};
 			HDESK hDeskProcess{ GetThreadDesktop(GetCurrentThreadId()) };
-			GetUserObjectInformation(hDeskProcess, UOI_NAME, NULL, 0, &dwLength4);
-			std::unique_ptr<BYTE[]> lpBuffer4{ new BYTE[dwLength4] };
-			GetUserObjectInformation(hDeskProcess, UOI_NAME, lpBuffer4.get(), dwLength4, &dwLength4);
-			ssRet << (LPCWSTR)lpBuffer4.get();
+			GetUserObjectInformation(hDeskProcess, UOI_NAME, NULL, 0, &dwLength3);
+			std::unique_ptr<BYTE[]> lpBuffer3{ new BYTE[dwLength3] };
+			GetUserObjectInformation(hDeskProcess, UOI_NAME, lpBuffer3.get(), dwLength3, &dwLength3);
+			ssRet << (LPCWSTR)lpBuffer3.get();
 
 			if (scope == Scope::Desktop)
 			{
