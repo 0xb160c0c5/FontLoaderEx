@@ -13,6 +13,7 @@
 #include <tlhelp32.h>
 #include <process.h>
 #include <sddl.h>
+#include <versionhelpers.h>
 #include <cwchar>
 #include <string>
 #include <iomanip>
@@ -43,6 +44,13 @@ std::wstring GetUniqueName(LPCWSTR lpszString, Scope scope);
 
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
+	// Check Windows version
+	if (!IsWindows7OrGreater())
+	{
+		MessageBox(NULL, L"Windows 7 or higher required.", L"FontLoaderEx", MB_ICONWARNING);
+		return 0;
+	}
+
 	// Prevent multiple instances of FontLoaderEx in different scopes
 	HANDLE hMutexOneInstance{};
 	Scope scope{ Scope::Session };
@@ -82,7 +90,6 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		default:
 			break;
 		}
-
 		MessageBox(NULL, strMessage.str().c_str(), szWindowName, MB_ICONWARNING);
 
 		return 0;
@@ -121,10 +128,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	{
 		return -1;
 	}
-
 	ShowWindow(hWndMain, nShowCmd);
 	UpdateWindow(hWndMain);
 
+	// Get HMENU to context menu of ListViewFontList
 	hMenuContextListViewFontList = GetSubMenu(LoadMenu(hInstance, MAKEINTRESOURCE(IDR_CONTEXTMENU1)), 0);
 
 	MSG Msg{};
@@ -2901,11 +2908,11 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Msg, WPARAM 
 					{
 						HMENU hMenuContextEdit{ (HMENU)SendMessage(hWnd, MN_GETHMENU, NULL, NULL) };
 
-						DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);
-						DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);
-						DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);
-						DeleteMenu(hMenuContextEdit, 1, MF_BYPOSITION);
-						DeleteMenu(hMenuContextEdit, 1, MF_BYPOSITION);
+						DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);	// Undo
+						DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);	// Seperator 1
+						DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);	// Cut
+						DeleteMenu(hMenuContextEdit, 1, MF_BYPOSITION);	// Paste
+						DeleteMenu(hMenuContextEdit, 1, MF_BYPOSITION);	// Seperator 2
 					}
 				},
 				GetCurrentProcessId(), GetCurrentThreadId(), WINEVENT_OUTOFCONTEXT) };

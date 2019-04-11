@@ -21,7 +21,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM
 	{
 	case WM_CREATE:
 		{
-			hPen = CreatePen(PS_SOLID, 0, (COLORREF)GetSysColor(COLOR_BTNTEXT));
+			hPen = CreatePen(PS_SOLID, 0, (COLORREF)GetSysColor(COLOR_GRAYTEXT));
 		}
 		break;
 	case WM_PAINT:
@@ -29,12 +29,12 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM
 			// Draw a horizontal line in the middle
 			PAINTSTRUCT ps{};
 			HDC hDCSplitter{ BeginPaint(hWndSplitter, &ps) };
-			
+
 			SelectPen(hDCSplitter, hPen);
 			RECT rectSplitterClient{};
 			GetClientRect(hWndSplitter, &rectSplitterClient);
-			MoveToEx(hDCSplitter, rectSplitterClient.left + 2, (rectSplitterClient.bottom - rectSplitterClient.top) / 2, NULL);
-			LineTo(hDCSplitter, rectSplitterClient.right - rectSplitterClient.left - 2, (rectSplitterClient.bottom - rectSplitterClient.top) / 2);
+			MoveToEx(hDCSplitter, rectSplitterClient.left + (rectSplitterClient.bottom - rectSplitterClient.top) / 2, (rectSplitterClient.bottom - rectSplitterClient.top) / 2, NULL);
+			LineTo(hDCSplitter, (rectSplitterClient.right - rectSplitterClient.left) - (rectSplitterClient.bottom - rectSplitterClient.top) / 2, (rectSplitterClient.bottom - rectSplitterClient.top) / 2);
 
 			EndPaint(hWndSplitter, &ps);
 		}
