@@ -484,7 +484,7 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 	// Register default AddFont() and RemoveFont() procedures
 	FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
 
-	// Revert to default caption
+	// Revert the caption of ButtonSelectProcess to default
 	Button_SetText(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), L"Select process");
 
 	// Close handle to target process and duplicated handles
@@ -615,7 +615,7 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	// Register default AddFont() and RemoveFont() procedures
 	FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
 
-	// Revert to default caption
+	// Revert the caption of ButtonSelectProcess to default
 	Button_SetText(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), L"Click to select process");
 
 	// Close handles to proxy process and target process, duplicated handles and synchronization objects

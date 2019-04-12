@@ -51,11 +51,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		return 0;
 	}
 
-	// Prevent multiple instances of FontLoaderEx in different scopes
-	HANDLE hMutexOneInstance{};
+	// Prevent multiple instances of FontLoaderEx in the same session
 	Scope scope{ Scope::Session };
 	std::wstring strMutexName{ GetUniqueName(L"FontLoaderEx-656A8394-5AB8-4061-8882-2FE2E7940C2E", scope) };
-	hMutexOneInstance = CreateMutex(NULL, FALSE, strMutexName.c_str());
+	HANDLE hMutexOneInstance{ CreateMutex(NULL, FALSE, strMutexName.c_str()) };
 	if (GetLastError() == ERROR_ALREADY_EXISTS || GetLastError() == ERROR_ACCESS_DENIED)
 	{
 		std::wstringstream strMessage{};
@@ -206,12 +205,6 @@ const WCHAR szInjectionDllNameByProxy[]{ L"FontLoaderExInjectionDll64.dll" };
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	LRESULT ret{};
-
-	static LONG EditMessageTextMarginY{};
-
-	static UINT_PTR SizingEdge{};
-	static RECT rectMainClientOld{};
-	static int PreviousShowCmd{};
 
 	switch ((USERMESSAGE)Msg)
 	{
@@ -584,6 +577,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	default:
 		break;
 	}
+
+	static HFONT hFontMain{};
+
+	static LONG EditMessageTextMarginY{};
+
+	static UINT_PTR SizingEdge{};
+	static RECT rectMainClientOld{};
+	static int PreviousShowCmd{};
+
 	switch (Msg)
 	{
 	case WM_CREATE:
@@ -636,33 +638,33 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 			NONCLIENTMETRICS ncm{ sizeof(NONCLIENTMETRICS) };
 			SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
-			HFONT hFont{ CreateFontIndirect(&ncm.lfMessageFont) };
+			hFontMain = CreateFontIndirect(&ncm.lfMessageFont);
 
 			// Initialize ButtonOpen
 			HWND hWndButtonOpen{ CreateWindow(WC_BUTTON, L"Open", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 0, 0, 50, 50, hWnd, (HMENU)ID::ButtonOpen, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
-			SetWindowFont(hWndButtonOpen, hFont, TRUE);
+			SetWindowFont(hWndButtonOpen, hFontMain, TRUE);
 
 			// Initialize ButtonClose
 			HWND hWndButtonClose{ CreateWindow(WC_BUTTON, L"Close", WS_CHILD | WS_VISIBLE | WS_DISABLED | WS_TABSTOP | BS_PUSHBUTTON, 50, 0, 50, 50, hWnd, (HMENU)ID::ButtonClose, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
-			SetWindowFont(hWndButtonClose, hFont, TRUE);
+			SetWindowFont(hWndButtonClose, hFontMain, TRUE);
 
 			// Initialize ButtonLoad
 			HWND hWndButtonLoad{ CreateWindow(WC_BUTTON, L"Load", WS_CHILD | WS_VISIBLE | WS_DISABLED | WS_TABSTOP | BS_PUSHBUTTON, 100, 0, 50, 50, hWnd, (HMENU)ID::ButtonLoad, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
-			SetWindowFont(hWndButtonLoad, hFont, TRUE);
+			SetWindowFont(hWndButtonLoad, hFontMain, TRUE);
 
 			// Initialize ButtonUnload
 			HWND hWndButtonUnload{ CreateWindow(WC_BUTTON, L"Unload", WS_CHILD | WS_VISIBLE | WS_DISABLED | WS_TABSTOP | BS_PUSHBUTTON, 150, 0, 50, 50, hWnd, (HMENU)ID::ButtonUnload, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
-			SetWindowFont(hWndButtonUnload, hFont, TRUE);
+			SetWindowFont(hWndButtonUnload, hFontMain, TRUE);
 
 			// Initialize ButtonBroadcastWM_FONTCHANGE
 			HWND hWndButtonBroadcastWM_FONTCHANGE{ CreateWindow(WC_BUTTON, L"Broadcast WM_FONTCHANGE", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 200, 0, 250, 21, hWnd, (HMENU)ID::ButtonBroadcastWM_FONTCHANGE, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
-			SetWindowFont(hWndButtonBroadcastWM_FONTCHANGE, hFont, TRUE);
+			SetWindowFont(hWndButtonBroadcastWM_FONTCHANGE, hFontMain, TRUE);
 
 			// Initialize EditTimeout and its label
 			HWND hWndStaticTimeout{ CreateWindow(WC_STATIC, L"Timeout:", WS_CHILD | WS_VISIBLE | SS_LEFT , 470, 1, 50, 19, hWnd, (HMENU)ID::StaticTimeout, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			HWND hWndEditTimeout{ CreateWindow(WC_EDIT, L"5000", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_LEFT | ES_NUMBER | ES_AUTOHSCROLL | ES_NOHIDESEL, 520, 0, 80, 21, hWnd, (HMENU)ID::EditTimeout, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
-			SetWindowFont(hWndStaticTimeout, hFont, TRUE);
-			SetWindowFont(hWndEditTimeout, hFont, TRUE);
+			SetWindowFont(hWndStaticTimeout, hFontMain, TRUE);
+			SetWindowFont(hWndEditTimeout, hFontMain, TRUE);
 
 			Edit_LimitText(hWndEditTimeout, 10);
 
@@ -670,12 +672,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 			// Initialize ButtonSelectProcess
 			HWND hWndButtonSelectProcess{ CreateWindow(WC_BUTTON, L"Select process", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 200, 29, 250, 21, hWnd, (HMENU)ID::ButtonSelectProcess, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
-			SetWindowFont(hWndButtonSelectProcess, hFont, TRUE);
+			SetWindowFont(hWndButtonSelectProcess, hFontMain, TRUE);
 
 			// Initialize ListViewFontList
 			HWND hWndListViewFontList{ CreateWindow(WC_LISTVIEW, L"FontList", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | LVS_REPORT | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER, 0, 50, rectClientMain.right - rectClientMain.left, 300, hWnd, (HMENU)ID::ListViewFontList, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			ListView_SetExtendedListViewStyle(hWndListViewFontList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
-			SetWindowFont(hWndListViewFontList, hFont, TRUE);
+			SetWindowFont(hWndListViewFontList, hFontMain, TRUE);
 
 			RECT rectListViewFontListClient{};
 			GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
@@ -698,7 +700,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 			// Initialize EditMessage
 			HWND hWndEditMessage{ CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | ES_READONLY | ES_LEFT | ES_MULTILINE | ES_NOHIDESEL, 0, 355, rectClientMain.right - rectClientMain.left, rectClientMain.bottom - rectClientMain.top - 355, hWnd, (HMENU)ID::EditMessage, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
-			SetWindowFont(hWndEditMessage, hFont, TRUE);
+			SetWindowFont(hWndEditMessage, hFontMain, TRUE);
 			Edit_SetText(hWndEditMessage,
 				LR"(Temporarily load fonts to Windows or specific process.)""\r\n"
 				"\r\n"
@@ -731,6 +733,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 			SetWindowSubclass(hWndEditMessage, EditMessageSubclassProc, 0, NULL);
 
+			// Get vertical margin of the formatting rectangle in EditMessage
 			RECT rectEditMessageClient{}, rectEditMessageFormatting{};
 			GetClientRect(hWndEditMessage, &rectEditMessageClient);
 			Edit_GetRect(hWndEditMessage, &rectEditMessageFormatting);
@@ -864,6 +867,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_DESTROY:
 		{
+			DeleteFont(hFontMain);
+
 			PostQuitMessage(0);
 		}
 		break;
@@ -884,8 +889,85 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)ID::ListViewFontList) };
 							HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
 
-							WCHAR szOpenFileNames[32768]{};
-							OPENFILENAME ofn{ sizeof(ofn), hWnd, NULL, L"Font Files(*.ttf;*.ttc;*.otf)\0*.ttf;*.ttc;*.otf\0", NULL, 0, 0, szOpenFileNames, sizeof(szOpenFileNames), NULL, 0, NULL, NULL, OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT };
+							std::unique_ptr<WCHAR[]> lpszOpenFileNames{};
+							OPENFILENAME ofn{ sizeof(ofn), hWnd, NULL, L"Font Files(*.ttf;*.ttc;*.otf)\0*.ttf;*.ttc;*.otf\0", NULL, 0, 0, lpszOpenFileNames.get(), 1, NULL, 0, NULL, L"Select fonts", OFN_EXPLORER | OFN_ENABLESIZING | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_ENABLEHOOK, 0, 0, NULL, (LPARAM)&ofn,
+								[](HWND hWndOpenDialogChild, UINT Msg, WPARAM wParam, LPARAM lParam) -> UINT_PTR
+								{
+									UINT_PTR ret{};
+
+									static HFONT hFontOpenDialog{};
+
+									static LPOPENFILENAME lpofn{};
+
+									switch (Msg)
+									{
+									case WM_INITDIALOG:
+										{
+											// Get the pointer to original ofn
+											lpofn = (LPOPENFILENAME)lParam;
+
+											// Change default font
+											NONCLIENTMETRICS ncm{ sizeof(NONCLIENTMETRICS) };
+											SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
+											hFontOpenDialog = CreateFontIndirect(&ncm.lfMessageFont);
+
+											HWND hWndDialogOpen{ GetParent(hWndOpenDialogChild) };
+											SetWindowFont(GetDlgItem(hWndDialogOpen, chx1), hFontOpenDialog, TRUE);
+											SetWindowFont(GetDlgItem(hWndDialogOpen, cmb1), hFontOpenDialog, TRUE);
+											SetWindowFont(GetDlgItem(hWndDialogOpen, stc2), hFontOpenDialog, TRUE);
+											SetWindowFont(GetDlgItem(hWndDialogOpen, cmb2), hFontOpenDialog, TRUE);
+											SetWindowFont(GetDlgItem(hWndDialogOpen, stc4), hFontOpenDialog, TRUE);
+											SetWindowFont(GetDlgItem(hWndDialogOpen, cmb13), hFontOpenDialog, TRUE);
+											SetWindowFont(GetDlgItem(hWndDialogOpen, edt1), hFontOpenDialog, TRUE);
+											SetWindowFont(GetDlgItem(hWndDialogOpen, stc3), hFontOpenDialog, TRUE);
+											SetWindowFont(GetDlgItem(hWndDialogOpen, lst1), hFontOpenDialog, TRUE);
+											SetWindowFont(GetDlgItem(hWndDialogOpen, stc1), hFontOpenDialog, TRUE);
+											SetWindowFont(GetDlgItem(hWndDialogOpen, IDOK), hFontOpenDialog, TRUE);
+											SetWindowFont(GetDlgItem(hWndDialogOpen, IDCANCEL), hFontOpenDialog, TRUE);
+											SetWindowFont(GetDlgItem(hWndDialogOpen, pshHelp), hFontOpenDialog, TRUE);
+
+											ret = (UINT_PTR)FALSE;
+										}
+										break;
+									case WM_NOTIFY:
+										{
+											switch (((LPOFNOTIFY)lParam)->hdr.code)
+											{
+												// Adjust buffer size
+											case CDN_SELCHANGE:
+												{
+													static HWND hWndDialogOpen{ GetParent(hWndOpenDialogChild) };
+
+													DWORD cchLength{ (DWORD)CommDlg_OpenSave_GetSpec(hWndDialogOpen, NULL, 0) + MAX_PATH + 2 };
+													if (lpofn->nMaxFile < cchLength)
+													{
+														delete[] lpofn->lpstrFile;
+														lpofn->lpstrFile = new WCHAR[cchLength]{};
+														lpofn->nMaxFile = cchLength;
+													}
+
+													ret = (UINT_PTR)TRUE;
+												}
+												break;
+											default:
+												break;
+											}
+										}
+										break;
+									case WM_DESTROY:
+										{
+											DeleteFont(hFontOpenDialog);
+
+											ret = (UINT_PTR)FALSE;
+										}
+										break;
+									default:
+										break;
+									}
+
+									return ret;
+								},
+								NULL, NULL, 0, 0 };
 							if (GetOpenFileName(&ofn))
 							{
 								LVITEM lvi{ LVIF_TEXT, ListView_GetItemCount(hWndListViewFontList) };
@@ -1430,7 +1512,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											EnableWindow(GetDlgItem(hWndMain, (int)ID::EditTimeout), FALSE);
 											EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
 
-											// Change caption
+											// Change the caption of ButtonSelectProcess
 											std::wstringstream Caption{};
 											Caption << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")";
 											Button_SetText(hWndButtonSelectProcess, (LPCWSTR)Caption.str().c_str());
@@ -1613,7 +1695,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									EnableWindow(GetDlgItem(hWndMain, (int)ID::EditTimeout), FALSE);
 									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
 
-									// Change caption
+									// Change the caption of ButtonSelectProcess
 									std::wstringstream Caption{};
 									Caption << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")";
 									Button_SetText(hWndButtonSelectProcess, (LPCWSTR)Caption.str().c_str());
@@ -1708,7 +1790,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									EnableWindow(GetDlgItem(hWndMain, (int)ID::EditTimeout), TRUE);
 									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
 
-									// Revert to default caption
+									// Revert the caption of ButtonSelectProcess to default
 									Button_SetText(hWndButtonSelectProcess, L"Select process");
 								}
 
@@ -1749,7 +1831,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									EnableWindow(GetDlgItem(hWndMain, (int)ID::EditTimeout), TRUE);
 									EnableWindow(GetDlgItem(hWndMain, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
 
-									// Revert to default caption
+									// Revert the caption of ButtonSelectProcess to default
 									Button_SetText(hWndButtonSelectProcess, L"Select process");
 								}
 							}
@@ -2765,7 +2847,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		{
 			// Change the background color of ButtonBroadcastWM_FONTCHANGE, StaticTimeout and EditMessage to default window background color
 			// From https://social.msdn.microsoft.com/Forums/vstudio/en-US/7b6d1815-87e3-4f47-b5d5-fd4caa0e0a89/why-is-wmctlcolorstatic-sent-for-a-button-instead-of-wmctlcolorbtn?forum=vclanguage
-			// "WM_CTLCOLORSTATIC is sent By any control that displays text which would be displayed using the default dialog/window background color. 
+			// "WM_CTLCOLORSTATIC is sent by any control that displays text which would be displayed using the default dialog/window background color. 
 			// This includes check boxes, radio buttons, group boxes, static text, read-only or disabled edit controls, and disabled combo boxes (all styles)."
 			if (((HWND)lParam == GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE)) || ((HWND)lParam == GetDlgItem(hWnd, (int)ID::StaticTimeout)) || ((HWND)lParam == GetDlgItem(hWnd, (int)ID::EditMessage)))
 			{
@@ -2944,6 +3026,8 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 {
 	INT_PTR ret{};
 
+	static HFONT hFontDialog{};
+
 	static std::vector<ProcessInfo> ProcessList{};
 
 	static bool bOrderByProcessAscending{ true };
@@ -2958,11 +3042,11 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 
 			NONCLIENTMETRICS ncm{ sizeof(NONCLIENTMETRICS) };
 			SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
-			HFONT hFont{ CreateFontIndirect(&ncm.lfMessageFont) };
+			hFontDialog = CreateFontIndirect(&ncm.lfMessageFont);
 
 			// Initialize ListViewProcessList
 			HWND hWndListViewProcessList{ GetDlgItem(hWndDialog, IDC_LIST1) };
-			SetWindowFont(hWndListViewProcessList, hFont, TRUE);
+			SetWindowFont(hWndListViewProcessList, hFontDialog, TRUE);
 			SetWindowLongPtr(hWndListViewProcessList, GWL_STYLE, GetWindowLongPtr(hWndListViewProcessList, GWL_STYLE) | LVS_REPORT | LVS_SINGLESEL);
 			ListView_SetExtendedListViewStyle(hWndListViewProcessList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 
@@ -2973,11 +3057,11 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 
 			// Initialize ButtonOK
 			HWND hWndButtonOK{ GetDlgItem(hWndDialog, IDOK) };
-			SetWindowFont(hWndButtonOK, hFont, TRUE);
+			SetWindowFont(hWndButtonOK, hFontDialog, TRUE);
 
 			// Initialize ButtonCancel
 			HWND hWndButtonCancel{ GetDlgItem(hWndDialog, IDCANCEL) };
-			SetWindowFont(hWndButtonCancel, hFont, TRUE);
+			SetWindowFont(hWndButtonCancel, hFontDialog, TRUE);
 
 			// Fill ProcessList
 			ProcessList.clear();
@@ -3171,6 +3255,13 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 			default:
 				break;
 			}
+		}
+		break;
+	case WM_DESTROY:
+		{
+			DeleteFont(hFontDialog);
+
+			ret = (INT_PTR)FALSE;
 		}
 		break;
 	default:
