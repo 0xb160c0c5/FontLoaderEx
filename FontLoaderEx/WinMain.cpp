@@ -562,9 +562,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					// Adjust column width
 					HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)wParam) };
 
-					RECT rectListViewFontListClient{};
-					GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
-					ListView_SetColumnWidth(hWndListViewFontList, 0, rectListViewFontListClient.right - rectListViewFontListClient.left - ListView_GetColumnWidth(hWndListViewFontList, 1));
+					RECT rcListViewFontListClient{};
+					GetClientRect(hWndListViewFontList, &rcListViewFontListClient);
+					ListView_SetColumnWidth(hWndListViewFontList, 0, rcListViewFontListClient.right - rcListViewFontListClient.left - ListView_GetColumnWidth(hWndListViewFontList, 1));
 				}
 				break;
 			case ID::EditMessage:
@@ -587,7 +587,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	static LONG EditMessageTextMarginY{};
 
 	static UINT_PTR SizingEdge{};
-	static RECT rectMainClientOld{};
+	static RECT rcMainClientOld{};
 	static int PreviousShowCmd{};
 
 	switch (Msg)
@@ -637,8 +637,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			GetWindowPlacement(hWnd, &wp);
 			PreviousShowCmd = wp.showCmd;
 
-			RECT rectClientMain{};
-			GetClientRect(hWnd, &rectClientMain);
+			RECT rcClientMain{};
+			GetClientRect(hWnd, &rcClientMain);
 
 			NONCLIENTMETRICS ncm{ sizeof(NONCLIENTMETRICS) };
 			SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
@@ -679,14 +679,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			SetWindowFont(hWndButtonSelectProcess, hFontMain, TRUE);
 
 			// Initialize ListViewFontList
-			HWND hWndListViewFontList{ CreateWindow(WC_LISTVIEW, L"FontList", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | LVS_REPORT | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER, 0, 50, rectClientMain.right - rectClientMain.left, 300, hWnd, (HMENU)ID::ListViewFontList, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
+			HWND hWndListViewFontList{ CreateWindow(WC_LISTVIEW, L"FontList", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | LVS_REPORT | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER, 0, 50, rcClientMain.right - rcClientMain.left, 300, hWnd, (HMENU)ID::ListViewFontList, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			ListView_SetExtendedListViewStyle(hWndListViewFontList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 			SetWindowFont(hWndListViewFontList, hFontMain, TRUE);
 
-			RECT rectListViewFontListClient{};
-			GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
-			LVCOLUMN lvc1{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectListViewFontListClient.right - rectListViewFontListClient.left) * 4 / 5 , (LPWSTR)L"Font Name" };
-			LVCOLUMN lvc2{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rectListViewFontListClient.right - rectListViewFontListClient.left) * 1 / 5 , (LPWSTR)L"State" };
+			RECT rcListViewFontListClient{};
+			GetClientRect(hWndListViewFontList, &rcListViewFontListClient);
+			LVCOLUMN lvc1{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rcListViewFontListClient.right - rcListViewFontListClient.left) * 4 / 5 , (LPWSTR)L"Font Name" };
+			LVCOLUMN lvc2{ LVCF_FMT | LVCF_WIDTH | LVCF_TEXT, LVCFMT_LEFT, (rcListViewFontListClient.right - rcListViewFontListClient.left) * 1 / 5 , (LPWSTR)L"State" };
 			ListView_InsertColumn(hWndListViewFontList, 0, &lvc1);
 			ListView_InsertColumn(hWndListViewFontList, 1, &lvc2);
 
@@ -700,10 +700,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			ChangeWindowMessageFilterEx(hWndListViewFontList, 0x0049, MSGFLT_ALLOW, &cfs);	// WM_COPYGLOBALDATA
 
 			// Initialize Splitter
-			HWND hWndSplitter{ CreateWindow((LPWSTR)InitSplitter(), NULL, WS_CHILD | WS_VISIBLE, 0, 350, rectClientMain.right - rectClientMain.left, 5, hWnd, (HMENU)ID::Splitter, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
+			HWND hWndSplitter{ CreateWindow((LPWSTR)InitSplitter(), NULL, WS_CHILD | WS_VISIBLE, 0, 350, rcClientMain.right - rcClientMain.left, 5, hWnd, (HMENU)ID::Splitter, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 
 			// Initialize EditMessage
-			HWND hWndEditMessage{ CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | ES_READONLY | ES_LEFT | ES_MULTILINE | ES_NOHIDESEL, 0, 355, rectClientMain.right - rectClientMain.left, rectClientMain.bottom - rectClientMain.top - 355, hWnd, (HMENU)ID::EditMessage, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
+			HWND hWndEditMessage{ CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | ES_READONLY | ES_LEFT | ES_MULTILINE | ES_NOHIDESEL, 0, 355, rcClientMain.right - rcClientMain.left, rcClientMain.bottom - rcClientMain.top - 355, hWnd, (HMENU)ID::EditMessage, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndEditMessage, hFontMain, TRUE);
 			Edit_SetText(hWndEditMessage,
 				LR"(Temporarily load fonts to Windows or specific process.)""\r\n"
@@ -737,11 +737,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 			SetWindowSubclass(hWndEditMessage, EditMessageSubclassProc, 0, NULL);
 
-			// Get vertical margin of the formatting rectangle in EditMessage
-			RECT rectEditMessageClient{}, rectEditMessageFormatting{};
-			GetClientRect(hWndEditMessage, &rectEditMessageClient);
-			Edit_GetRect(hWndEditMessage, &rectEditMessageFormatting);
-			EditMessageTextMarginY = (rectEditMessageClient.bottom - rectEditMessageClient.top) - (rectEditMessageFormatting.bottom - rectEditMessageFormatting.top);
+			// Get vertical margin of the formatting rcangle in EditMessage
+			RECT rcEditMessageClient{}, rcEditMessageFormatting{};
+			GetClientRect(hWndEditMessage, &rcEditMessageClient);
+			Edit_GetRect(hWndEditMessage, &rcEditMessageFormatting);
+			EditMessageTextMarginY = (rcEditMessageClient.bottom - rcEditMessageClient.top) - (rcEditMessageFormatting.bottom - rcEditMessageFormatting.top);
 		}
 		break;
 	case WM_ACTIVATE:
@@ -1930,14 +1930,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 						{
 							// Caculate cursor offset to Splitter top in y orientation
 							HWND hWndSplitter{ ((LPSPLITTERSTRUCT)lParam)->nmhdr.hwndFrom };
-							RECT rectSplitter{}, rectSplitterClient{};
-							GetWindowRect(hWndSplitter, &rectSplitter);
-							GetClientRect(hWndSplitter, &rectSplitterClient);
-							CursorOffsetY = ((LPSPLITTERSTRUCT)lParam)->ptCursor.y - rectSplitterClient.top;
-							MapWindowRect(hWndSplitter, HWND_DESKTOP, &rectSplitterClient);
-							CursorOffsetY += rectSplitterClient.top - rectSplitter.top;
+							RECT rcSplitter{}, rcSplitterClient{};
+							GetWindowRect(hWndSplitter, &rcSplitter);
+							GetClientRect(hWndSplitter, &rcSplitterClient);
+							CursorOffsetY = ((LPSPLITTERSTRUCT)lParam)->ptCursor.y - rcSplitterClient.top;
+							MapWindowRect(hWndSplitter, HWND_DESKTOP, &rcSplitterClient);
+							CursorOffsetY += rcSplitterClient.top - rcSplitter.top;
 
-							// Confine cursor to a specific rectangle
+							// Confine cursor to a specific rcangle
 							/*
 							┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 							┃                                                                                                                               ┃
@@ -1954,12 +1954,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							┃	┃                                                                  ┆              ┃        ↓                                ┃
 							┠┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
 							┃	┃                                                                  ┆              ┃                             ↑           ┃
-							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                     rectMouseClip.top   ┃
+							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                     rcMouseClip.top     ┃
 							┃	┃                                                                  ┆              ┃                                         ┃
 							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                                         ┃
 							┃	┃                                                                  ┆              ┃                                         ┃
 							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                                         ┃
-							┃	┠──────────────────────────────────────────────────────────────────┴──────────────┨                    rectMouseClip.right →┃
+							┃	┠──────────────────────────────────────────────────────────────────┴──────────────┨                      rcMouseClip.right →┃
 							┃	┠─────────────────────────────────────────────────────────────────────────────┬───┨                                         ┃
 							┃	┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃                                         ┃
 							┃	┃                                                                             ├───┨                                         ┃
@@ -1973,14 +1973,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							┃	┃ upper-right cornor.                                                         │   ┃                                         ┃
 							┃	┃                                                                             │   ┃                                         ┃
 							┃	┃ How to load fonts to process:                                               │   ┃                                         ┃
-							┃	┃ 1.Click "Click to select process", select a process.                        │   ┃                    rectMouseClip.bottom ┃
+							┃	┃ 1.Click "Click to select process", select a process.                        │   ┃                      rcMouseClip.bottom ┃
 							┃	┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │   ┃                             ↓           ┃
 							┠┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼───╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
 							┃	┃ view, then click "Load" button.                                             │ ↓ ┃        } cyEditMessageMin               ┃
 							┃	┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┹────────                                 ┃
 							┃                                                                                                                               ┃
 							┃                                                                                                                               ┃
-							┃← rectMouseClip.left                                                                                                           ┃
+							┃← rcMouseClip.left                                                                                                             ┃
 							┃                                                                                                                               ┃
 							┃                                                                                                                               ┃
 							┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
@@ -1988,9 +1988,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 							// Calculate the minimal heights of ListViewFontList
 							HWND hWndListViewFontList{ GetDlgItem(hWnd,(int)ID::ListViewFontList) };
-							RECT rectListViewFontList{}, rectListViewFontListClient{};
-							GetWindowRect(hWndListViewFontList, &rectListViewFontList);
-							GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+							RECT rcListViewFontList{}, rcListViewFontListClient{};
+							GetWindowRect(hWndListViewFontList, &rcListViewFontList);
+							GetClientRect(hWndListViewFontList, &rcListViewFontListClient);
 							bool bIsInserted{ false };
 							if (ListView_GetItemCount(hWndListViewFontList) == 0)
 							{
@@ -1999,13 +1999,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								LVITEM lvi{};
 								ListView_InsertItem(hWndListViewFontList, &lvi);
 							}
-							RECT rectListViewFontListItem{};
-							ListView_GetItemRect(hWndListViewFontList, 0, &rectListViewFontListItem, LVIR_BOUNDS);
+							RECT rcListViewFontListItem{};
+							ListView_GetItemRect(hWndListViewFontList, 0, &rcListViewFontListItem, LVIR_BOUNDS);
 							if (bIsInserted)
 							{
 								ListView_DeleteAllItems(hWndListViewFontList);
 							}
-							LONG cyListViewFontListMin{ rectListViewFontListItem.bottom + ((rectListViewFontList.bottom - rectListViewFontList.top) - (rectListViewFontListClient.bottom - rectListViewFontListClient.top)) };
+							LONG cyListViewFontListMin{ rcListViewFontListItem.bottom + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
 
 							// Calculate the minimal heights of EditMessage
 							HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
@@ -2016,20 +2016,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							GetTextMetrics(hDCEditMessageMemory, &tm);
 							DeleteDC(hDCEditMessageMemory);
 							ReleaseDC(hWndEditMessage, hDCEditMessage);
-							RECT rectEditMessage{}, rectEditMessageClient{};
-							GetWindowRect(hWndEditMessage, &rectEditMessage);
-							GetClientRect(hWndEditMessage, &rectEditMessageClient);
-							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
+							RECT rcEditMessage{}, rcEditMessageClient{};
+							GetWindowRect(hWndEditMessage, &rcEditMessage);
+							GetClientRect(hWndEditMessage, &rcEditMessageClient);
+							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rcEditMessage.bottom - rcEditMessage.top) + (rcEditMessageClient.top - rcEditMessageClient.bottom)) + EditMessageTextMarginY };
 
-							// Calculate confine rectangle
-							RECT rectMainClient{}, rectDesktop{}, rectButtonOpen{};
-							GetClientRect(hWnd, &rectMainClient);
-							MapWindowRect(hWnd, HWND_DESKTOP, &rectMainClient);
-							GetWindowRect(GetDesktopWindow(), &rectDesktop);
-							GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rectButtonOpen);
-							RECT rectMouseClip{ rectDesktop.left, rectMainClient.top + (rectButtonOpen.bottom - rectButtonOpen.top) + cyListViewFontListMin + CursorOffsetY, rectDesktop.right, rectMainClient.bottom - ((rectSplitter.bottom - rectSplitter.top) - CursorOffsetY) - cyEditMessageMin };
+							// Calculate confine rcangle
+							RECT rcMainClient{}, rcDesktop{}, rcButtonOpen{};
+							GetClientRect(hWnd, &rcMainClient);
+							MapWindowRect(hWnd, HWND_DESKTOP, &rcMainClient);
+							GetWindowRect(GetDesktopWindow(), &rcDesktop);
+							GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rcButtonOpen);
+							RECT rcMouseClip{ rcDesktop.left, rcMainClient.top + (rcButtonOpen.bottom - rcButtonOpen.top) + cyListViewFontListMin + CursorOffsetY, rcDesktop.right, rcMainClient.bottom - ((rcSplitter.bottom - rcSplitter.top) - CursorOffsetY) - cyEditMessageMin };
 
-							ClipCursor(&rectMouseClip);
+							ClipCursor(&rcMouseClip);
 						}
 						break;
 						// Dragging Splitter
@@ -2041,25 +2041,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 							// Move Splitter
 							HWND hWndSplitter{ ((LPSPLITTERSTRUCT)lParam)->nmhdr.hwndFrom };
-							RECT rectSplitter{};
-							GetWindowRect(hWndSplitter, &rectSplitter);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
-							MoveWindow(hWndSplitter, rectSplitter.left, ptCursor.y - CursorOffsetY, rectSplitter.right - rectSplitter.left, rectSplitter.bottom - rectSplitter.top, TRUE);
+							RECT rcSplitter{};
+							GetWindowRect(hWndSplitter, &rcSplitter);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rcSplitter);
+							MoveWindow(hWndSplitter, rcSplitter.left, ptCursor.y - CursorOffsetY, rcSplitter.right - rcSplitter.left, rcSplitter.bottom - rcSplitter.top, TRUE);
 
 							// Resize ListViewFontList
 							HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
-							RECT rectListViewFontList{};
-							GetWindowRect(hWndListViewFontList, &rectListViewFontList);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
-							MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, rectListViewFontList.right - rectListViewFontList.left, ptCursor.y - CursorOffsetY - rectListViewFontList.top, TRUE);
+							RECT rcListViewFontList{};
+							GetWindowRect(hWndListViewFontList, &rcListViewFontList);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rcListViewFontList);
+							MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, rcListViewFontList.right - rcListViewFontList.left, ptCursor.y - CursorOffsetY - rcListViewFontList.top, TRUE);
 
 							// Resize EditMessage
 							HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
-							RECT rectEditMessage{}, rectMainClient{};
-							GetWindowRect(hWndEditMessage, &rectEditMessage);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
-							GetClientRect(hWnd, &rectMainClient);
-							MoveWindow(hWndEditMessage, rectEditMessage.left, ptCursor.y + (rectSplitter.bottom - rectSplitter.top) - CursorOffsetY, rectEditMessage.right - rectEditMessage.left, rectMainClient.bottom - rectSplitter.bottom, TRUE);
+							RECT rcEditMessage{}, rcMainClient{};
+							GetWindowRect(hWndEditMessage, &rcEditMessage);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rcEditMessage);
+							GetClientRect(hWnd, &rcMainClient);
+							MoveWindow(hWndEditMessage, rcEditMessage.left, ptCursor.y + (rcSplitter.bottom - rcSplitter.top) - CursorOffsetY, rcEditMessage.right - rcEditMessage.left, rcMainClient.bottom - rcSplitter.bottom, TRUE);
 						}
 						break;
 						// End dragging Splitter
@@ -2095,10 +2095,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					int iSelectionMark{ ListView_GetSelectionMark(hWndListViewFontList) };
 					if (iSelectionMark == -1)
 					{
-						RECT rectListViewFontListClient{};
-						GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
-						MapWindowRect(hWndListViewFontList, HWND_DESKTOP, &rectListViewFontListClient);
-						ptMenu = { rectListViewFontListClient.left, rectListViewFontListClient.top };
+						RECT rcListViewFontListClient{};
+						GetClientRect(hWndListViewFontList, &rcListViewFontListClient);
+						MapWindowRect(hWndListViewFontList, HWND_DESKTOP, &rcListViewFontListClient);
+						ptMenu = { rcListViewFontListClient.left, rcListViewFontListClient.top };
 					}
 					else
 					{
@@ -2118,8 +2118,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_WINDOWPOSCHANGING:
 		{
-			// Get client rectangle before main window changes size
-			GetClientRect(((LPWINDOWPOS)lParam)->hwnd, &rectMainClientOld);
+			// Get client rcangle before main window changes size
+			GetClientRect(((LPWINDOWPOS)lParam)->hwnd, &rcMainClientOld);
 
 			ret = DefWindowProc(hWnd, Msg, wParam, lParam);
 		}
@@ -2195,9 +2195,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 									// Calculate the minimal height of ListViewFontList
 									HWND hWndListViewFontList{ GetDlgItem(hWnd,(int)ID::ListViewFontList) };
-									RECT rectListViewFontList{}, rectListViewFontListClient{};
-									GetWindowRect(hWndListViewFontList, &rectListViewFontList);
-									GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+									RECT rcListViewFontList{}, rcListViewFontListClient{};
+									GetWindowRect(hWndListViewFontList, &rcListViewFontList);
+									GetClientRect(hWndListViewFontList, &rcListViewFontListClient);
 									bool bIsInserted{ false };
 									if (ListView_GetItemCount(hWndListViewFontList) == 0)
 									{
@@ -2206,56 +2206,56 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										LVITEM lvi{};
 										ListView_InsertItem(hWndListViewFontList, &lvi);
 									}
-									RECT rectListViewFontListItem{};
-									ListView_GetItemRect(hWndListViewFontList, 0, &rectListViewFontListItem, LVIR_BOUNDS);
+									RECT rcListViewFontListItem{};
+									ListView_GetItemRect(hWndListViewFontList, 0, &rcListViewFontListItem, LVIR_BOUNDS);
 									if (bIsInserted)
 									{
 										ListView_DeleteAllItems(hWndListViewFontList);
 									}
-									LONG cyListViewFontListMin{ rectListViewFontListItem.bottom + ((rectListViewFontList.bottom - rectListViewFontList.top) - (rectListViewFontListClient.bottom - rectListViewFontListClient.top)) };
+									LONG cyListViewFontListMin{ rcListViewFontListItem.bottom + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
 
 									// Resize ListViewFontList
-									RECT rectButtonOpen{}, rectSplitter{}, rectEditMessage{};
-									GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rectButtonOpen);
-									GetWindowRect(GetDlgItem(hWnd, (int)ID::Splitter), &rectSplitter);
-									GetWindowRect(GetDlgItem(hWnd, (int)ID::EditMessage), &rectEditMessage);
-									MapWindowRect(HWND_DESKTOP, hWnd, &rectButtonOpen);
-									MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
-									MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
+									RECT rcButtonOpen{}, rcSplitter{}, rcEditMessage{};
+									GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rcButtonOpen);
+									GetWindowRect(GetDlgItem(hWnd, (int)ID::Splitter), &rcSplitter);
+									GetWindowRect(GetDlgItem(hWnd, (int)ID::EditMessage), &rcEditMessage);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rcButtonOpen);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rcSplitter);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rcEditMessage);
 
 									bool bIsListViewFontListMinimized{ false };
-									MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
-									if (HIWORD(lParam) - rectButtonOpen.bottom - (rectSplitter.bottom - rectSplitter.top) - (rectEditMessage.bottom - rectEditMessage.top) < cyListViewFontListMin)
+									MapWindowRect(HWND_DESKTOP, hWnd, &rcListViewFontList);
+									if (HIWORD(lParam) - rcButtonOpen.bottom - (rcSplitter.bottom - rcSplitter.top) - (rcEditMessage.bottom - rcEditMessage.top) < cyListViewFontListMin)
 									{
 										bIsListViewFontListMinimized = true;
 
-										MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), cyListViewFontListMin, TRUE);
+										MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), cyListViewFontListMin, TRUE);
 									}
 									else
 									{
-										MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), HIWORD(lParam) - rectButtonOpen.bottom - (rectSplitter.bottom - rectSplitter.top) - (rectEditMessage.bottom - rectEditMessage.top), TRUE);
+										MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), HIWORD(lParam) - rcButtonOpen.bottom - (rcSplitter.bottom - rcSplitter.top) - (rcEditMessage.bottom - rcEditMessage.top), TRUE);
 									}
 
 									// Resize Splitter
 									HWND hWndSplitter{ GetDlgItem(hWnd, (int)ID::Splitter) };
 									if (bIsListViewFontListMinimized)
 									{
-										MoveWindow(hWndSplitter, rectSplitter.left, rectButtonOpen.bottom + cyListViewFontListMin, LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+										MoveWindow(hWndSplitter, rcSplitter.left, rcButtonOpen.bottom + cyListViewFontListMin, LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, TRUE);
 									}
 									else
 									{
-										MoveWindow(hWndSplitter, rectSplitter.left, HIWORD(lParam) - (rectSplitter.bottom - rectSplitter.top) - (rectEditMessage.bottom - rectEditMessage.top), LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+										MoveWindow(hWndSplitter, rcSplitter.left, HIWORD(lParam) - (rcSplitter.bottom - rcSplitter.top) - (rcEditMessage.bottom - rcEditMessage.top), LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, TRUE);
 									}
 
 									// Resize EditMessage
 									HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
 									if (bIsListViewFontListMinimized)
 									{
-										MoveWindow(hWndEditMessage, rectEditMessage.left, rectButtonOpen.bottom + cyListViewFontListMin + (rectSplitter.bottom - rectSplitter.top), LOWORD(lParam), HIWORD(lParam) - (rectButtonOpen.bottom + cyListViewFontListMin + (rectSplitter.bottom - rectSplitter.top)), TRUE);
+										MoveWindow(hWndEditMessage, rcEditMessage.left, rcButtonOpen.bottom + cyListViewFontListMin + (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), HIWORD(lParam) - (rcButtonOpen.bottom + cyListViewFontListMin + (rcSplitter.bottom - rcSplitter.top)), TRUE);
 									}
 									else
 									{
-										MoveWindow(hWndEditMessage, rectEditMessage.left, HIWORD(lParam) - (rectEditMessage.bottom - rectEditMessage.top), LOWORD(lParam), rectEditMessage.bottom - rectEditMessage.top, TRUE);
+										MoveWindow(hWndEditMessage, rcEditMessage.left, HIWORD(lParam) - (rcEditMessage.bottom - rcEditMessage.top), LOWORD(lParam), rcEditMessage.bottom - rcEditMessage.top, TRUE);
 									}
 								}
 								break;
@@ -2313,54 +2313,54 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									TEXTMETRIC tm{};
 									GetTextMetrics(hDCEditMessageMemory, &tm);
 									DeleteDC(hDCEditMessageMemory);
-									RECT rectEditMessage{}, rectEditMessageClient{};
-									GetWindowRect(hWndEditMessage, &rectEditMessage);
-									GetClientRect(hWndEditMessage, &rectEditMessageClient);
-									LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
+									RECT rcEditMessage{}, rcEditMessageClient{};
+									GetWindowRect(hWndEditMessage, &rcEditMessage);
+									GetClientRect(hWndEditMessage, &rcEditMessageClient);
+									LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rcEditMessage.bottom - rcEditMessage.top) + (rcEditMessageClient.top - rcEditMessageClient.bottom)) + EditMessageTextMarginY };
 
 									// Resize EditMessage
 									bool bIsEditMessageMinimized{ false };
-									MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
-									if (HIWORD(lParam) - rectEditMessage.top < cyEditMessageMin)
+									MapWindowRect(HWND_DESKTOP, hWnd, &rcEditMessage);
+									if (HIWORD(lParam) - rcEditMessage.top < cyEditMessageMin)
 									{
 										bIsEditMessageMinimized = true;
 
-										MoveWindow(hWndEditMessage, rectEditMessage.left, HIWORD(lParam) - cyEditMessageMin, LOWORD(lParam), cyEditMessageMin, TRUE);
+										MoveWindow(hWndEditMessage, rcEditMessage.left, HIWORD(lParam) - cyEditMessageMin, LOWORD(lParam), cyEditMessageMin, TRUE);
 									}
 									else
 									{
-										MoveWindow(hWndEditMessage, rectEditMessage.left, rectEditMessage.top, LOWORD(lParam), HIWORD(lParam) - rectEditMessage.top, TRUE);
+										MoveWindow(hWndEditMessage, rcEditMessage.left, rcEditMessage.top, LOWORD(lParam), HIWORD(lParam) - rcEditMessage.top, TRUE);
 									}
 
 									// Resize Splitter
 									HWND hWndSplitter{ GetDlgItem(hWnd, (int)ID::Splitter) };
-									RECT rectSplitter{};
-									GetWindowRect(hWndSplitter, &rectSplitter);
-									MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
+									RECT rcSplitter{};
+									GetWindowRect(hWndSplitter, &rcSplitter);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rcSplitter);
 									if (bIsEditMessageMinimized)
 									{
-										MoveWindow(hWndSplitter, rectSplitter.left, HIWORD(lParam) - cyEditMessageMin - (rectSplitter.bottom - rectSplitter.top), LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+										MoveWindow(hWndSplitter, rcSplitter.left, HIWORD(lParam) - cyEditMessageMin - (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, TRUE);
 									}
 									else
 									{
-										MoveWindow(hWndSplitter, rectSplitter.left, rectSplitter.top, LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+										MoveWindow(hWndSplitter, rcSplitter.left, rcSplitter.top, LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, TRUE);
 									}
 
 									// Resize ListViewFontList
-									RECT rectButtonOpen{};
-									GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rectButtonOpen);
-									MapWindowRect(HWND_DESKTOP, hWnd, &rectButtonOpen);
+									RECT rcButtonOpen{};
+									GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rcButtonOpen);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rcButtonOpen);
 									HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
-									RECT rectListViewFontList{};
-									GetWindowRect(hWndListViewFontList, &rectListViewFontList);
-									MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
+									RECT rcListViewFontList{};
+									GetWindowRect(hWndListViewFontList, &rcListViewFontList);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rcListViewFontList);
 									if (bIsEditMessageMinimized)
 									{
-										MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), HIWORD(lParam) - cyEditMessageMin - (rectSplitter.bottom - rectSplitter.top) - rectButtonOpen.bottom, TRUE);
+										MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), HIWORD(lParam) - cyEditMessageMin - (rcSplitter.bottom - rcSplitter.top) - rcButtonOpen.bottom, TRUE);
 									}
 									else
 									{
-										MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), rectListViewFontList.bottom - rectListViewFontList.top, TRUE);
+										MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), rcListViewFontList.bottom - rcListViewFontList.top, TRUE);
 									}
 								}
 								break;
@@ -2408,24 +2408,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 									// Resize ListViewFontList
 									HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
-									RECT rectListViewFontList{};
-									GetWindowRect(hWndListViewFontList, &rectListViewFontList);
-									MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
-									MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), rectListViewFontList.bottom - rectListViewFontList.top, TRUE);
+									RECT rcListViewFontList{};
+									GetWindowRect(hWndListViewFontList, &rcListViewFontList);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rcListViewFontList);
+									MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), rcListViewFontList.bottom - rcListViewFontList.top, TRUE);
 
 									// Resize Splitter
 									HWND hWndSplitter{ GetDlgItem(hWnd, (int)ID::Splitter) };
-									RECT rectSplitter{};
-									GetWindowRect(hWndSplitter, &rectSplitter);
-									MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
-									MoveWindow(hWndSplitter, rectSplitter.left, rectSplitter.top, LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+									RECT rcSplitter{};
+									GetWindowRect(hWndSplitter, &rcSplitter);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rcSplitter);
+									MoveWindow(hWndSplitter, rcSplitter.left, rcSplitter.top, LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, TRUE);
 
 									// Resize EditMessage
 									HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
-									RECT rectEditMessage{};
-									GetWindowRect(hWndEditMessage, &rectEditMessage);
-									MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
-									MoveWindow(hWndEditMessage, rectEditMessage.left, rectEditMessage.top, LOWORD(lParam), rectEditMessage.bottom - rectEditMessage.top, TRUE);
+									RECT rcEditMessage{};
+									GetWindowRect(hWndEditMessage, &rcEditMessage);
+									MapWindowRect(HWND_DESKTOP, hWnd, &rcEditMessage);
+									MoveWindow(hWndEditMessage, rcEditMessage.left, rcEditMessage.top, LOWORD(lParam), rcEditMessage.bottom - rcEditMessage.top, TRUE);
 								}
 								break;
 							default:
@@ -2524,26 +2524,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 							// Resize Splitter
 							HWND hWndSplitter{ GetDlgItem(hWnd, (int)ID::Splitter) };
-							RECT rectButtonOpen{}, rectListViewFontList{}, rectSplitter{}, rectEditMessage{};
-							GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rectButtonOpen);
-							GetWindowRect(GetDlgItem(hWnd, (int)ID::ListViewFontList), &rectListViewFontList);
-							GetWindowRect(hWndSplitter, &rectSplitter);
-							GetWindowRect(GetDlgItem(hWnd, (int)ID::EditMessage), &rectEditMessage);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rectButtonOpen);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
+							RECT rcButtonOpen{}, rcListViewFontList{}, rcSplitter{}, rcEditMessage{};
+							GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rcButtonOpen);
+							GetWindowRect(GetDlgItem(hWnd, (int)ID::ListViewFontList), &rcListViewFontList);
+							GetWindowRect(hWndSplitter, &rcSplitter);
+							GetWindowRect(GetDlgItem(hWnd, (int)ID::EditMessage), &rcEditMessage);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rcButtonOpen);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rcListViewFontList);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rcSplitter);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rcEditMessage);
 
-							LONG ySplitterTopNew{ (((rectSplitter.top - rectButtonOpen.bottom) + (rectSplitter.bottom - rectButtonOpen.bottom)) * (HIWORD(lParam) - rectButtonOpen.bottom)) / (((rectMainClientOld.bottom - rectMainClientOld.top) - rectButtonOpen.bottom) * 2) - ((rectSplitter.bottom - rectSplitter.top) / 2) + rectButtonOpen.bottom };
-							MoveWindow(hWndSplitter, rectSplitter.left, ySplitterTopNew, LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+							LONG ySplitterTopNew{ (((rcSplitter.top - rcButtonOpen.bottom) + (rcSplitter.bottom - rcButtonOpen.bottom)) * (HIWORD(lParam) - rcButtonOpen.bottom)) / (((rcMainClientOld.bottom - rcMainClientOld.top) - rcButtonOpen.bottom) * 2) - ((rcSplitter.bottom - rcSplitter.top) / 2) + rcButtonOpen.bottom };
+							MoveWindow(hWndSplitter, rcSplitter.left, ySplitterTopNew, LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, TRUE);
 
 							// Resize ListViewFontList
 							HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
-							MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), ySplitterTopNew - rectButtonOpen.bottom, TRUE);
+							MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), ySplitterTopNew - rcButtonOpen.bottom, TRUE);
 
 							// Resize EditMessage
 							HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
-							MoveWindow(hWndEditMessage, rectEditMessage.left, ySplitterTopNew + (rectSplitter.bottom - rectSplitter.top), LOWORD(lParam), HIWORD(lParam) - (ySplitterTopNew + (rectSplitter.bottom - rectSplitter.top)), TRUE);
+							MoveWindow(hWndEditMessage, rcEditMessage.left, ySplitterTopNew + (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), HIWORD(lParam) - (ySplitterTopNew + (rcSplitter.bottom - rcSplitter.top)), TRUE);
 
 							PreviousShowCmd = SW_MAXIMIZE;
 						}
@@ -2653,9 +2653,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 							// Calculate minimal height of ListViewFontList
 							HWND hWndListViewFontList{ GetDlgItem(hWnd,(int)ID::ListViewFontList) };
-							RECT rectListViewFontList{}, rectListViewFontListClient{};
-							GetWindowRect(hWndListViewFontList, &rectListViewFontList);
-							GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+							RECT rcListViewFontList{}, rcListViewFontListClient{};
+							GetWindowRect(hWndListViewFontList, &rcListViewFontList);
+							GetClientRect(hWndListViewFontList, &rcListViewFontListClient);
 							bool bIsInserted{ false };
 							if (ListView_GetItemCount(hWndListViewFontList) == 0)
 							{
@@ -2664,13 +2664,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								LVITEM lvi{};
 								ListView_InsertItem(hWndListViewFontList, &lvi);
 							}
-							RECT rectListViewFontListItem{};
-							ListView_GetItemRect(hWndListViewFontList, 0, &rectListViewFontListItem, LVIR_BOUNDS);
+							RECT rcListViewFontListItem{};
+							ListView_GetItemRect(hWndListViewFontList, 0, &rcListViewFontListItem, LVIR_BOUNDS);
 							if (bIsInserted)
 							{
 								ListView_DeleteAllItems(hWndListViewFontList);
 							}
-							LONG cyListViewFontListMin{ rectListViewFontListItem.bottom + ((rectListViewFontList.bottom - rectListViewFontList.top) - (rectListViewFontListClient.bottom - rectListViewFontListClient.top)) };
+							LONG cyListViewFontListMin{ rcListViewFontListItem.bottom + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
 
 							// Calculate minimal height of EditMessage
 							HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
@@ -2680,66 +2680,66 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							TEXTMETRIC tm{};
 							GetTextMetrics(hDCEditMessageMemory, &tm);
 							DeleteDC(hDCEditMessageMemory);
-							RECT rectEditMessage{}, rectEditMessageClient{};
-							GetWindowRect(hWndEditMessage, &rectEditMessage);
-							GetClientRect(hWndEditMessage, &rectEditMessageClient);
-							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
+							RECT rcEditMessage{}, rcEditMessageClient{};
+							GetWindowRect(hWndEditMessage, &rcEditMessage);
+							GetClientRect(hWndEditMessage, &rcEditMessageClient);
+							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rcEditMessage.bottom - rcEditMessage.top) + (rcEditMessageClient.top - rcEditMessageClient.bottom)) + EditMessageTextMarginY };
 
 							// Calculate new position of splitter
 							HWND hWndSplitter{ GetDlgItem(hWnd, (int)ID::Splitter) };
-							RECT rectButtonOpen{}, rectSplitter{};
-							GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rectButtonOpen);
-							GetWindowRect(hWndSplitter, &rectSplitter);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rectButtonOpen);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rectListViewFontList);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rectSplitter);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rectEditMessage);
+							RECT rcButtonOpen{}, rcSplitter{};
+							GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rcButtonOpen);
+							GetWindowRect(hWndSplitter, &rcSplitter);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rcButtonOpen);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rcListViewFontList);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rcSplitter);
+							MapWindowRect(HWND_DESKTOP, hWnd, &rcEditMessage);
 
-							LONG ySplitterTopNew{ (((rectSplitter.top - rectButtonOpen.bottom) + (rectSplitter.bottom - rectButtonOpen.bottom)) * (HIWORD(lParam) - rectButtonOpen.bottom)) / (((rectMainClientOld.bottom - rectMainClientOld.top) - rectButtonOpen.bottom) * 2) - ((rectSplitter.bottom - rectSplitter.top) / 2) + rectButtonOpen.bottom };
-							LONG cyListViewFontListNew{ ySplitterTopNew - rectButtonOpen.bottom };
-							LONG cyEditMessageNew{ HIWORD(lParam) - (ySplitterTopNew + (rectSplitter.bottom - rectSplitter.top)) };
+							LONG ySplitterTopNew{ (((rcSplitter.top - rcButtonOpen.bottom) + (rcSplitter.bottom - rcButtonOpen.bottom)) * (HIWORD(lParam) - rcButtonOpen.bottom)) / (((rcMainClientOld.bottom - rcMainClientOld.top) - rcButtonOpen.bottom) * 2) - ((rcSplitter.bottom - rcSplitter.top) / 2) + rcButtonOpen.bottom };
+							LONG cyListViewFontListNew{ ySplitterTopNew - rcButtonOpen.bottom };
+							LONG cyEditMessageNew{ HIWORD(lParam) - (ySplitterTopNew + (rcSplitter.bottom - rcSplitter.top)) };
 
 							// If cyListViewFontListNew < cyListViewFontListMin, keep the minimal height of ListViewFontList
 							if (cyListViewFontListNew < cyListViewFontListMin)
 							{
 								// Resize ListViewFontList
 								HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
-								MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), cyListViewFontListMin, TRUE);
+								MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), cyListViewFontListMin, TRUE);
 
 								// Resize Splitter
-								MoveWindow(hWndSplitter, rectSplitter.left, rectButtonOpen.bottom + cyListViewFontListMin, LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+								MoveWindow(hWndSplitter, rcSplitter.left, rcButtonOpen.bottom + cyListViewFontListMin, LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, TRUE);
 
 								// Resize EditMessage
 								HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
-								MoveWindow(hWndEditMessage, rectEditMessage.left, rectButtonOpen.bottom + cyListViewFontListMin + (rectSplitter.bottom - rectSplitter.top), LOWORD(lParam), HIWORD(lParam) - (rectButtonOpen.bottom + cyListViewFontListMin + (rectSplitter.bottom - rectSplitter.top)), TRUE);
+								MoveWindow(hWndEditMessage, rcEditMessage.left, rcButtonOpen.bottom + cyListViewFontListMin + (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), HIWORD(lParam) - (rcButtonOpen.bottom + cyListViewFontListMin + (rcSplitter.bottom - rcSplitter.top)), TRUE);
 							}
 							// If cyEditMessageNew < cyEditMessageMin, keep the minimal height of EditMessage
 							else if (cyEditMessageNew < cyEditMessageMin)
 							{
 								// Resize EditMessage
 								HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
-								MoveWindow(hWndEditMessage, rectEditMessage.left, HIWORD(lParam) - cyEditMessageMin, LOWORD(lParam), cyEditMessageMin, TRUE);
+								MoveWindow(hWndEditMessage, rcEditMessage.left, HIWORD(lParam) - cyEditMessageMin, LOWORD(lParam), cyEditMessageMin, TRUE);
 
 								// Resize Splitter
-								MoveWindow(hWndSplitter, rectSplitter.left, HIWORD(lParam) - (cyEditMessageMin + (rectSplitter.bottom - rectSplitter.top)), LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+								MoveWindow(hWndSplitter, rcSplitter.left, HIWORD(lParam) - (cyEditMessageMin + (rcSplitter.bottom - rcSplitter.top)), LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, TRUE);
 
 								// Resize ListViewFontList
 								HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
-								MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), HIWORD(lParam) - (cyEditMessageMin + (rectSplitter.bottom - rectSplitter.top) + rectButtonOpen.bottom), TRUE);
+								MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), HIWORD(lParam) - (cyEditMessageMin + (rcSplitter.bottom - rcSplitter.top) + rcButtonOpen.bottom), TRUE);
 							}
 							// Else resize as usual
 							else
 							{
 								// Resize Splitter
-								MoveWindow(hWndSplitter, rectSplitter.left, ySplitterTopNew, LOWORD(lParam), rectSplitter.bottom - rectSplitter.top, TRUE);
+								MoveWindow(hWndSplitter, rcSplitter.left, ySplitterTopNew, LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, TRUE);
 
 								// Resize ListViewFontList
 								HWND hWndListViewFontList{ GetDlgItem(hWnd, (int)ID::ListViewFontList) };
-								MoveWindow(hWndListViewFontList, rectListViewFontList.left, rectListViewFontList.top, LOWORD(lParam), cyListViewFontListNew, TRUE);
+								MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), cyListViewFontListNew, TRUE);
 
 								// Resize EditMessage
 								HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
-								MoveWindow(hWndEditMessage, rectEditMessage.left, ySplitterTopNew + (rectSplitter.bottom - rectSplitter.top), LOWORD(lParam), cyEditMessageNew, TRUE);
+								MoveWindow(hWndEditMessage, rcEditMessage.left, ySplitterTopNew + (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), cyEditMessageNew, TRUE);
 							}
 
 							PreviousShowCmd = SW_RESTORE;
@@ -2802,21 +2802,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			┠───────────────────────────────────────────────────────────────────────────┬───╂───────
 			┃ Temporarily load fonts to Windows or specific process                     ├───┨       } cyEditMessagemin
 			┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━╉───────
-			│                         rectEditTimeout.right                                 │
+			│                              rcEditTimeout.right                              │
 			│←─────────────────────────────────────────────────────────────────────────────→│
 			│                                                                               │
 			*/
 
-			// Get ButtonOpen window rectangle
-			RECT rectButtonOpen{};
-			GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rectButtonOpen);
-			MapWindowRect(HWND_DESKTOP, hWnd, &rectButtonOpen);
+			// Get ButtonOpen window rcangle
+			RECT rcButtonOpen{};
+			GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rcButtonOpen);
+			MapWindowRect(HWND_DESKTOP, hWnd, &rcButtonOpen);
 
 			// Calculate the minimal height of ListViewFontList
 			HWND hWndListViewFontList{ GetDlgItem(hWnd,(int)ID::ListViewFontList) };
-			RECT rectListViewFontList{}, rectListViewFontListClient{};
-			GetWindowRect(hWndListViewFontList, &rectListViewFontList);
-			GetClientRect(hWndListViewFontList, &rectListViewFontListClient);
+			RECT rcListViewFontList{}, rcListViewFontListClient{};
+			GetWindowRect(hWndListViewFontList, &rcListViewFontList);
+			GetClientRect(hWndListViewFontList, &rcListViewFontListClient);
 			bool bIsInserted{ false };
 			if (ListView_GetItemCount(hWndListViewFontList) == 0)
 			{
@@ -2825,17 +2825,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				LVITEM lvi{};
 				ListView_InsertItem(hWndListViewFontList, &lvi);
 			}
-			RECT rectListViewFontListItem{};
-			ListView_GetItemRect(hWndListViewFontList, 0, &rectListViewFontListItem, LVIR_BOUNDS);
+			RECT rcListViewFontListItem{};
+			ListView_GetItemRect(hWndListViewFontList, 0, &rcListViewFontListItem, LVIR_BOUNDS);
 			if (bIsInserted)
 			{
 				ListView_DeleteAllItems(hWndListViewFontList);
 			}
-			LONG cyListViewFontListMin{ rectListViewFontListItem.bottom + ((rectListViewFontList.bottom - rectListViewFontList.top) - (rectListViewFontListClient.bottom - rectListViewFontListClient.top)) };
+			LONG cyListViewFontListMin{ rcListViewFontListItem.bottom + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
 
-			// Get Splitter window rectangle
-			RECT rectSplitter{};
-			GetWindowRect(GetDlgItem(hWnd, (int)ID::Splitter), &rectSplitter);
+			// Get Splitter window rcangle
+			RECT rcSplitter{};
+			GetWindowRect(GetDlgItem(hWnd, (int)ID::Splitter), &rcSplitter);
 
 			// Calculate the minimal height of Editmessage
 			HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
@@ -2845,20 +2845,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			TEXTMETRIC tm{};
 			GetTextMetrics(hDCEditMessageMemory, &tm);
 			DeleteDC(hDCEditMessageMemory);
-			RECT rectEditMessage{}, rectEditMessageClient{};
-			GetWindowRect(hWndEditMessage, &rectEditMessage);
-			GetClientRect(hWndEditMessage, &rectEditMessageClient);
-			LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rectEditMessage.bottom - rectEditMessage.top) + (rectEditMessageClient.top - rectEditMessageClient.bottom)) + EditMessageTextMarginY };
+			RECT rcEditMessage{}, rcEditMessageClient{};
+			GetWindowRect(hWndEditMessage, &rcEditMessage);
+			GetClientRect(hWndEditMessage, &rcEditMessageClient);
+			LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rcEditMessage.bottom - rcEditMessage.top) + (rcEditMessageClient.top - rcEditMessageClient.bottom)) + EditMessageTextMarginY };
 
-			// Get EditTimeout window rectangle
-			RECT rectEditTimeout{};
-			GetWindowRect(GetDlgItem(hWnd, (int)ID::EditTimeout), &rectEditTimeout);
-			MapWindowRect(HWND_DESKTOP, hWnd, &rectEditTimeout);
+			// Get EditTimeout window rcangle
+			RECT rcEditTimeout{};
+			GetWindowRect(GetDlgItem(hWnd, (int)ID::EditTimeout), &rcEditTimeout);
+			MapWindowRect(HWND_DESKTOP, hWnd, &rcEditTimeout);
 
 			// Calculate minimal window size
-			RECT rectMainMin{ 0, 0, rectEditTimeout.right, (rectButtonOpen.bottom - rectButtonOpen.top) + cyListViewFontListMin + (rectSplitter.bottom - rectSplitter.top) + cyEditMessageMin };
-			AdjustWindowRect(&rectMainMin, (DWORD)GetWindowLongPtr(hWnd, GWL_STYLE), FALSE);
-			((LPMINMAXINFO)lParam)->ptMinTrackSize = { rectMainMin.right - rectMainMin.left, rectMainMin.bottom - rectMainMin.top };
+			RECT rcMainMin{ 0, 0, rcEditTimeout.right, (rcButtonOpen.bottom - rcButtonOpen.top) + cyListViewFontListMin + (rcSplitter.bottom - rcSplitter.top) + cyEditMessageMin };
+			AdjustWindowRect(&rcMainMin, (DWORD)GetWindowLongPtr(hWnd, GWL_STYLE), FALSE);
+			((LPMINMAXINFO)lParam)->ptMinTrackSize = { rcMainMin.right - rcMainMin.left, rcMainMin.bottom - rcMainMin.top };
 		}
 		break;
 	case WM_CTLCOLORSTATIC:
@@ -2886,8 +2886,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
 {
 	LRESULT ret{};
-
-	static RECT rectListViewFontListClientOld{};
 
 	switch (Msg)
 	{
@@ -3105,10 +3103,10 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 			}
 
 			// Set the header width in ListViewProcessList
-			RECT rectListViewProcessListClient{};
-			GetClientRect(hWndListViewProcessList, &rectListViewProcessListClient);
-			ListView_SetColumnWidth(hWndListViewProcessList, 0, (rectListViewProcessListClient.right - rectListViewProcessListClient.left) * 4 / 5);
-			ListView_SetColumnWidth(hWndListViewProcessList, 1, (rectListViewProcessListClient.right - rectListViewProcessListClient.left) * 1 / 5);
+			RECT rcListViewProcessListClient{};
+			GetClientRect(hWndListViewProcessList, &rcListViewProcessListClient);
+			ListView_SetColumnWidth(hWndListViewProcessList, 0, (rcListViewProcessListClient.right - rcListViewProcessListClient.left) * 4 / 5);
+			ListView_SetColumnWidth(hWndListViewProcessList, 1, (rcListViewProcessListClient.right - rcListViewProcessListClient.left) * 1 / 5);
 
 			ret = (INT_PTR)TRUE;
 		}
@@ -3300,10 +3298,10 @@ int MessageBoxCentered(HWND hWnd, LPCTSTR lpText, LPCTSTR lpCaption, UINT uType)
 			{
 				if (((LPCBT_CREATEWND)lParam)->lpcs->lpszClass == (LPWSTR)(ATOM)32770)	// #32770 = dialog box class
 				{
-					RECT rectParent{};
-					GetWindowRect(((LPCBT_CREATEWND)lParam)->lpcs->hwndParent, &rectParent);
-					((LPCBT_CREATEWND)lParam)->lpcs->x = rectParent.left + ((rectParent.right - rectParent.left) - ((LPCBT_CREATEWND)lParam)->lpcs->cx) / 2;
-					((LPCBT_CREATEWND)lParam)->lpcs->y = rectParent.top + ((rectParent.bottom - rectParent.top) - ((LPCBT_CREATEWND)lParam)->lpcs->cy) / 2;
+					RECT rcParent{};
+					GetWindowRect(((LPCBT_CREATEWND)lParam)->lpcs->hwndParent, &rcParent);
+					((LPCBT_CREATEWND)lParam)->lpcs->x = rcParent.left + ((rcParent.right - rcParent.left) - ((LPCBT_CREATEWND)lParam)->lpcs->cx) / 2;
+					((LPCBT_CREATEWND)lParam)->lpcs->y = rcParent.top + ((rcParent.bottom - rcParent.top) - ((LPCBT_CREATEWND)lParam)->lpcs->cy) / 2;
 				}
 			}
 

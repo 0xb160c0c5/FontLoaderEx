@@ -15,13 +15,13 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM
 {
 	LRESULT ret{};
 
-	static HPEN hPen{};
+	static HPEN hPenSplitter{};
 
 	switch (Msg)
 	{
 	case WM_CREATE:
 		{
-			hPen = CreatePen(PS_SOLID, 0, (COLORREF)GetSysColor(COLOR_GRAYTEXT));
+			hPenSplitter = CreatePen(PS_SOLID, 0, (COLORREF)GetSysColor(COLOR_GRAYTEXT));
 		}
 		break;
 	case WM_PAINT:
@@ -30,11 +30,11 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM
 			PAINTSTRUCT ps{};
 			HDC hDCSplitter{ BeginPaint(hWndSplitter, &ps) };
 
-			SelectPen(hDCSplitter, hPen);
-			RECT rectSplitterClient{};
-			GetClientRect(hWndSplitter, &rectSplitterClient);
-			MoveToEx(hDCSplitter, rectSplitterClient.left + (rectSplitterClient.bottom - rectSplitterClient.top) / 2, (rectSplitterClient.bottom - rectSplitterClient.top) / 2, NULL);
-			LineTo(hDCSplitter, (rectSplitterClient.right - rectSplitterClient.left) - (rectSplitterClient.bottom - rectSplitterClient.top) / 2, (rectSplitterClient.bottom - rectSplitterClient.top) / 2);
+			SelectPen(hDCSplitter, hPenSplitter);
+			RECT rcSplitterClient{};
+			GetClientRect(hWndSplitter, &rcSplitterClient);
+			MoveToEx(hDCSplitter, rcSplitterClient.left + (rcSplitterClient.bottom - rcSplitterClient.top) / 2, (rcSplitterClient.bottom - rcSplitterClient.top) / 2, NULL);
+			LineTo(hDCSplitter, (rcSplitterClient.right - rcSplitterClient.left) - (rcSplitterClient.bottom - rcSplitterClient.top) / 2, (rcSplitterClient.bottom - rcSplitterClient.top) / 2);
 
 			EndPaint(hWndSplitter, &ps);
 		}
@@ -69,7 +69,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM
 		break;
 	case WM_DESTROY:
 		{
-			DeletePen(hPen);
+			DeletePen(hPenSplitter);
 		}
 		break;
 	default:
