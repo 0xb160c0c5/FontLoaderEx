@@ -69,8 +69,8 @@ extern PROXYDLLPULL ProxyDllPullingResult;
 extern ADDFONT ProxyAddFontResult;
 extern REMOVEFONT ProxyRemoveFontResult;
 
-extern bool DefaultAddFontProc(const wchar_t* lpFontName);
-extern bool DefaultRemoveFontProc(const wchar_t* lpFontName);
+extern bool GlobalAddFontProc(const wchar_t* lpFontName);
+extern bool GlobalRemoveFontProc(const wchar_t* lpFontName);
 extern bool RemoteAddFontProc(const wchar_t* lpFontName);
 extern bool RemoteRemoveFontProc(const wchar_t* lpFontName);
 extern bool ProxyAddFontProc(const wchar_t* lpFontName);

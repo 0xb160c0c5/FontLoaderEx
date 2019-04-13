@@ -16,26 +16,26 @@ ADDFONT ProxyAddFontResult{};
 REMOVEFONT ProxyRemoveFontResult{};
 
 #ifdef _DEBUG
-bool DefaultAddFontProc(const wchar_t* lpszFontName)
+bool GlobalAddFontProc(const wchar_t* lpszFontName)
 {
 	Sleep(ADDFONT_WAIT_MILLISEC);
 
 	return true;
 }
 
-bool DefaultRemoveFontProc(const wchar_t* lpszFontName)
+bool GlobalRemoveFontProc(const wchar_t* lpszFontName)
 {
 	Sleep(REMOVEFONT_WAIT_MILLISEC);
 
 	return true;
 }
 #else
-bool DefaultAddFontProc(const wchar_t* lpszFontName)
+bool GlobalAddFontProc(const wchar_t* lpszFontName)
 {
 	return AddFontResourceEx(lpszFontName, 0, NULL);
 }
 
-bool DefaultRemoveFontProc(const wchar_t* lpszFontName)
+bool GlobalRemoveFontProc(const wchar_t* lpszFontName)
 {
 	return RemoveFontResourceEx(lpszFontName, 0, NULL);
 }

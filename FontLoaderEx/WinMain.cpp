@@ -94,8 +94,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		return 0;
 	}
 
-	// Register default AddFont() and RemoveFont() procedure
-	FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
+	// Register global AddFont() and RemoveFont() procedure
+	FontResource::RegisterAddRemoveFontProc(GlobalAddFontProc, GlobalRemoveFontProc);
 
 	// Process drag-drop font files onto the application icon stage I
 	int argc{};
@@ -293,7 +293,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 						GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
 						if (dwMessageThreadExitCode)
 						{
-							MessageBoxCentered(NULL, L"Message thread exited abnormally.", szWindowName, MB_ICONERROR);
+							std::wstringstream Message{};
+							Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
+							MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
 						}
 						CloseHandle(hThreadMessage);
 
@@ -409,7 +411,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
 								if (dwMessageThreadExitCode)
 								{
-									MessageBoxCentered(NULL, L"Message thread exited abnormally.", szWindowName, MB_ICONERROR);
+									std::wstringstream Message{};
+									Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
+									MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
 								}
 								CloseHandle(hThreadMessage);
 
@@ -822,7 +826,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
 					if (dwMessageThreadExitCode)
 					{
-						MessageBoxCentered(NULL, L"Message thread exited abnormally.", szWindowName, MB_ICONERROR);
+						std::wstringstream Message{};
+						Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
+						MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
 					}
 					CloseHandle(hThreadMessage);
 
@@ -1249,7 +1255,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
 									if (dwMessageThreadExitCode)
 									{
-										MessageBoxCentered(NULL, L"Message thread exited abnormally.", szWindowName, MB_ICONERROR);
+										std::wstringstream Message{};
+										Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
+										MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
 									}
 									CloseHandle(hThreadMessage);
 
@@ -1409,7 +1417,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
 										if (dwMessageThreadExitCode)
 										{
-											MessageBoxCentered(NULL, L"Message thread exited abnormally.", szWindowName, MB_ICONERROR);
+											std::wstringstream Message{};
+											Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
+											MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
 										}
 										CloseHandle(hThreadMessage);
 
@@ -1474,7 +1484,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
 											if (dwMessageThreadExitCode)
 											{
-												MessageBoxCentered(NULL, L"Message thread exited abnormally.", szWindowName, MB_ICONERROR);
+												std::wstringstream Message{};
+												Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
+												MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
 											}
 											CloseHandle(hThreadMessage);
 
@@ -1576,7 +1588,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
 											if (dwMessageThreadExitCode)
 											{
-												MessageBoxCentered(NULL, L"Message thread exited abnormally.", szWindowName, MB_ICONERROR);
+												std::wstringstream Message{};
+												Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
+												MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
 											}
 											CloseHandle(hThreadMessage);
 
@@ -1760,7 +1774,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
 									if (dwMessageThreadExitCode)
 									{
-										MessageBoxCentered(NULL, L"Message thread exited abnormally.", szWindowName, MB_ICONERROR);
+										std::wstringstream Message{};
+										Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
+										MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
 									}
 									CloseHandle(hThreadMessage);
 
@@ -1785,8 +1801,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hEventProxyAddFontFinished);
 									CloseHandle(hEventProxyRemoveFontFinished);
 
-									// Register default AddFont() and RemoveFont() procedure
-									FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
+									// Register global AddFont() and RemoveFont() procedure
+									FontResource::RegisterAddRemoveFontProc(GlobalAddFontProc, GlobalRemoveFontProc);
 
 									// Enable EditTimeout and ButtonBroadcastWM_FONTCHANGE
 									EnableWindow(GetDlgItem(hWndMain, (int)ID::EditTimeout), TRUE);
@@ -1826,8 +1842,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									CloseHandle(TargetProcessInfo.hProcess);
 									TargetProcessInfo.hProcess = NULL;
 
-									// Register default AddFont() and RemoveFont() procedure
-									FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
+									// Register global AddFont() and RemoveFont() procedure
+									FontResource::RegisterAddRemoveFontProc(GlobalAddFontProc, GlobalRemoveFontProc);
 
 									// Enable EditTimeout and ButtonBroadcastWM_FONTCHANGE
 									EnableWindow(GetDlgItem(hWndMain, (int)ID::EditTimeout), TRUE);
@@ -2984,7 +3000,7 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Msg, WPARAM 
 		break;
 	case WM_CONTEXTMENU:
 		{
-			// Delete "Undo", "Cut", "Paste" and "Delete" menu items from context menu
+			// Delete "Undo", "Cut", "Paste" and "Clear" menu items from context menu
 			HWINEVENTHOOK hWinEventHook{ SetWinEventHook(EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_MENUPOPUPSTART, NULL,
 				[](HWINEVENTHOOK hWinEventHook, DWORD Event, HWND hWnd, LONG idObject, LONG idChild, DWORD idEventThread, DWORD dwmsEventTime)
 				{
@@ -2992,11 +3008,12 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Msg, WPARAM 
 					{
 						HMENU hMenuContextEdit{ (HMENU)SendMessage(hWnd, MN_GETHMENU, NULL, NULL) };
 
-						DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);	// Undo
-						DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);	// Seperator 1
-						DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);	// Cut
-						DeleteMenu(hMenuContextEdit, 1, MF_BYPOSITION);	// Paste
-						DeleteMenu(hMenuContextEdit, 1, MF_BYPOSITION);	// Seperator 2
+						// Menu Item identifiers in Edit control context menu is the same as corresponding window messages
+						DeleteMenu(hMenuContextEdit, WM_UNDO, MF_BYCOMMAND);	// Undo
+						DeleteMenu(hMenuContextEdit, WM_CUT, MF_BYCOMMAND);	// Cut
+						DeleteMenu(hMenuContextEdit, WM_PASTE, MF_BYCOMMAND);	// Paste
+						DeleteMenu(hMenuContextEdit, WM_CLEAR, MF_BYCOMMAND);	// Clear
+						DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);	// Seperator
 					}
 				},
 				GetCurrentProcessId(), GetCurrentThreadId(), WINEVENT_OUTOFCONTEXT) };

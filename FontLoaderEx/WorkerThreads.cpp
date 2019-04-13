@@ -481,8 +481,8 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 	Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 	Edit_ReplaceSel(hWndEditMessage, Message.str().c_str());
 
-	// Register default AddFont() and RemoveFont() procedures
-	FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
+	// Register global AddFont() and RemoveFont() procedures
+	FontResource::RegisterAddRemoveFontProc(GlobalAddFontProc, GlobalRemoveFontProc);
 
 	// Revert the caption of ButtonSelectProcess to default
 	Button_SetText(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), L"Select process");
@@ -612,8 +612,8 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	SendMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
 	WaitForSingleObject(hThreadMessage, INFINITE);
 
-	// Register default AddFont() and RemoveFont() procedures
-	FontResource::RegisterAddRemoveFontProc(DefaultAddFontProc, DefaultRemoveFontProc);
+	// Register global AddFont() and RemoveFont() procedures
+	FontResource::RegisterAddRemoveFontProc(GlobalAddFontProc, GlobalRemoveFontProc);
 
 	// Revert the caption of ButtonSelectProcess to default
 	Button_SetText(GetDlgItem(hWndMain, (int)ID::ButtonSelectProcess), L"Click to select process");
