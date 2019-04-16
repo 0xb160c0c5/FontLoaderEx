@@ -10,11 +10,12 @@
 #include <tlhelp32.h>
 #include <shlwapi.h>
 #include <process.h>
-#include <cwchar>
+#include <cstddef>
 #include <string>
 #include <sstream>
 
-const WCHAR szWindowName[]{ L"FontLoaderExProxy" };
+const WCHAR szWindowCaption[]{ L"FontLoaderExProxy" };
+const WCHAR szParentWindowCaption[]{ L"FontLoaderEx" };
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam);
 
@@ -24,17 +25,17 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 #ifdef _DEBUG
 	// Wait for debugger to attach
-	Message << szWindowName << L" launched!";
-	MessageBox(NULL, Message.str().c_str(), szWindowName, NULL);
+	Message << szWindowCaption << L" launched!";
+	MessageBox(NULL, Message.str().c_str(), szWindowCaption, NULL);
 	Message.str(L"");
 #endif // _DEBUG
 
 	// Detect whether FontLoaderEx is running. If not running, launch it.
-	Message << L"Never run " << szWindowName << L" directly, run FontLoaderEx instead.\r\n\r\nDo you want to launch FontloaderEx now?";
+	Message << L"Never run " << szWindowCaption << L" directly, run " << szParentWindowCaption << " instead.\r\n\r\nDo you want to launch FontloaderEx now?";
 	HANDLE hEventParentProcessRunning{ OpenEvent(EVENT_ALL_ACCESS, FALSE, L"FontLoaderEx_EventParentProcessRunning_B980D8A4-C487-4306-9D17-3BA6A2CCA4A4") };
 	if (!hEventParentProcessRunning)
 	{
-		switch (MessageBox(NULL, Message.str().c_str(), szWindowName, MB_ICONINFORMATION | MB_YESNO))
+		switch (MessageBox(NULL, Message.str().c_str(), szWindowCaption, MB_ICONINFORMATION | MB_YESNO))
 		{
 		case IDYES:
 			{
@@ -43,21 +44,15 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 				CreateProcess(L"FontLoaderEx.exe", NULL, NULL, NULL, FALSE, 0, NULL, NULL, &sa, &pi);
 				CloseHandle(pi.hThread);
 				CloseHandle(pi.hProcess);
-
-				return 0;
 			}
 			break;
 		case IDNO:
-			{
-				return 0;
-			}
 			break;
 		default:
-			{
-				return 0;
-			}
 			break;
 		}
+
+		return 0;
 	}
 	else
 	{
@@ -65,13 +60,13 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	}
 
 	// Create message-only window
-	WNDCLASS wc{ 0, WndProc, 0, 0, hInstance, NULL, NULL, NULL, NULL, szWindowName };
+	WNDCLASS wc{ 0, WndProc, 0, 0, hInstance, NULL, NULL, NULL, NULL, szWindowCaption };
 	if (!RegisterClass(&wc))
 	{
 		return -1;
 	}
 	HWND hWndMain{};
-	if (!(hWndMain = CreateWindow(szWindowName, szWindowName, NULL, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInstance, NULL)))
+	if (!(hWndMain = CreateWindow(szWindowCaption, szWindowCaption, NULL, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInstance, NULL)))
 	{
 		return -1;
 	}

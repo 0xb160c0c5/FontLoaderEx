@@ -29,7 +29,7 @@
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 
-const WCHAR szWindowName[]{ L"FontLoaderEx" };
+const WCHAR szWindowCaption[]{ L"FontLoaderEx" };
 
 std::list<FontResource> FontList{};
 
@@ -47,7 +47,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	// Check Windows version
 	if (!IsWindows7OrGreater())
 	{
-		MessageBox(NULL, L"Windows 7 or higher required.", L"FontLoaderEx", MB_ICONWARNING);
+		MessageBox(NULL, L"Windows 7 or higher required.", szWindowCaption, MB_ICONWARNING);
 		return 0;
 	}
 
@@ -55,43 +55,52 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	Scope scope{ Scope::Session };
 	std::wstring strMutexName{ GetUniqueName(L"FontLoaderEx-656A8394-5AB8-4061-8882-2FE2E7940C2E", scope) };
 	HANDLE hMutexOneInstance{ CreateMutex(NULL, FALSE, strMutexName.c_str()) };
-	if (GetLastError() == ERROR_ALREADY_EXISTS || GetLastError() == ERROR_ACCESS_DENIED)
+	if (!hMutexOneInstance)
 	{
-		std::wstringstream strMessage{};
-		strMessage << L"An instance of " << szWindowName << L" is already running ";
-		switch (scope)
-		{
-		case Scope::Machine:
-			{
-				strMessage << L"on the same machine.";
-			}
-			break;
-		case Scope::User:
-			{
-				strMessage << L"by the same user.";
-			}
-			break;
-		case Scope::Session:
-			{
-				strMessage << L"in the same session.";
-			}
-			break;
-		case Scope::WindowStation:
-			{
-				strMessage << L"in the same window station.";
-			}
-			break;
-		case Scope::Desktop:
-			{
-				strMessage << L"on the same desktop.";
-			}
-			break;
-		default:
-			break;
-		}
-		MessageBox(NULL, strMessage.str().c_str(), szWindowName, MB_ICONWARNING);
+		MessageBox(NULL, L"Failed to create singleton mutex.", szWindowCaption, MB_ICONERROR);
 
-		return 0;
+		return -1;
+	}
+	else
+	{
+		if (GetLastError() == ERROR_ALREADY_EXISTS || GetLastError() == ERROR_ACCESS_DENIED)
+		{
+			std::wstringstream strMessage{};
+			strMessage << L"An instance of " << szWindowCaption << L" is already running ";
+			switch (scope)
+			{
+			case Scope::Machine:
+				{
+					strMessage << L"on the same machine.";
+				}
+				break;
+			case Scope::User:
+				{
+					strMessage << L"by the same user.";
+				}
+				break;
+			case Scope::Session:
+				{
+					strMessage << L"in the same session.";
+				}
+				break;
+			case Scope::WindowStation:
+				{
+					strMessage << L"in the same window station.";
+				}
+				break;
+			case Scope::Desktop:
+				{
+					strMessage << L"on the same desktop.";
+				}
+				break;
+			default:
+				break;
+			}
+			MessageBox(NULL, strMessage.str().c_str(), szWindowCaption, MB_ICONWARNING);
+
+			return 0;
+		}
 	}
 
 	// Register global AddFont() and RemoveFont() procedure
@@ -114,16 +123,17 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	}
 	LocalFree(argv);
 
-	// Initialize common controls
+	// Initialize common controls and user controls
 	InitCommonControls();
+	InitSplitter();
 
 	// Create window
-	WNDCLASS wc{ CS_HREDRAW | CS_VREDRAW, WndProc, 0, 0, hInstance, LoadIcon(NULL, IDI_APPLICATION), LoadCursor(NULL, IDC_ARROW), GetSysColorBrush(COLOR_WINDOW), NULL, szWindowName };
+	WNDCLASS wc{ CS_HREDRAW | CS_VREDRAW, WndProc, 0, 0, hInstance, LoadIcon(NULL, IDI_APPLICATION), LoadCursor(NULL, IDC_ARROW), GetSysColorBrush(COLOR_WINDOW), NULL, szWindowCaption };
 	if (!RegisterClass(&wc))
 	{
 		return -1;
 	}
-	if (!(hWndMain = CreateWindow(szWindowName, szWindowName, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 700, 700, NULL, NULL, hInstance, NULL)))
+	if (!(hWndMain = CreateWindow(szWindowCaption, szWindowCaption, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 700, 700, NULL, NULL, hInstance, NULL)))
 	{
 		return -1;
 	}
@@ -156,8 +166,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	return (int)Msg.wParam;
 }
 
-LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
-LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);
+LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
+LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
 INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM IParam);
 
 void* pfnRemoteAddFontProc{};
@@ -165,7 +175,6 @@ void* pfnRemoteRemoveFontProc{};
 
 HANDLE hThreadWatch{};
 HANDLE hThreadMessage{};
-HANDLE hProxyProcess{};
 
 HANDLE hProcessCurrentDuplicated{};
 HANDLE hProcessTargetDuplicated{};
@@ -295,7 +304,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 						{
 							std::wstringstream Message{};
 							Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
-							MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
+							MessageBoxCentered(NULL, Message.str().c_str(), szWindowCaption, MB_ICONERROR);
 						}
 						CloseHandle(hThreadMessage);
 
@@ -346,7 +355,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 				else
 				{
 					// Else, prompt user whether inisit to exit
-					switch (MessageBoxCentered(hWnd, L"Some fonts are not successfully unloaded.\r\n\r\nDo you still want to exit?", szWindowName, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1 | MB_APPLMODAL))
+					switch (MessageBoxCentered(hWnd, L"Some fonts are not successfully unloaded.\r\n\r\nDo you still want to exit?", szWindowCaption, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1 | MB_APPLMODAL))
 					{
 					case IDYES:
 						{
@@ -413,7 +422,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 								{
 									std::wstringstream Message{};
 									Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
-									MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
+									MessageBoxCentered(NULL, Message.str().c_str(), szWindowCaption, MB_ICONERROR);
 								}
 								CloseHandle(hThreadMessage);
 
@@ -700,7 +709,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			ChangeWindowMessageFilterEx(hWndListViewFontList, 0x0049, MSGFLT_ALLOW, &cfs);	// WM_COPYGLOBALDATA
 
 			// Initialize Splitter
-			HWND hWndSplitter{ CreateWindow((LPWSTR)InitSplitter(), NULL, WS_CHILD | WS_VISIBLE, 0, 350, rcClientMain.right - rcClientMain.left, 5, hWnd, (HMENU)ID::Splitter, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
+			HWND hWndSplitter{ CreateWindow(UC_SPLITTER, NULL, WS_CHILD | WS_VISIBLE, 0, 350, rcClientMain.right - rcClientMain.left, 5, hWnd, (HMENU)ID::Splitter, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 
 			// Initialize EditMessage
 			HWND hWndEditMessage{ CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | ES_READONLY | ES_LEFT | ES_MULTILINE | ES_NOHIDESEL, 0, 355, rcClientMain.right - rcClientMain.left, rcClientMain.bottom - rcClientMain.top - 355, hWnd, (HMENU)ID::EditMessage, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
@@ -828,7 +837,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					{
 						std::wstringstream Message{};
 						Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
-						MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
+						MessageBoxCentered(NULL, Message.str().c_str(), szWindowCaption, MB_ICONERROR);
 					}
 					CloseHandle(hThreadMessage);
 
@@ -897,8 +906,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)ID::ListViewFontList) };
 							HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
 
-							std::unique_ptr<WCHAR[]> lpszOpenFileNames{};
-							OPENFILENAME ofn{ sizeof(ofn), hWnd, NULL, L"Font Files(*.ttf;*.ttc;*.otf)\0*.ttf;*.ttc;*.otf\0", NULL, 0, 0, lpszOpenFileNames.get(), 1, NULL, 0, NULL, L"Select fonts", OFN_EXPLORER | OFN_ENABLESIZING | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_ENABLEHOOK, 0, 0, NULL, (LPARAM)&ofn,
+							const std::size_t cchBuffer{ 1024 };
+							std::unique_ptr<WCHAR[]> lpszOpenFileNames{ new WCHAR[cchBuffer]{} };
+							OPENFILENAME ofn{ sizeof(ofn), hWnd, NULL, L"Font Files(*.ttf;*.ttc;*.otf)\0*.ttf;*.ttc;*.otf\0", NULL, 0, 0, lpszOpenFileNames.get(), cchBuffer * sizeof(WCHAR), NULL, 0, NULL, L"Select fonts", OFN_EXPLORER | OFN_ENABLESIZING | OFN_HIDEREADONLY | OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_ALLOWMULTISELECT | OFN_ENABLEHOOK, 0, 0, NULL, (LPARAM)&ofn,
 								[](HWND hWndOpenDialogChild, UINT Msg, WPARAM wParam, LPARAM lParam) -> UINT_PTR
 								{
 									UINT_PTR ret{};
@@ -1191,8 +1201,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 							{
 								if (!EnableDebugPrivilege())
 								{
-									Message << L"Failed to enable SeDebugPrivilige for " << szWindowName << L".";
-									MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
+									Message << L"Failed to enable " << SE_DEBUG_NAME << L" for " << szWindowCaption << L".";
+									MessageBoxCentered(NULL, Message.str().c_str(), szWindowCaption, MB_ICONERROR);
 									break;
 								}
 								bIsSeDebugPrivilegeEnabled = true;
@@ -1257,7 +1267,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									{
 										std::wstringstream Message{};
 										Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
-										MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
+										MessageBoxCentered(NULL, Message.str().c_str(), szWindowCaption, MB_ICONERROR);
 									}
 									CloseHandle(hThreadMessage);
 
@@ -1350,7 +1360,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									{
 									case WAIT_OBJECT_0:
 										{
-											MessageBoxCentered(NULL, L"Failed to create message-only window.", szWindowName, MB_ICONERROR);
+											MessageBoxCentered(NULL, L"Failed to create message-only window.", szWindowCaption, MB_ICONERROR);
 
 											WaitForSingleObject(hThreadMessage, INFINITE);
 											CloseHandle(hThreadMessage);
@@ -1419,7 +1429,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										{
 											std::wstringstream Message{};
 											Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
-											MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
+											MessageBoxCentered(NULL, Message.str().c_str(), szWindowCaption, MB_ICONERROR);
 										}
 										CloseHandle(hThreadMessage);
 
@@ -1459,8 +1469,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 										goto continue_90567013;
 									case PROXYPROCESSDEBUGPRIVILEGEENABLING::FAILED:
 										{
-											Message << L"Failed to enable SeDebugPrivilige for " << szProxyProcessName << L".";
-											MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
+											Message << L"Failed to enable " << SE_DEBUG_NAME << L" for " << szProxyProcessName << L".";
+											MessageBoxCentered(NULL, Message.str().c_str(), szWindowCaption, MB_ICONERROR);
 											Message.str(L"");
 
 											// Terminate proxy process
@@ -1486,7 +1496,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											{
 												std::wstringstream Message{};
 												Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
-												MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
+												MessageBoxCentered(NULL, Message.str().c_str(), szWindowCaption, MB_ICONERROR);
 											}
 											CloseHandle(hThreadMessage);
 
@@ -1590,7 +1600,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 											{
 												std::wstringstream Message{};
 												Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
-												MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
+												MessageBoxCentered(NULL, Message.str().c_str(), szWindowCaption, MB_ICONERROR);
 											}
 											CloseHandle(hThreadMessage);
 
@@ -1776,7 +1786,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 									{
 										std::wstringstream Message{};
 										Message << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
-										MessageBoxCentered(NULL, Message.str().c_str(), szWindowName, MB_ICONERROR);
+										MessageBoxCentered(NULL, Message.str().c_str(), szWindowCaption, MB_ICONERROR);
 									}
 									CloseHandle(hThreadMessage);
 
@@ -2108,7 +2118,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 						ptMenu = ptSelectionMark;
 					}
 				}
-				TrackPopupMenu(hMenuContextListViewFontList, TPM_LEFTALIGN | TPM_RIGHTBUTTON, ptMenu.x, ptMenu.y, 0, hWnd, NULL);
+
+				UINT uFlags{};
+				if (GetSystemMetrics(SM_MENUDROPALIGNMENT))
+				{
+					uFlags |= TPM_RIGHTALIGN;
+				}
+				else
+				{
+					uFlags |= TPM_LEFTALIGN;
+				}
+
+				TrackPopupMenu(hMenuContextListViewFontList, uFlags | TPM_RIGHTBUTTON, ptMenu.x, ptMenu.y, 0, hWnd, NULL);
 			}
 			else
 			{
@@ -2883,7 +2904,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	return ret;
 }
 
-LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData)
 {
 	LRESULT ret{};
 
@@ -2976,7 +2997,7 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Ms
 	return ret;
 }
 
-LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData)
+LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData)
 {
 	LRESULT ret{};
 
@@ -3012,6 +3033,15 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Msg, WPARAM 
 						DeleteMenu(hMenuContextEdit, WM_PASTE, MF_BYCOMMAND);	// Paste
 						DeleteMenu(hMenuContextEdit, WM_CLEAR, MF_BYCOMMAND);	// Clear
 						DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);	// Seperator
+
+						RECT rcContextMenu{};
+						GetWindowRect(hWnd, &rcContextMenu);
+						POINT ptCursor{};
+						GetCursorPos(&ptCursor);
+						if (rcContextMenu.bottom <= ptCursor.y)
+						{
+							MoveWindow(hWnd, rcContextMenu.left, rcContextMenu.top + (ptCursor.y - rcContextMenu.bottom), rcContextMenu.right - rcContextMenu.left, rcContextMenu.bottom - rcContextMenu.top, FALSE);
+						}
 					}
 				},
 				GetCurrentProcessId(), GetCurrentThreadId(), WINEVENT_OUTOFCONTEXT) };
@@ -3169,21 +3199,19 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 							case 0:
 								{
 									// Sort items by Process
-									bOrderByProcessAscending ?
-										std::sort(ProcessList.begin(), ProcessList.end(),
-											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
+									bOrderByProcessAscending ? std::sort(ProcessList.begin(), ProcessList.end(),
+										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
+										{
+											int i{ lstrcmpi(value1.strProcessName.c_str(), value2.strProcessName.c_str()) };
+											if (i < 0)
 											{
-												int i{ lstrcmpi(value1.strProcessName.c_str(), value2.strProcessName.c_str()) };
-												if (i < 0)
-												{
-													return true;
-												}
-												else
-												{
-													return false;
-												}
-											}) :
-										std::sort(ProcessList.begin(), ProcessList.end(),
+												return true;
+											}
+											else
+											{
+												return false;
+											}
+										}) : std::sort(ProcessList.begin(), ProcessList.end(),
 											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
 											{
 												int i{ lstrcmpi(value2.strProcessName.c_str(), value1.strProcessName.c_str()) };
@@ -3197,41 +3225,39 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 												}
 											});
 
-									// Add arrow to the header in ListViewProcessList
-									Header_GetItem(hWndHeaderListViewProcessList, 1, &hdi);
-									hdi.fmt = hdi.fmt & ~(HDF_SORTDOWN | HDF_SORTUP);
-									Header_SetItem(hWndHeaderListViewProcessList, 1, &hdi);
-									Header_GetItem(hWndHeaderListViewProcessList, 0, &hdi);
-									bOrderByProcessAscending ? hdi.fmt = (hdi.fmt & (~HDF_SORTDOWN)) | HDF_SORTUP : hdi.fmt = (hdi.fmt & (~HDF_SORTUP)) | HDF_SORTDOWN;
-									Header_SetItem(hWndHeaderListViewProcessList, 0, &hdi);
+										// Add arrow to the header in ListViewProcessList
+										Header_GetItem(hWndHeaderListViewProcessList, 1, &hdi);
+										hdi.fmt = hdi.fmt & ~(HDF_SORTDOWN | HDF_SORTUP);
+										Header_SetItem(hWndHeaderListViewProcessList, 1, &hdi);
+										Header_GetItem(hWndHeaderListViewProcessList, 0, &hdi);
+										bOrderByProcessAscending ? hdi.fmt = (hdi.fmt & (~HDF_SORTDOWN)) | HDF_SORTUP : hdi.fmt = (hdi.fmt & (~HDF_SORTUP)) | HDF_SORTDOWN;
+										Header_SetItem(hWndHeaderListViewProcessList, 0, &hdi);
 
-									bOrderByProcessAscending = !bOrderByProcessAscending;
+										bOrderByProcessAscending = !bOrderByProcessAscending;
 								}
 								break;
 							case 1:
 								{
 									// Sort items by PID
-									bOrderByPIDAscending ?
-										std::sort(ProcessList.begin(), ProcessList.end(),
-											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
-											{
-												return value1.dwProcessID < value2.dwProcessID;
-											}) :
-										std::sort(ProcessList.begin(), ProcessList.end(),
+									bOrderByPIDAscending ? std::sort(ProcessList.begin(), ProcessList.end(),
+										[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
+										{
+											return value1.dwProcessID < value2.dwProcessID;
+										}) : std::sort(ProcessList.begin(), ProcessList.end(),
 											[](const ProcessInfo& value1, const ProcessInfo& value2) -> bool
 											{
 												return value1.dwProcessID > value2.dwProcessID;
 											});
 
-									// Add arrow to the header in ListViewProcessList
-									Header_GetItem(hWndHeaderListViewProcessList, 0, &hdi);
-									hdi.fmt = hdi.fmt & ~(HDF_SORTDOWN | HDF_SORTUP);
-									Header_SetItem(hWndHeaderListViewProcessList, 0, &hdi);
-									Header_GetItem(hWndHeaderListViewProcessList, 1, &hdi);
-									bOrderByPIDAscending ? hdi.fmt = (hdi.fmt & (~HDF_SORTDOWN)) | HDF_SORTUP : hdi.fmt = (hdi.fmt & (~HDF_SORTUP)) | HDF_SORTDOWN;
-									Header_SetItem(hWndHeaderListViewProcessList, 1, &hdi);
+										// Add arrow to the header in ListViewProcessList
+										Header_GetItem(hWndHeaderListViewProcessList, 0, &hdi);
+										hdi.fmt = hdi.fmt & ~(HDF_SORTDOWN | HDF_SORTUP);
+										Header_SetItem(hWndHeaderListViewProcessList, 0, &hdi);
+										Header_GetItem(hWndHeaderListViewProcessList, 1, &hdi);
+										bOrderByPIDAscending ? hdi.fmt = (hdi.fmt & (~HDF_SORTDOWN)) | HDF_SORTUP : hdi.fmt = (hdi.fmt & (~HDF_SORTUP)) | HDF_SORTDOWN;
+										Header_SetItem(hWndHeaderListViewProcessList, 1, &hdi);
 
-									bOrderByPIDAscending = !bOrderByPIDAscending;
+										bOrderByPIDAscending = !bOrderByPIDAscending;
 								}
 								break;
 							default:
@@ -3288,10 +3314,12 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Msg, WPARAM wParam, LPARAM lPa
 	return ret;
 }
 
+HHOOK hHookCBT{};
+
 int MessageBoxCentered(HWND hWnd, LPCTSTR lpText, LPCTSTR lpCaption, UINT uType)
 {
 	// Center message box at its parent window
-	HHOOK hHookCBT{ SetWindowsHookEx(WH_CBT,
+	hHookCBT = SetWindowsHookEx(WH_CBT,
 		[](int nCode, WPARAM wParam, LPARAM lParam) -> LRESULT
 		{
 			if (nCode == HCBT_CREATEWND)
@@ -3305,15 +3333,15 @@ int MessageBoxCentered(HWND hWnd, LPCTSTR lpText, LPCTSTR lpCaption, UINT uType)
 				}
 			}
 
-			return 0;
+			return CallNextHookEx(hHookCBT, nCode, wParam, lParam);
 		},
-		0, GetCurrentThreadId()) };
+		0, GetCurrentThreadId());
 
-	int ret{ MessageBox(hWnd, lpText, lpCaption, uType) };
+	int iRet{ MessageBox(hWnd, lpText, lpCaption, uType) };
 
 	UnhookWindowsHookEx(hHookCBT);
 
-	return ret;
+	return iRet;
 }
 
 bool EnableDebugPrivilege()

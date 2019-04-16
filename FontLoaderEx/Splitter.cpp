@@ -15,26 +15,23 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM
 {
 	LRESULT ret{};
 
-	static HPEN hPenSplitter{};
-
 	switch (Msg)
 	{
-	case WM_CREATE:
-		{
-			hPenSplitter = CreatePen(PS_SOLID, 0, (COLORREF)GetSysColor(COLOR_GRAYTEXT));
-		}
-		break;
 	case WM_PAINT:
 		{
 			// Draw a horizontal line in the middle
 			PAINTSTRUCT ps{};
 			HDC hDCSplitter{ BeginPaint(hWndSplitter, &ps) };
 
+			HPEN hPenSplitter{ CreatePen(PS_SOLID, 0, (COLORREF)GetSysColor(COLOR_GRAYTEXT)) };
 			SelectPen(hDCSplitter, hPenSplitter);
+
 			RECT rcSplitterClient{};
 			GetClientRect(hWndSplitter, &rcSplitterClient);
 			MoveToEx(hDCSplitter, rcSplitterClient.left + (rcSplitterClient.bottom - rcSplitterClient.top) / 2, (rcSplitterClient.bottom - rcSplitterClient.top) / 2, NULL);
 			LineTo(hDCSplitter, (rcSplitterClient.right - rcSplitterClient.left) - (rcSplitterClient.bottom - rcSplitterClient.top) / 2, (rcSplitterClient.bottom - rcSplitterClient.top) / 2);
+
+			DeletePen(hPenSplitter);
 
 			EndPaint(hWndSplitter, &ps);
 		}
@@ -65,11 +62,6 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM
 
 			SPLITTERSTRUCT ss{ hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGEND, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
 			SendMessage(GetParent(hWndSplitter), WM_NOTIFY, (WPARAM)GetDlgCtrlID(hWndSplitter), (LPARAM)&ss);
-		}
-		break;
-	case WM_DESTROY:
-		{
-			DeletePen(hPenSplitter);
 		}
 		break;
 	default:
