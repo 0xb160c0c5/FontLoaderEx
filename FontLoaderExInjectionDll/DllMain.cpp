@@ -6,14 +6,15 @@ DWORD WINAPI AddFont(_In_ LPVOID lpParameter)
 {
 #pragma EXPORT_FUNCTION
 #ifdef _DEBUG
-	WCHAR szMessage[512]{ L"AddFont() called!\r\nFontName: " };
-	WCHAR* lpszMessage = &szMessage[29];
-	WCHAR* lpszFontName = (WCHAR*)lpParameter;
+	WCHAR szMessage[512]{ L"AddFont() called!\r\nFont Name: " };
+	LPWSTR lpszMessage = &szMessage[30];
+	LPWSTR lpszFontName = (LPWSTR)lpParameter;
 	while (*lpszFontName)
 	{
 		*lpszMessage++ = *lpszFontName++;
 	};
-	MessageBox(NULL, szMessage, L"Test", NULL);
+	MessageBox(NULL, szMessage, L"FontLoaderEx", NULL);
+
 	return 1;
 #else
 	return AddFontResourceEx((LPCWSTR)lpParameter, FR_PRIVATE, NULL);
@@ -24,14 +25,15 @@ DWORD WINAPI RemoveFont(_In_ LPVOID lpParameter)
 {
 #pragma EXPORT_FUNCTION
 #ifdef _DEBUG
-	WCHAR szMessage[512]{ L"RemoveFont() called!\r\nFontName: " };
-	WCHAR* lpszMessage = &szMessage[32];
-	WCHAR* lpszFontName = (WCHAR*)lpParameter;
+	WCHAR szMessage[512]{ L"RemoveFont() called!\r\nFont Name: " };
+	LPWSTR lpszMessage = &szMessage[33];
+	LPWSTR lpszFontName = (LPWSTR)lpParameter;
 	while (*lpszFontName)
 	{
 		*lpszMessage++ = *lpszFontName++;
 	};
-	MessageBox(NULL, szMessage, L"Test", NULL);
+	MessageBox(NULL, szMessage, L"FontLoaderEx", NULL);
+
 	return 1;
 #else
 	return RemoveFontResourceEx((LPCWSTR)lpParameter, FR_PRIVATE, NULL);

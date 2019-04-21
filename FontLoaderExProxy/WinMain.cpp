@@ -14,28 +14,31 @@
 #include <string>
 #include <sstream>
 
-const WCHAR szWindowCaption[]{ L"FontLoaderExProxy" };
-const WCHAR szParentWindowCaption[]{ L"FontLoaderEx" };
+const WCHAR szAppName[]{ L"FontLoaderExProxy" };
+const WCHAR szParentAppName[]{ L"FontLoaderEx" };
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam);
 
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
-	std::wstringstream Message{};
+	std::wstringstream ssMessage{};
+	std::wstring strMessage{};
 
 #ifdef _DEBUG
 	// Wait for debugger to attach
-	Message << szWindowCaption << L" launched!";
-	MessageBox(NULL, Message.str().c_str(), szWindowCaption, NULL);
-	Message.str(L"");
+	ssMessage << szAppName << L" launched!";
+	strMessage = ssMessage.str();
+	MessageBox(NULL, strMessage.c_str(), szAppName, NULL);
+	ssMessage.str(L"");
 #endif // _DEBUG
 
 	// Detect whether FontLoaderEx is running. If not running, launch it.
-	Message << L"Never run " << szWindowCaption << L" directly, run " << szParentWindowCaption << " instead.\r\n\r\nDo you want to launch FontloaderEx now?";
+	ssMessage << L"Never run " << szAppName << L" directly, run " << szParentAppName << " instead.\r\n\r\nDo you want to launch FontloaderEx now?";
+	strMessage = ssMessage.str();
 	HANDLE hEventParentProcessRunning{ OpenEvent(EVENT_ALL_ACCESS, FALSE, L"FontLoaderEx_EventParentProcessRunning_B980D8A4-C487-4306-9D17-3BA6A2CCA4A4") };
 	if (!hEventParentProcessRunning)
 	{
-		switch (MessageBox(NULL, Message.str().c_str(), szWindowCaption, MB_ICONINFORMATION | MB_YESNO))
+		switch (MessageBox(NULL, strMessage.c_str(), szAppName, MB_ICONINFORMATION | MB_YESNO))
 		{
 		case IDYES:
 			{
@@ -60,20 +63,20 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	}
 
 	// Create message-only window
-	WNDCLASS wc{ 0, WndProc, 0, 0, hInstance, NULL, NULL, NULL, NULL, szWindowCaption };
+	WNDCLASS wc{ 0, WndProc, 0, 0, hInstance, NULL, NULL, NULL, NULL, szAppName };
 	if (!RegisterClass(&wc))
 	{
 		return -1;
 	}
 	HWND hWndMain{};
-	if (!(hWndMain = CreateWindow(szWindowCaption, szWindowCaption, NULL, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInstance, NULL)))
+	if (!(hWndMain = CreateWindow(szAppName, szAppName, NULL, 0, 0, 0, 0, HWND_MESSAGE, NULL, hInstance, NULL)))
 	{
 		return -1;
 	}
 
-	MSG Msg{};
+	MSG Message{};
 	BOOL bRet{};
-	while ((bRet = GetMessage(&Msg, NULL, 0, 0)) != 0)
+	while ((bRet = GetMessage(&Message, NULL, 0, 0)) != 0)
 	{
 		if (bRet == -1)
 		{
@@ -81,10 +84,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		}
 		else
 		{
-			DispatchMessage(&Msg);
+			DispatchMessage(&Message);
 		}
 	}
-	return (int)Msg.wParam;
+	return (int)Message.wParam;
 }
 
 HANDLE hProcessParent{};
@@ -104,8 +107,8 @@ enum class PROXYDLLPULL { SUCCESSFUL, FAILED };
 enum class ADDFONT { SUCCESSFUL, FAILED };
 enum class REMOVEFONT { SUCCESSFUL, FAILED };
 
-void* pfnRemoteAddFontProc{};
-void* pfnRemoteRemoveFontProc{};
+void* lpRemoteAddFontProcAddr{};
+void* lpRemoteRemoveFontProcAddr{};
 
 #ifdef _WIN64
 const WCHAR szInjectionDllName[]{ L"FontLoaderExInjectionDll64.dll" };
@@ -144,11 +147,11 @@ unsigned int __stdcall ParentProcessWatchThreadProc(void* lpParameter)
 	return 0;
 }
 
-LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 {
 	LRESULT ret{};
 
-	switch ((USERMESSAGE)Msg)
+	switch ((USERMESSAGE)Message)
 	{
 	case USERMESSAGE::WATCHTHREADTERMINATED:
 		{
@@ -171,7 +174,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 	default:
 		break;
 	}
-	switch (Msg)
+	switch (Message)
 	{
 	case WM_CREATE:
 		{
@@ -282,7 +285,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					// Get base address of FontLoaderExInjectionDll(64).dll in target process
 					HANDLE hModuleSnapshot2{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetProcessId(hProcessTarget)) };
 					MODULEENTRY32 me322{ sizeof(MODULEENTRY32) };
-					BYTE* pModBaseAddr{};
+					BYTE* lpModBaseAddr{};
 					if (!Module32First(hModuleSnapshot2, &me322))
 					{
 						CloseHandle(hModuleSnapshot2);
@@ -296,11 +299,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 					{
 						if (!lstrcmpi(me322.szModule, szInjectionDllName))
 						{
-							pModBaseAddr = me322.modBaseAddr;
+							lpModBaseAddr = me322.modBaseAddr;
 							break;
 						}
 					} while (Module32Next(hModuleSnapshot2, &me322));
-					if (!pModBaseAddr)
+					if (!lpModBaseAddr)
 					{
 						CloseHandle(hModuleSnapshot2);
 
@@ -313,13 +316,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 
 					// Calculate addresses of AddFont() and RemoveFont() in target process
 					HMODULE hModInjectionDll{ LoadLibrary(szInjectionDllName) };
-					void* pLocalAddFontProcAddr{ GetProcAddress(hModInjectionDll, "AddFont") };
-					void* pLocalRemoveFontProcAddr{ GetProcAddress(hModInjectionDll, "RemoveFont") };
+					void* lpLocalAddFontProcAddr{ GetProcAddress(hModInjectionDll, "AddFont") };
+					void* lpLocalRemoveFontProcAddr{ GetProcAddress(hModInjectionDll, "RemoveFont") };
 					FreeLibrary(hModInjectionDll);
-					INT_PTR AddFontProcOffset{ (INT_PTR)pLocalAddFontProcAddr - (INT_PTR)hModInjectionDll };
-					INT_PTR RemoveFontProcOffset{ (INT_PTR)pLocalRemoveFontProcAddr - (INT_PTR)hModInjectionDll };
-					pfnRemoteAddFontProc = pModBaseAddr + AddFontProcOffset;
-					pfnRemoteRemoveFontProc = pModBaseAddr + RemoveFontProcOffset;
+					lpRemoteAddFontProcAddr = (void*)((UINT_PTR)lpModBaseAddr + ((UINT_PTR)lpLocalAddFontProcAddr - (UINT_PTR)hModInjectionDll));
+					lpRemoteRemoveFontProcAddr = (void*)((UINT_PTR)lpModBaseAddr + ((UINT_PTR)lpLocalRemoveFontProcAddr - (UINT_PTR)hModInjectionDll));
 
 					// Send success messsage to parent process
 					PROXYDLLINJECTION i{ PROXYDLLINJECTION::SUCCESSFUL };
@@ -347,7 +348,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			case COPYDATA::ADDFONT:
 				{
 					ADDFONT i{};
-					if (CallRemoteProc(hProcessTarget, pfnRemoteAddFontProc, ((PCOPYDATASTRUCT)lParam)->lpData, ((PCOPYDATASTRUCT)lParam)->cbData, INFINITE))
+					if (CallRemoteProc(hProcessTarget, lpRemoteAddFontProcAddr, ((PCOPYDATASTRUCT)lParam)->lpData, ((PCOPYDATASTRUCT)lParam)->cbData, INFINITE))
 					{
 						i = ADDFONT::SUCCESSFUL;
 					}
@@ -363,7 +364,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 			case COPYDATA::REMOVEFONT:
 				{
 					REMOVEFONT i{};
-					if (CallRemoteProc(hProcessTarget, pfnRemoteRemoveFontProc, ((PCOPYDATASTRUCT)lParam)->lpData, ((PCOPYDATASTRUCT)lParam)->cbData, INFINITE))
+					if (CallRemoteProc(hProcessTarget, lpRemoteRemoveFontProcAddr, ((PCOPYDATASTRUCT)lParam)->lpData, ((PCOPYDATASTRUCT)lParam)->cbData, INFINITE))
 					{
 						i = REMOVEFONT::SUCCESSFUL;
 					}
@@ -396,7 +397,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 		break;
 	default:
 		{
-			ret = DefWindowProc(hWnd, Msg, wParam, lParam);
+			ret = DefWindowProc(hWnd, Message, wParam, lParam);
 		}
 		break;
 	}
@@ -513,7 +514,6 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 	do
 	{
 		LPVOID lpRemoteBuffer{};
-
 		// If cbParamSize == 0, directly copy lpParameter to lpRemoteBuffer
 		if (cbParamSize == 0)
 		{

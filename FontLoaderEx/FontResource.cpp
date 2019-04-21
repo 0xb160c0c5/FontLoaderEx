@@ -44,12 +44,12 @@ bool GlobalRemoveFontProc(const wchar_t* lpszFontName)
 
 bool RemoteAddFontProc(const wchar_t* lpszFontName)
 {
-	return CallRemoteProc(TargetProcessInfo.hProcess, pfnRemoteAddFontProc, (void*)lpszFontName, (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), INFINITE);
+	return CallRemoteProc(TargetProcessInfo.hProcess, lpRemoteAddFontProcAddr, (void*)lpszFontName, (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), INFINITE);
 }
 
 bool RemoteRemoveFontProc(const wchar_t* lpszFontName)
 {
-	return CallRemoteProc(TargetProcessInfo.hProcess, pfnRemoteRemoveFontProc, (void*)lpszFontName, (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), INFINITE);
+	return CallRemoteProc(TargetProcessInfo.hProcess, lpRemoteRemoveFontProcAddr, (void*)lpszFontName, (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), INFINITE);
 }
 
 bool ProxyAddFontProc(const wchar_t* lpszFontName)
@@ -188,12 +188,12 @@ bool FontResource::Unload()
 	return bRet;
 }
 
-const std::wstring & FontResource::GetFontName()
+const std::wstring & FontResource::GetFontName() const
 {
 	return strFontName_;
 }
 
-bool FontResource::IsLoaded()
+bool FontResource::IsLoaded() const
 {
 	return bIsLoaded_;
 }

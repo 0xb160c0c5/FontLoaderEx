@@ -18,8 +18,8 @@ public:
 	FontResource(const wchar_t* FontName);
 	bool Load();
 	bool Unload();
-	const std::wstring& GetFontName();
-	bool IsLoaded();
+	const std::wstring& GetFontName() const;
+	bool IsLoaded() const;
 	~FontResource();
 private:
 	static AddFontProc AddFontProc_;

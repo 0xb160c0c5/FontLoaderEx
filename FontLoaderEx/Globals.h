@@ -34,8 +34,8 @@ struct ProcessInfo
 };
 
 extern ProcessInfo TargetProcessInfo;
-extern void* pfnRemoteAddFontProc;
-extern void* pfnRemoteRemoveFontProc;
+extern void* lpRemoteAddFontProcAddr;
+extern void* lpRemoteRemoveFontProcAddr;
 
 extern ProcessInfo ProxyProcessInfo;
 extern HWND hWndProxy;
@@ -69,13 +69,13 @@ extern PROXYDLLPULL ProxyDllPullingResult;
 extern ADDFONT ProxyAddFontResult;
 extern REMOVEFONT ProxyRemoveFontResult;
 
-extern bool GlobalAddFontProc(const wchar_t* lpFontName);
-extern bool GlobalRemoveFontProc(const wchar_t* lpFontName);
-extern bool RemoteAddFontProc(const wchar_t* lpFontName);
-extern bool RemoteRemoveFontProc(const wchar_t* lpFontName);
-extern bool ProxyAddFontProc(const wchar_t* lpFontName);
-extern bool ProxyRemoveFontProc(const wchar_t* lpFontName);
-extern bool NullAddFontProc(const wchar_t* lpFontName);
-extern bool NullRemoveFontProc(const wchar_t* lpFontName);
+extern bool GlobalAddFontProc(const wchar_t* lpszFontName);
+extern bool GlobalRemoveFontProc(const wchar_t* lpszFontName);
+extern bool RemoteAddFontProc(const wchar_t* lpszFontName);
+extern bool RemoteRemoveFontProc(const wchar_t* lpszFontName);
+extern bool ProxyAddFontProc(const wchar_t* lpszFontName);
+extern bool ProxyRemoveFontProc(const wchar_t* lpszFontName);
+extern bool NullAddFontProc(const wchar_t* lpszFontName);
+extern bool NullRemoveFontProc(const wchar_t* lpszFontName);
 
 extern DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize, DWORD dwTimeout);
