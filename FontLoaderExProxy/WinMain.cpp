@@ -101,11 +101,11 @@ DWORD dwTimeout{};
 
 enum class USERMESSAGE : UINT { TERMINATE = WM_USER + 0x100, WATCHTHREADTERMINATED };
 enum class COPYDATA : ULONG_PTR { PROXYPROCESSHWNDSENT, PROXYPROCESSDEBUGPRIVILEGEENABLEFINISHED, INJECTDLL, DLLINJECTIONFINISHED, PULLDLL, DLLPULLINGFINISHED, ADDFONT, ADDFONTFINISHED, REMOVEFONT, REMOVEFONTFINISHED, TERMINATE };
-enum class PROXYPROCESSDEBUGPRIVILEGEENABLING { SUCCESSFUL, FAILED };
-enum class PROXYDLLINJECTION { SUCCESSFUL, FAILED, FAILEDTOENUMERATEMODULES, GDI32NOTLOADED, MODULENOTFOUND };
-enum class PROXYDLLPULL { SUCCESSFUL, FAILED };
-enum class ADDFONT { SUCCESSFUL, FAILED };
-enum class REMOVEFONT { SUCCESSFUL, FAILED };
+enum class PROXYPROCESSDEBUGPRIVILEGEENABLING : UINT { SUCCESSFUL, FAILED };
+enum class PROXYDLLINJECTION : UINT { SUCCESSFUL, FAILED, FAILEDTOENUMERATEMODULES, GDI32NOTLOADED, MODULENOTFOUND };
+enum class PROXYDLLPULL : UINT { SUCCESSFUL, FAILED };
+enum class ADDFONT : UINT { SUCCESSFUL, FAILED };
+enum class REMOVEFONT : UINT { SUCCESSFUL, FAILED };
 
 void* lpRemoteAddFontProcAddr{};
 void* lpRemoteRemoveFontProcAddr{};
@@ -156,7 +156,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 	case USERMESSAGE::WATCHTHREADTERMINATED:
 		{
 			// Destroy message-only window
-			DestroyWindow(hWnd);
+			PostMessage(hWnd, WM_CLOSE, 0, 0);
 		}
 		break;
 	case USERMESSAGE::TERMINATE:
@@ -168,7 +168,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			CloseHandle(hThreadWatch);
 
 			// Destroy message-only window
-			DestroyWindow(hWnd);
+			PostMessage(hWnd, WM_CLOSE, 0, 0);
 		}
 		break;
 	default:
@@ -236,6 +236,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_COPYDATA:
 		{
+			// COPYDATASTRUCT::dwData = Command : enum COPYDATA
+			// COPYDATASTRUCT::lpData = Data
 			switch ((COPYDATA)((PCOPYDATASTRUCT)lParam)->dwData)
 			{
 				// Inject dll
@@ -391,6 +393,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 		{
 			CloseHandle(hProcessParent);
 			CloseHandle(hProcessTarget);
+			CloseHandle(hEventMessageThreadReady);
+			CloseHandle(hEventProxyProcessReady);
 
 			PostQuitMessage(0);
 		}

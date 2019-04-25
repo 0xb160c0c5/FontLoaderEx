@@ -36,6 +36,7 @@ std::list<FontResource> FontList{};
 
 HWND hWndMain{};
 HMENU hMenuContextListViewFontList{};
+HMENU hMEnuContextTray{};
 
 bool bDragDropHasFonts{ false };
 
@@ -143,8 +144,9 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	ShowWindow(hWndMain, nShowCmd);
 	UpdateWindow(hWndMain);
 
-	// Get HMENU to context menu of ListViewFontList
+	// Get HMENU to context menus
 	hMenuContextListViewFontList = GetSubMenu(LoadMenu(hInstance, MAKEINTRESOURCE(IDR_CONTEXTMENU1)), 0);
+	hMEnuContextTray = GetSubMenu(LoadMenu(hInstance, MAKEINTRESOURCE(IDR_CONTEXTMENU1)), 1);
 
 	MSG Message{};
 	BOOL bRet{};
@@ -205,6 +207,8 @@ bool EnableDebugPrivilege();
 bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout);
 bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout);
 
+enum class ID : WORD { ButtonOpen = 20, ButtonClose, ButtonLoad, ButtonUnload, ButtonBroadcastWM_FONTCHANGE, StaticTimeout, EditTimeout, ButtonSelectProcess, ButtonMinimizeToTray, ListViewFontList, Splitter, EditMessage };
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 {
 	LRESULT ret{};
@@ -221,13 +225,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 	switch ((USERMESSAGE)Message)
 	{
+		// Close worker thread termination notification
+		// wParam = Whether font list was modified : bool
+		// LOWORD(lParam) = Whether fonts unloading is interrupted by proxy/target termination: bool
+		// HIWORD(lParam) = Whether are all fonts are unloaded : bool
 	case USERMESSAGE::CLOSEWORKERTHREADTERMINATED:
 		{
-			HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
-
-			// If unloading is interrupted, just re-enable and re-disable controls
-			if (lParam)
+			// If unloading is interrupted
+			if (LOWORD(lParam))
 			{
+				// Re-enable and re-disable controls
 				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), TRUE);
 				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
 				EnableWindow(GetDlgItem(hWnd, (int)ID::EditTimeout), TRUE);
@@ -238,119 +245,34 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_GRAYED);
 				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_GRAYED);
+
+				// Update syatem tray icon tip
+				if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
+				{
+					NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
+					std::wstringstream ssTip{};
+					std::wstring strTip{};
+					std::size_t nLoadedFonts{};
+					for (const auto& i : FontList)
+					{
+						if (i.IsLoaded())
+						{
+							nLoadedFonts++;
+						}
+					}
+					ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
+					strTip = ssTip.str();
+					wcscpy_s(nid.szTip, strTip.c_str());
+					Shell_NotifyIcon(NIM_MODIFY, &nid);
+				}
 			}
 			// If unloading is not interrupted
 			else
 			{
 				// If unloading successful, do cleanup
-				if (wParam)
+				if (HIWORD(lParam))
 				{
-					std::wstringstream ssMessage{};
-					std::wstring strMessage{};
-					int cchMessageLength{};
-
-					// If loaded via proxy
-					if (ProxyProcessInfo.hProcess)
-					{
-						// Terminate watch thread
-						SetEvent(hEventTerminateWatchThread);
-						WaitForSingleObject(hThreadWatch, INFINITE);
-						CloseHandle(hEventTerminateWatchThread);
-						CloseHandle(hThreadWatch);
-
-						// Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
-						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
-						FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
-						WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
-						CloseHandle(hEventProxyDllPullingFinished);
-						switch (ProxyDllPullingResult)
-						{
-						case PROXYDLLPULL::SUCCESSFUL:
-							goto continue_DAA249E0;
-						case PROXYDLLPULL::FAILED:
-							{
-								ssMessage << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
-								strMessage = ssMessage.str();
-								cchMessageLength = Edit_GetTextLength(hWndEditMessage);
-								Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-								Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
-
-								EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), TRUE);
-								EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), TRUE);
-								EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-								EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonClose), TRUE);
-								EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonLoad), TRUE);
-								EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonUnload), TRUE);
-							}
-							goto break_DAA249E0;
-						default:
-							break;
-						}
-					break_DAA249E0:
-						break;
-					continue_DAA249E0:
-
-						// Terminate proxy process
-						COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
-						FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
-						WaitForSingleObject(ProxyProcessInfo.hProcess, INFINITE);
-						CloseHandle(ProxyProcessInfo.hProcess);
-						ProxyProcessInfo.hProcess = NULL;
-
-						// Terminate message thread
-						PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-						WaitForSingleObject(hThreadMessage, INFINITE);
-						DWORD dwMessageThreadExitCode{};
-						GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
-						if (dwMessageThreadExitCode)
-						{
-							std::wstringstream ssMessage{};
-							std::wstring strMessage{};
-							ssMessage << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
-							strMessage = ssMessage.str();
-							MessageBoxCentered(NULL, strMessage.c_str(), szAppName, MB_ICONERROR);
-						}
-						CloseHandle(hThreadMessage);
-
-						// Close HANDLE to target process and duplicated handles
-						CloseHandle(TargetProcessInfo.hProcess);
-						TargetProcessInfo.hProcess = NULL;
-						CloseHandle(hProcessCurrentDuplicated);
-						CloseHandle(hProcessTargetDuplicated);
-					}
-					// Else DIY
-					else if (TargetProcessInfo.hProcess)
-					{
-						// Terminate watch thread
-						SetEvent(hEventTerminateWatchThread);
-						WaitForSingleObject(hThreadWatch, INFINITE);
-						CloseHandle(hEventTerminateWatchThread);
-						CloseHandle(hThreadWatch);
-
-						// Unload FontLoaderExInjectionDll(64).dll from target process
-						if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
-						{
-							ssMessage << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
-							strMessage = ssMessage.str();
-							cchMessageLength = Edit_GetTextLength(hWndEditMessage);
-							Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-							Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
-
-							EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), TRUE);
-							EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), TRUE);
-							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-							EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonClose), TRUE);
-							EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonLoad), TRUE);
-							EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonUnload), TRUE);
-							break;
-						}
-
-						// Close HANDLE to target process
-						CloseHandle(TargetProcessInfo.hProcess);
-						TargetProcessInfo.hProcess = NULL;
-					}
-
-					DestroyWindow(hWnd);
+					PostMessage(hWnd, WM_CLOSE, 0, 0);
 				}
 				else
 				{
@@ -359,116 +281,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					{
 					case IDYES:
 						{
-							std::wstringstream ssMessage{};
-							std::wstring strMessage{};
-							int cchMessageLength{};
-
-							// If loaded via proxy
-							if (ProxyProcessInfo.hProcess)
-							{
-								// Terminate watch thread
-								SetEvent(hEventTerminateWatchThread);
-								WaitForSingleObject(hThreadWatch, INFINITE);
-								CloseHandle(hEventTerminateWatchThread);
-								CloseHandle(hThreadWatch);
-
-								// Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
-								COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
-								FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
-								WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
-								CloseHandle(hEventProxyDllPullingFinished);
-								switch (ProxyDllPullingResult)
-								{
-								case PROXYDLLPULL::SUCCESSFUL:
-									goto continue_C82EA5C2;
-								case PROXYDLLPULL::FAILED:
-									{
-										ssMessage << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
-										strMessage = ssMessage.str();
-										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
-										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-										Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
-
-										EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), TRUE);
-										EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), TRUE);
-										EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-										EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonClose), TRUE);
-										EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonLoad), TRUE);
-										EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonUnload), TRUE);
-									}
-									goto break_C82EA5C2;
-								default:
-									break;
-								}
-							break_C82EA5C2:
-								break;
-							continue_C82EA5C2:
-
-								// Terminate proxy process
-								COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
-								FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
-								WaitForSingleObject(ProxyProcessInfo.hProcess, INFINITE);
-								CloseHandle(ProxyProcessInfo.hProcess);
-								ProxyProcessInfo.hProcess = NULL;
-
-								// Terminate message thread
-								PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-								WaitForSingleObject(hThreadMessage, INFINITE);
-								DWORD dwMessageThreadExitCode{};
-								GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
-								if (dwMessageThreadExitCode)
-								{
-									std::wstringstream ssMessage{};
-									std::wstring strMessage{};
-									ssMessage << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
-									strMessage = ssMessage.str();
-									MessageBoxCentered(NULL, strMessage.c_str(), szAppName, MB_ICONERROR);
-								}
-								CloseHandle(hThreadMessage);
-
-								// Close HANDLE to target process and duplicated handles
-								CloseHandle(TargetProcessInfo.hProcess);
-								TargetProcessInfo.hProcess = NULL;
-								CloseHandle(hProcessCurrentDuplicated);
-								CloseHandle(hProcessTargetDuplicated);
-							}
-							// Else DIY
-							else if (TargetProcessInfo.hProcess)
-							{
-								// Terminate watch thread
-								SetEvent(hEventTerminateWatchThread);
-								WaitForSingleObject(hThreadWatch, INFINITE);
-								CloseHandle(hEventTerminateWatchThread);
-								CloseHandle(hThreadWatch);
-
-								// Unload FontLoaderExInjectionDll(64).dll from target process
-								if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
-								{
-									ssMessage << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
-									strMessage = ssMessage.str();
-									cchMessageLength = Edit_GetTextLength(hWndEditMessage);
-									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-									Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
-
-									EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), TRUE);
-									EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), TRUE);
-									EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-									EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonClose), TRUE);
-									EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonLoad), TRUE);
-									EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonUnload), TRUE);
-									break;
-								}
-
-								// Close HANDLE to target process
-								CloseHandle(TargetProcessInfo.hProcess);
-								TargetProcessInfo.hProcess = NULL;
-							}
-
-							DestroyWindow(hWnd);
+							PostMessage(hWnd, WM_CLOSE, 0, 0);
 						}
 						break;
 					case IDNO:
 						{
+							// Re-enable controls
 							EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), TRUE);
 							EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), TRUE);
 							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
@@ -479,6 +297,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							{
 								EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
 							}
+
+							// Update syatem tray icon tip
+							if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
+							{
+								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
+								std::wstringstream ssTip{};
+								std::wstring strTip{};
+								std::size_t nLoadedFonts{};
+								for (const auto& i : FontList)
+								{
+									if (i.IsLoaded())
+									{
+										nLoadedFonts++;
+									}
+								}
+								ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
+								strTip = ssTip.str();
+								wcscpy_s(nid.szTip, strTip.c_str());
+								Shell_NotifyIcon(NIM_MODIFY, &nid);
+							}
 						}
 						break;
 					default:
@@ -486,10 +324,35 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					}
 				}
 			}
+
+			// Broadcast WM_FONTCHANGE if ButtonBroadcastWM_FONTCHANGE is checked
+			HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
+			std::wstringstream ssMessage{};
+			std::wstring strMessage{};
+			int cchMessageLength{};
+			if (wParam)
+			{
+				if ((Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE)) == BST_CHECKED) && (!TargetProcessInfo.hProcess))
+				{
+					FORWARD_WM_FONTCHANGE(HWND_BROADCAST, PostMessage);
+					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
+					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+					Edit_ReplaceSel(hWndEditMessage, L"WM_FONTCHANGE broadcasted to all top windows.\r\n");
+				}
+			}
+			cchMessageLength = Edit_GetTextLength(hWndEditMessage);
+			Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+			Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 		}
 		break;
+		// Button worker thread termination notification
+		// wParam = Whether some fonts are loaded/unloaded : bool
 	case USERMESSAGE::BUTTONCLOSEWORKERTHREADTERMINATED:
+	case USERMESSAGE::DRAGDROPWORKERTHREADTERMINATED:
+	case USERMESSAGE::BUTTONLOADWORKERTHREADTERMINATED:
+	case USERMESSAGE::BUTTONUNLOADWORKERTHREADTERMINATED:
 		{
+			// Re-enable and re-disable controls
 			EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), TRUE);
 			EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), TRUE);
 			EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
@@ -523,46 +386,294 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			{
 				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonSelectProcess), TRUE);
 			}
-		}
-		break;
-	case USERMESSAGE::DRAGDROPWORKERTHREADTERMINATED:
-	case USERMESSAGE::BUTTONLOADWORKERTHREADTERMINATED:
-	case USERMESSAGE::BUTTONUNLOADWORKERTHREADTERMINATED:
-		{
-			EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), TRUE);
-			EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonClose), TRUE);
-			EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonLoad), TRUE);
-			EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonUnload), TRUE);
-			EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), TRUE);
-			EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
-			if (!TargetProcessInfo.hProcess)
+
+			// Broadcast WM_FONTCHANGE if ButtonBroadcastWM_FONTCHANGE is checked
+			HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
+			std::wstringstream ssMessage{};
+			std::wstring strMessage{};
+			int cchMessageLength{};
+			if (wParam)
 			{
-				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
-			}
-			bool bIsSomeFontsLoaded{};
-			for (const auto& i : FontList)
-			{
-				if (i.IsLoaded())
+				if ((Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE)) == BST_CHECKED) && (!TargetProcessInfo.hProcess))
 				{
-					bIsSomeFontsLoaded = true;
-					break;
+					FORWARD_WM_FONTCHANGE(HWND_BROADCAST, PostMessage);
+					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
+					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+					Edit_ReplaceSel(hWndEditMessage, L"WM_FONTCHANGE broadcasted to all top windows.\r\n");
 				}
 			}
-			if (!bIsSomeFontsLoaded)
+			cchMessageLength = Edit_GetTextLength(hWndEditMessage);
+			Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+			Edit_ReplaceSel(hWndEditMessage, L"\r\n");
+
+			// Update syatem tray icon tip
+			if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
 			{
-				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonSelectProcess), TRUE);
+				NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
+				std::wstringstream ssTip{};
+				std::wstring strTip{};
+				std::size_t nLoadedFonts{};
+				for (const auto& i : FontList)
+				{
+					if (i.IsLoaded())
+					{
+						nLoadedFonts++;
+					}
+				}
+				ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
+				strTip = ssTip.str();
+				wcscpy_s(nid.szTip, strTip.c_str());
+				Shell_NotifyIcon(NIM_MODIFY, &nid);
 			}
 		}
 		break;
+		// Watch thread terminated notofication
+		// LOWORD(wParam) = Which thread(TargetProcessWatchThreadProc/ProxyAndTargetProcessWatchThreadProc) : enum WATCHTHREADTERMINATED
+		// HIWORD(wParam) = What terminated(Proxy/Target) : enum TERMINATION
+		// lParam = Whether worker thread is still running : bool
 	case USERMESSAGE::WATCHTHREADTERMINATED:
 		{
+			// Wait for watch thread to terminate
 			WaitForSingleObject(hThreadWatch, INFINITE);
 			CloseHandle(hThreadWatch);
 
+			// Disable controls
+			if (!lParam)
+			{
+				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), FALSE);
+				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonClose), FALSE);
+				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonLoad), FALSE);
+				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonUnload), FALSE);
+				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
+				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonSelectProcess), FALSE);
+				EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), FALSE);
+				EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+			}
+
+			// Clear FontList and ListViewFontList
+			FontResource::RegisterAddRemoveFontProc(NullAddFontProc, NullRemoveFontProc);
+			FontList.clear();
+			ListView_DeleteAllItems(GetDlgItem(hWnd, (int)ID::ListViewFontList));
+
+			HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
+			std::wstringstream ssMessage{};
+			std::wstring strMessage{};
+			int cchMessageLength{};
+			switch ((TERMINATION)HIWORD(wParam))
+			{
+				// If proxy process terminates, just print message
+			case TERMINATION::PROXY:
+				{
+					ssMessage << ProxyProcessInfo.strProcessName << L"(" << ProxyProcessInfo.dwProcessID << L") terminated.\r\n\r\n";
+					strMessage = ssMessage.str();
+					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
+					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+					Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+				}
+				break;
+				// If target process termiantes, print messages and terminate proxy process
+			case TERMINATION::TARGET:
+				{
+					ssMessage << L"Target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L") terminated.\r\n\r\n";
+					strMessage = ssMessage.str();
+					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
+					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+					Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+					ssMessage.str(L"");
+
+					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
+					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
+					WaitForSingleObject(ProxyProcessInfo.hProcess, INFINITE);
+					ssMessage << ProxyProcessInfo.strProcessName << L"(" << ProxyProcessInfo.dwProcessID << L") successfully terminated.\r\n\r\n";
+					strMessage = ssMessage.str();
+					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
+					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+					Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+				}
+				break;
+			default:
+				break;
+			}
+
+			if ((TERMINATION)LOWORD(wParam) == TERMINATION::PROXY)
+			{
+				// Terminate message thread
+				SendMessage(hWndMessage, WM_CLOSE, 0, 0);
+				WaitForSingleObject(hThreadMessage, INFINITE);
+			}
+
+			// Register global AddFont() and RemoveFont() procedures
+			FontResource::RegisterAddRemoveFontProc(GlobalAddFontProc, GlobalRemoveFontProc);
+
+			// Revert the caption of ButtonSelectProcess to default
+			Button_SetText(GetDlgItem(hWnd, (int)ID::ButtonSelectProcess), L"Click to select process");
+
+			// Close HANDLE to proxy process and target process, duplicated handles and synchronization objects
+			CloseHandle(TargetProcessInfo.hProcess);
+			TargetProcessInfo.hProcess = NULL;
+			CloseHandle(hProcessCurrentDuplicated);
+			CloseHandle(hProcessTargetDuplicated);
+			if ((TERMINATION)LOWORD(wParam) == TERMINATION::PROXY)
+			{
+				CloseHandle(ProxyProcessInfo.hProcess);
+				ProxyProcessInfo.hProcess = NULL;
+				CloseHandle(hEventProxyAddFontFinished);
+				CloseHandle(hEventProxyRemoveFontFinished);
+			}
+
+			// Enable controls
+			if (!lParam)
+			{
+				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), TRUE);
+				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonSelectProcess), TRUE);
+				EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), TRUE);
+				EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_LOAD, MF_BYCOMMAND | MF_GRAYED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_GRAYED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_GRAYED);
+			}
 			EnableWindow(GetDlgItem(hWnd, (int)ID::EditTimeout), TRUE);
 			EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE), TRUE);
+
+			// Update syatem tray icon tip
+			if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
+			{
+				NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
+				std::wstringstream ssTip{};
+				std::wstring strTip{};
+				ssTip << L"0 font(s) opened, 0 font(s) loaded.";
+				strTip = ssTip.str();
+				wcscpy_s(nid.szTip, strTip.c_str());
+				Shell_NotifyIcon(NIM_MODIFY, &nid);
+			}
 		}
 		break;
+		// Font list changed notofication
+		// wParam = Font change event : enum FONTLISTCHANGED
+		// lParam = iItem in ListViewFontList and font name : struct FONTLISTCHANGEDSTRUCT*
+	case USERMESSAGE::FONTLISTCHANGED:
+		{
+			// Modify ListViewFontList and print messages to EditMessage
+			HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)ID::ListViewFontList) };
+			HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
+
+			std::wstringstream ssMessage{};
+			std::wstring strMessage{};
+			int cchMessageLength{};
+			LVITEM lvi{ LVIF_TEXT, ((FONTLISTCHANGEDSTRUCT*)lParam)->iItem };
+			switch ((FONTLISTCHANGED)wParam)
+			{
+			case FONTLISTCHANGED::OPENED:
+				{
+					lvi.iSubItem = 0;
+					lvi.pszText = (LPWSTR)((FONTLISTCHANGEDSTRUCT*)lParam)->lpszFontName;
+					ListView_InsertItem(hWndListViewFontList, &lvi);
+					lvi.iSubItem = 1;
+					lvi.pszText = (LPWSTR)L"Not loaded";
+					ListView_SetItem(hWndListViewFontList, &lvi);
+					ListView_SetItemState(hWndListViewFontList, lvi.iItem, LVIS_SELECTED, LVIS_SELECTED);
+					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
+
+					ssMessage << ((FONTLISTCHANGEDSTRUCT*)lParam)->lpszFontName << L" opened\r\n";
+				}
+				break;
+			case FONTLISTCHANGED::OPENED_LOADED:
+				{
+					lvi.iSubItem = 0;
+					lvi.pszText = (LPWSTR)((FONTLISTCHANGEDSTRUCT*)lParam)->lpszFontName;
+					ListView_InsertItem(hWndListViewFontList, &lvi);
+					lvi.iSubItem = 1;
+					lvi.pszText = (LPWSTR)L"Loaded";
+					ListView_SetItem(hWndListViewFontList, &lvi);
+					ListView_SetItemState(hWndListViewFontList, lvi.iItem, LVIS_SELECTED, LVIS_SELECTED);
+					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
+
+					ssMessage << ((FONTLISTCHANGEDSTRUCT*)lParam)->lpszFontName << L" opened and successfully loaded\r\n";
+				}
+				break;
+			case FONTLISTCHANGED::OPENED_NOTLOADED:
+				{
+					lvi.iSubItem = 0;
+					lvi.pszText = (LPWSTR)((FONTLISTCHANGEDSTRUCT*)lParam)->lpszFontName;
+					ListView_InsertItem(hWndListViewFontList, &lvi);
+					lvi.iSubItem = 1;
+					lvi.pszText = (LPWSTR)L"Load failed";
+					ListView_SetItem(hWndListViewFontList, &lvi);
+					ListView_SetItemState(hWndListViewFontList, lvi.iItem, LVIS_SELECTED, LVIS_SELECTED);
+					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
+
+					ssMessage << L"Opened but failed to load " << ((FONTLISTCHANGEDSTRUCT*)lParam)->lpszFontName << L"\r\n";
+				}
+				break;
+			case FONTLISTCHANGED::LOADED:
+				{
+					lvi.iSubItem = 1;
+					lvi.pszText = (LPWSTR)L"Loaded";
+					ListView_SetItem(hWndListViewFontList, &lvi);
+					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
+
+					ssMessage << ((FONTLISTCHANGEDSTRUCT*)lParam)->lpszFontName << L" successfully loaded\r\n";
+				}
+				break;
+			case FONTLISTCHANGED::NOTLOADED:
+				{
+					lvi.iSubItem = 1;
+					lvi.pszText = (LPWSTR)L"Load failed";
+					ListView_SetItem(hWndListViewFontList, &lvi);
+					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
+
+					ssMessage << L"Failed to load " << ((FONTLISTCHANGEDSTRUCT*)lParam)->lpszFontName << L"\r\n";
+				}
+				break;
+			case FONTLISTCHANGED::UNLOADED:
+				{
+					lvi.iSubItem = 1;
+					lvi.pszText = (LPWSTR)L"Unloaded";
+					ListView_SetItem(hWndListViewFontList, &lvi);
+					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
+
+					ssMessage << ((FONTLISTCHANGEDSTRUCT*)lParam)->lpszFontName << L" successfully unloaded\r\n";
+				}
+				break;
+			case FONTLISTCHANGED::NOTUNLOADED:
+				{
+					lvi.iSubItem = 1;
+					lvi.pszText = (LPWSTR)L"Unload failed";
+					ListView_SetItem(hWndListViewFontList, &lvi);
+					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
+
+					ssMessage << L"Failed to unload " << ((FONTLISTCHANGEDSTRUCT*)lParam)->lpszFontName << L"\r\n";
+				}
+				break;
+			case FONTLISTCHANGED::UNLOADED_CLOSED:
+				{
+					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
+					ListView_DeleteItem(hWndListViewFontList, lvi.iItem);
+
+					ssMessage << ((FONTLISTCHANGEDSTRUCT*)lParam)->lpszFontName << L" successfully unloaded and closed\r\n";
+				}
+				break;
+			case FONTLISTCHANGED::CLOSED:
+				{
+					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
+					ListView_DeleteItem(hWndListViewFontList, lvi.iItem);
+
+					ssMessage << ((FONTLISTCHANGEDSTRUCT*)lParam)->lpszFontName << L" closed\r\n";
+				}
+				break;
+			default:
+				break;
+			}
+			strMessage = ssMessage.str();
+			cchMessageLength = Edit_GetTextLength(hWndEditMessage);
+			Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+			Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+		}
+		break;
+		// Child window size/position changed notidfication
+		// wParam = Child window ID : enum ID
 	case USERMESSAGE::CHILDWINDOWPOSCHANGED:
 		{
 			switch ((ID)wParam)
@@ -588,9 +699,53 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		break;
+		// System tray notification
+	case USERMESSAGE::TRAYNOTIFYICON:
+		{
+			switch (LOWORD(lParam))
+			{
+			case NIN_SELECT:
+			case NIN_KEYSELECT:
+				{
+					if (IsWindowVisible(hWnd))
+					{
+						SetForegroundWindow(hWnd);
+					}
+					else
+					{
+						ShowWindow(hWnd, SW_SHOW);
+					}
+				}
+				break;
+			case WM_CONTEXTMENU:
+				{
+					// Windows bug, see "KB135788 - PRB: Menus for Notification Icons Do Not Work Correctly"
+					SetForegroundWindow(hWnd);
+
+					UINT uFlags{};
+					if (GetSystemMetrics(SM_MENUDROPALIGNMENT))
+					{
+						uFlags |= TPM_RIGHTALIGN;
+					}
+					else
+					{
+						uFlags |= TPM_LEFTALIGN;
+					}
+					TrackPopupMenu(hMEnuContextTray, uFlags | TPM_BOTTOMALIGN | TPM_RIGHTBUTTON, GET_X_LPARAM(wParam), GET_Y_LPARAM(wParam), 0, hWnd, NULL);
+
+					PostMessage(hWnd, WM_NULL, 0, 0);
+				}
+				break;
+			default:
+				break;
+			}
+		}
+		break;
 	default:
 		break;
 	}
+
+	static HICON hIconTray{};
 
 	static HFONT hFontMain{};
 
@@ -605,42 +760,44 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 	case WM_CREATE:
 		{
 			/*
-			┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
-			┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃
-			┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨
-			┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃
-			┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃
-			┃        │        │        │        │     Select Process     │                    ┃
-			┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨
-			┃ Font Name                                                        │ State        ┃
-			┠──────────────────────────────────────────────────────────────────┼──────────────┨
-			┃                                                                  ┆              ┃
-			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-			┃                                                                  ┆              ┃
-			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-			┃                                                                  ┆              ┃
-			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-			┃                                                                  ┆              ┃
-			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-			┠──────────────────────────────────────────────────────────────────┴──────────────┨
-			┠─────────────────────────────────────────────────────────────────────────────┬───┨
-			┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃
-			┃                                                                             ├───┨
-			┃ How to load fonts to Windows:                                               │▓▓▓┃
-			┃ 1.Drag-drop font files onto the icon of this application.                   │▓▓▓┃
-			┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▓▓▓┃
-			┃  view, then click "Load" button.                                            │▓▓▓┃
-			┃                                                                             ├───┨
-			┃ How to unload fonts from Windows:                                           │   ┃
-			┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃
-			┃ upper-right cornor.                                                         │   ┃
-			┃                                                                             │   ┃
-			┃ How to load fonts to process:                                               │   ┃
-			┃ 1.Click "Click to select process", select a process.                        │   ┃
-			┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list ├───┨
-			┃ view, then click "Load" button.                                             │ ↓ ┃
-			┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
+			┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+			┃FontLoaderEx                                                          ┃_  ┃ □ ┃ x ┃
+			┠────────┬────────┬────────┬────────┬──────────────────────────────────┸┬──┸───┸──┬┨
+			┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     │┃
+			┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┘┃
+			┃        │        │        │        │     Select Process     │  □ Minimize to tray ┃
+			┠────────┴────────┴────────┴────────┴────────────────────────┴──────┬──────────────┨
+			┃ Font Name                                                         │ State        ┃
+			┠───────────────────────────────────────────────────────────────────┼──────────────┨
+			┃                                                                   ┆              ┃
+			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+			┃                                                                   ┆              ┃
+			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+			┃                                                                   ┆              ┃
+			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+			┃                                                                   ┆              ┃
+			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+			┠───────────────────────────────────────────────────────────────────┴──────────────┨
+			┠──────────────────────────────────────────────────────────────────────────────┬───┨
+			┃ Temporarily load fonts to Windows or specific process                        │ ↑ ┃
+			┃                                                                              ├───┨
+			┃ How to load fonts to Windows:                                                │▓▓▓┃
+			┃ 1.Drag-drop font files onto the icon of this application.                    │▓▓▓┃
+			┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │▓▓▓┃
+			┃  view, then click "Load" button.                                             │▓▓▓┃
+			┃                                                                              ├───┨
+			┃ How to unload fonts from Windows:                                            │   ┃
+			┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃
+			┃ upper-right cornor.                                                          │   ┃
+			┃                                                                              │   ┃
+			┃ How to load fonts to process:                                                │   ┃
+			┃ 1.Click "Click to select process", select a process.                         │   ┃
+			┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨
+			┃ view, then click "Load" button.                                              │ ↓ ┃
+			┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
 			*/
+
+			hIconTray = LoadIcon(NULL, IDI_APPLICATION);
 
 			// Get initial window state
 			WINDOWPLACEMENT wp{ sizeof(WINDOWPLACEMENT) };
@@ -689,6 +846,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			// Initialize ButtonSelectProcess
 			HWND hWndButtonSelectProcess{ CreateWindow(WC_BUTTON, L"&Select process", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, 200, 29, 250, 21, hWnd, (HMENU)ID::ButtonSelectProcess, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
 			SetWindowFont(hWndButtonSelectProcess, hFontMain, TRUE);
+
+			// Initialize ButtonMinimizeToTray
+			HWND hWndButtonMinimizeToTray{ CreateWindow(WC_BUTTON, L"&Minimize to tray", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 470, 29, 130, 21, hWnd, (HMENU)ID::ButtonMinimizeToTray, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
+			SetWindowFont(hWndButtonMinimizeToTray, hFontMain, TRUE);
+
+			SendMessage(hWndButtonMinimizeToTray, BM_CLICK, 0, 0);
 
 			// Initialize ListViewFontList
 			HWND hWndListViewFontList{ CreateWindow(WC_LISTVIEW, L"FontList", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | LVS_REPORT | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER, 0, 50, rcClientMain.right - rcClientMain.left, 300, hWnd, (HMENU)ID::ListViewFontList, ((LPCREATESTRUCT)lParam)->hInstance, NULL) };
@@ -743,6 +906,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				R"("Broadcast WM_FONTCHANGE": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.)""\r\n"
 				R"("Select process": Select a process to only load fonts to selected process.)""\r\n"
 				R"("Timeout": The time in milliseconds FontLoaderEx waits before reporting failure while injecting dll into target process via proxy process, the default value is 5000. Type 0, 4294967295 or clear to wait infinitely.)""\r\n"
+				R"("Minimize to tray": If checked, click minimize or close button will minimize the window to system tray.\r\n)"
 				R"("Font Name": Names of the fonts added to the list view.)""\r\n"
 				R"("State": State of the font. There are five states, "Not loaded", "Loaded", "Load failed", "Unloaded" and "Unload failed".)""\r\n"
 				"\r\n"
@@ -774,128 +938,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 				bDragDropHasFonts = false;
 			}
-		}
-		break;
-	case WM_CLOSE:
-		{
-			// Unload all fonts
-			if (!FontList.empty())
-			{
-				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), FALSE);
-				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonClose), FALSE);
-				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonLoad), FALSE);
-				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonUnload), FALSE);
-				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
-				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonSelectProcess), FALSE);
-				EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), FALSE);
-				EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
-
-				_beginthread(CloseWorkerThreadProc, 0, nullptr);
-			}
-			else
-			{
-				HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
-
-				std::wstringstream ssMessage{};
-				std::wstring strMessage{};
-				int cchMessageLength{};
-
-				// If loaded via proxy
-				if (ProxyProcessInfo.hProcess)
-				{
-					// Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
-					COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
-					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
-					WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
-					CloseHandle(hEventProxyDllPullingFinished);
-					switch (ProxyDllPullingResult)
-					{
-					case PROXYDLLPULL::SUCCESSFUL:
-						goto continue_69504405;
-					case PROXYDLLPULL::FAILED:
-						{
-							ssMessage << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
-							strMessage = ssMessage.str();
-							cchMessageLength = Edit_GetTextLength(hWndEditMessage);
-							Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-							Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
-						}
-						goto break_69504405;
-					default:
-						break;
-					}
-				break_69504405:
-					break;
-				continue_69504405:
-
-					// Terminate watch thread
-					SetEvent(hEventTerminateWatchThread);
-					WaitForSingleObject(hThreadWatch, INFINITE);
-					CloseHandle(hEventTerminateWatchThread);
-					CloseHandle(hThreadWatch);
-
-					// Terminate message thread
-					PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
-					WaitForSingleObject(hThreadMessage, INFINITE);
-					DWORD dwMessageThreadExitCode{};
-					GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
-					if (dwMessageThreadExitCode)
-					{
-						std::wstringstream ssMessage{};
-						std::wstring strMessage{};
-						ssMessage << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
-						strMessage = ssMessage.str();
-						MessageBoxCentered(NULL, strMessage.c_str(), szAppName, MB_ICONERROR);
-					}
-					CloseHandle(hThreadMessage);
-
-					// Terminate proxy process
-					COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
-					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
-					WaitForSingleObject(ProxyProcessInfo.hProcess, INFINITE);
-					CloseHandle(ProxyProcessInfo.hProcess);
-					ProxyProcessInfo.hProcess = NULL;
-
-					// Close HANDLE to target process and duplicated handles
-					CloseHandle(TargetProcessInfo.hProcess);
-					TargetProcessInfo.hProcess = NULL;
-					CloseHandle(hProcessCurrentDuplicated);
-					CloseHandle(hProcessTargetDuplicated);
-				}
-				// Else DIY
-				else if (TargetProcessInfo.hProcess)
-				{
-					// Unload FontLoaderExInjectionDll(64).dll from target process
-					if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
-					{
-						ssMessage << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
-						strMessage = ssMessage.str();
-						cchMessageLength = Edit_GetTextLength(hWndEditMessage);
-						Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-						Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
-						break;
-					}
-
-					// Terminate watch thread
-					SetEvent(hEventTerminateWatchThread);
-					WaitForSingleObject(hThreadWatch, INFINITE);
-					CloseHandle(hEventTerminateWatchThread);
-					CloseHandle(hThreadWatch);
-
-					// Close HANDLE to target process
-					CloseHandle(TargetProcessInfo.hProcess);
-					TargetProcessInfo.hProcess = NULL;
-				}
-
-				ret = DefWindowProc(hWnd, Message, wParam, lParam);
-			}
-		}
-		break;
-	case WM_DESTROY:
-		{
-			DeleteFont(hFontMain);
-
-			PostQuitMessage(0);
 		}
 		break;
 	case WM_COMMAND:
@@ -978,8 +1020,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										break;
 									case WM_DESTROY:
 										{
-											DeleteFont(hFontMain);
-
 											ret = (UINT_PTR)FALSE;
 										}
 										break;
@@ -992,10 +1032,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 								NULL, NULL, 0, 0 };
 							if (GetOpenFileName(&ofn))
 							{
-								LVITEM lvi{ LVIF_TEXT, ListView_GetItemCount(hWndListViewFontList) };
-								std::wstringstream ssMessage{};
-								std::wstring strMessage{};
-								int iMessageLenth{};
+								FONTLISTCHANGEDSTRUCT flcs{ ListView_GetItemCount(hWndListViewFontList) };
 								if (PathIsDirectory(ofn.lpstrFile))
 								{
 									LPWSTR lpszFileName{ ofn.lpstrFile + ofn.nFileOffset };
@@ -1006,45 +1043,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										lpszFileName += std::wcslen(lpszFileName) + 1;
 										FontList.push_back(lpszPath);
 
-										lvi.iSubItem = 0;
-										lvi.pszText = (LPWSTR)lpszPath;
-										ListView_InsertItem(hWndListViewFontList, &lvi);
-										lvi.iSubItem = 1;
-										lvi.pszText = (LPWSTR)L"Not loaded";
-										ListView_SetItem(hWndListViewFontList, &lvi);
-										ListView_SetItemState(hWndListViewFontList, lvi.iItem, LVIS_SELECTED, LVIS_SELECTED);
-										lvi.iItem++;
+										flcs.lpszFontName = lpszPath;
+										SendMessage(hWnd, (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::OPENED, (LPARAM)&flcs);
 
-										ssMessage << lpszPath << L" opened\r\n";
-										strMessage = ssMessage.str();
-										iMessageLenth = Edit_GetTextLength(hWndEditMessage);
-										Edit_SetSel(hWndEditMessage, iMessageLenth, iMessageLenth);
-										Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
-										ssMessage.str(L"");
+										flcs.iItem++;
 									} while (*lpszFileName);
-									ListView_EnsureVisible(hWndListViewFontList, lvi.iItem - 1, FALSE);
 								}
 								else
 								{
 									FontList.push_back(ofn.lpstrFile);
 
-									lvi.iSubItem = 0;
-									lvi.pszText = (LPWSTR)ofn.lpstrFile;
-									ListView_InsertItem(hWndListViewFontList, &lvi);
-									lvi.iSubItem = 1;
-									lvi.pszText = (LPWSTR)L"Not loaded";
-									ListView_SetItem(hWndListViewFontList, &lvi);
-									ListView_SetItemState(hWndListViewFontList, lvi.iItem, LVIS_SELECTED, LVIS_SELECTED);
-									ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
-
-									ssMessage << ofn.lpstrFile << L" opened\r\n";
-									strMessage = ssMessage.str();
-									iMessageLenth = Edit_GetTextLength(hWndEditMessage);
-									Edit_SetSel(hWndEditMessage, iMessageLenth, iMessageLenth);
-									Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+									flcs.lpszFontName = ofn.lpstrFile;
+									SendMessage(hWnd, (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::OPENED, (LPARAM)&flcs);
 								}
-								iMessageLenth = Edit_GetTextLength(hWndEditMessage);
-								Edit_SetSel(hWndEditMessage, iMessageLenth, iMessageLenth);
+								int cchMessageLength{ Edit_GetTextLength(hWndEditMessage) };
+								Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 								Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
 								if (bIsFontListEmptyBefore)
@@ -1059,6 +1072,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 								}
 							}
 							delete[] ofn.lpstrFile;
+
+							// Update syatem tray icon tip
+							if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
+							{
+								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
+								std::wstringstream ssTip{};
+								std::wstring strTip{};
+								std::size_t nLoadedFonts{};
+								for (const auto& i : FontList)
+								{
+									if (i.IsLoaded())
+									{
+										nLoadedFonts++;
+									}
+								}
+								ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
+								strTip = ssTip.str();
+								wcscpy_s(nid.szTip, strTip.c_str());
+								Shell_NotifyIcon(NIM_MODIFY, &nid);
+							}
 						}
 						break;
 					default:
@@ -1084,7 +1117,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), FALSE);
 							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
-							_beginthread(ButtonCloseWorkerThreadProc, 0, nullptr);
+							_beginthread(ButtonCloseWorkerThreadProc, 0, (void*)ID::ListViewFontList);
 						}
 						break;
 					default:
@@ -1109,7 +1142,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), FALSE);
 							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
-							_beginthread(ButtonLoadWorkerThreadProc, 0, nullptr);
+							_beginthread(ButtonLoadWorkerThreadProc, 0, (void*)ID::ListViewFontList);
 						}
 					default:
 						break;
@@ -1133,7 +1166,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), FALSE);
 							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
-							_beginthread(ButtonUnloadWorkerThreadProc, 0, nullptr);
+							_beginthread(ButtonUnloadWorkerThreadProc, 0, (void*)ID::ListViewFontList);
 						}
 					default:
 						break;
@@ -1287,7 +1320,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hThreadWatch);
 
 									// Terminate message thread
-									PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+									PostMessage(hWndMessage, WM_CLOSE, 0, 0);
 									WaitForSingleObject(hThreadMessage, INFINITE);
 									DWORD dwMessageThreadExitCode{};
 									GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
@@ -1455,7 +1488,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
 
 										// Terminate message thread
-										PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+										PostMessage(hWndMessage, WM_CLOSE, 0, 0);
 										WaitForSingleObject(hThreadMessage, INFINITE);
 										DWORD dwMessageThreadExitCode{};
 										GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
@@ -1527,7 +1560,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											piProxyProcess.hProcess = NULL;
 
 											// Terminate message thread
-											PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+											PostMessage(hWndMessage, WM_CLOSE, 0, 0);
 											WaitForSingleObject(hThreadMessage, INFINITE);
 											DWORD dwMessageThreadExitCode{};
 											GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
@@ -1636,7 +1669,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											piProxyProcess.hProcess = NULL;
 
 											// Terminate message thread
-											PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+											PostMessage(hWndMessage, WM_CLOSE, 0, 0);
 											WaitForSingleObject(hThreadMessage, INFINITE);
 											DWORD dwMessageThreadExitCode{};
 											GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
@@ -1756,7 +1789,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									}
 									CloseHandle(hModuleSnapshot2);
 
-									// Calculate addresses of AddFont() and RemoveFont() in target process
+									// Calculate the addresses of AddFont() and RemoveFont() in target process
 									HMODULE hModInjectionDll{ LoadLibrary(szInjectionDllName) };
 									void* lpLocalAddFontProcAddr{ GetProcAddress(hModInjectionDll, "AddFont") };
 									void* lpLocalRemoveFontProcAddr{ GetProcAddress(hModInjectionDll, "RemoveFont") };
@@ -1830,7 +1863,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hThreadWatch);
 
 									// Terminate message thread
-									PostMessage(hWndMessage, (UINT)USERMESSAGE::TERMINATEMESSAGETHREAD, NULL, NULL);
+									PostMessage(hWndMessage, WM_CLOSE, 0, 0);
 									WaitForSingleObject(hThreadMessage, INFINITE);
 									DWORD dwMessageThreadExitCode{};
 									GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
@@ -1926,39 +1959,184 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					}
 				}
 				break;
+				// "Minimize to trat" button
+			case ID::ButtonMinimizeToTray:
+				{
+					switch (HIWORD(wParam))
+					{
+					case BN_CLICKED:
+						{
+							// If unchecked, remove the icon from system tray
+							if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_UNCHECKED)
+							{
+								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWnd, 0 };
+								Shell_NotifyIcon(NIM_DELETE, &nid);
+							}
+						}
+						break;
+					default:
+						break;
+					}
+				}
+				break;
 			default:
 				break;
 			}
 			switch (LOWORD(wParam))
 			{
-				// "Load" menu item
+				// "Load" menu item in hMenuContextListViewFontList
 			case ID_MENU_LOAD:
 				{
 					// Simulate clicking "Load" button
-					SendMessage(GetDlgItem(hWnd, (int)ID::ButtonLoad), BM_CLICK, NULL, NULL);
+					SendMessage(GetDlgItem(hWnd, (int)ID::ButtonLoad), BM_CLICK, 0, 0);
 				}
 				break;
-				// "Unload" menu item
+				// "Unload" menu item in hMenuContextListViewFontList
 			case ID_MENU_UNLOAD:
 				{
 					// Simulate clicking "Unload" button
-					SendMessage(GetDlgItem(hWnd, (int)ID::ButtonUnload), BM_CLICK, NULL, NULL);
+					SendMessage(GetDlgItem(hWnd, (int)ID::ButtonUnload), BM_CLICK, 0, 0);
 				}
 				break;
-				// "Close" menu item
+				// "Close" menu item in hMenuContextListViewFontList
 			case ID_MENU_CLOSE:
 				{
 					// Simulate clicking "Close" button
-					SendMessage(GetDlgItem(hWnd, (int)ID::ButtonClose), BM_CLICK, NULL, NULL);
+					SendMessage(GetDlgItem(hWnd, (int)ID::ButtonClose), BM_CLICK, 0, 0);
 				}
 				break;
-				// "Select All" menu item
+				// "Select All" menu item in hMenuContextListViewFontList
 			case ID_MENU_SELECTALL:
 				{
 					// Select all items in ListViewFontList
 					ListView_SetItemState(GetDlgItem(hWnd, (int)ID::ListViewFontList), -1, LVIS_SELECTED, LVIS_SELECTED);
 				}
+				break;
+				// "Show window" menu item in hMenuContextTray
+			case ID_TRAYMENU_SHOWWINDOW:
+				{
+					if (IsWindowVisible(hWnd))
+					{
+						SetForegroundWindow(hWnd);
+					}
+					else
+					{
+						ShowWindow(hWnd, SW_SHOW);
+					}
+				}
+				break;
+				// "Exit" menu item in hMenuContextTrat
+			case ID_TRAYMENU_EXIT:
+				{
+					if (IsWindowVisible(hWnd))
+					{
+						SetForegroundWindow(hWnd);
+					}
+					else
+					{
+						ShowWindow(hWnd, SW_SHOW);
+					}
+
+					PostMessage(hWnd, WM_CLOSE, 0, 0);
+				}
+				break;
 			default:
+				break;
+			}
+		}
+		break;
+	case WM_SYSCOMMAND:
+		{
+			switch (wParam & 0xFFF0)
+			{
+			case SC_MINIMIZE:
+				{
+					// Minimize to system tray if ButtonMinimizeToTray is checked
+					if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
+					{
+						NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWnd, 0, NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP, (UINT)USERMESSAGE::TRAYNOTIFYICON, hIconTray };
+						std::wstringstream ssTip{};
+						std::wstring strTip{};
+						std::size_t nLoadedFonts{};
+						for (const auto& i : FontList)
+						{
+							if (i.IsLoaded())
+							{
+								nLoadedFonts++;
+							}
+						}
+						ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
+						strTip = ssTip.str();
+						wcscpy_s(nid.szTip, strTip.c_str());
+						Shell_NotifyIcon(NIM_ADD, &nid);
+						nid.uFlags = NIF_INFO;
+						nid.uVersion = NOTIFYICON_VERSION_4;
+						Shell_NotifyIcon(NIM_SETVERSION, &nid);
+
+						ShowWindow(hWnd, SW_HIDE);
+					}
+					// Else do as usual
+					else
+					{
+						ret = DefWindowProc(hWnd, Message, wParam, lParam);
+					}
+				}
+				break;
+			case SC_CLOSE:
+				{
+					// Minimize to system tray if ButtonMinimizeToTray is checked
+					if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
+					{
+						NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWnd, 0, NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP, (UINT)USERMESSAGE::TRAYNOTIFYICON, hIconTray };
+						std::wstringstream ssTip{};
+						std::wstring strTip{};
+						std::size_t nLoadedFonts{};
+						for (const auto& i : FontList)
+						{
+							if (i.IsLoaded())
+							{
+								nLoadedFonts++;
+							}
+						}
+						ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
+						strTip = ssTip.str();
+						wcscpy_s(nid.szTip, strTip.c_str());
+						Shell_NotifyIcon(NIM_ADD, &nid);
+						nid.uFlags = NIF_INFO;
+						nid.uVersion = NOTIFYICON_VERSION_4;
+						Shell_NotifyIcon(NIM_SETVERSION, &nid);
+
+						ShowWindow(hWnd, SW_HIDE);
+					}
+					// Else do as usual
+					else
+					{
+						// If font list is not empty, unload all fonts first
+						if (!FontList.empty())
+						{
+							EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), FALSE);
+							EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonClose), FALSE);
+							EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonLoad), FALSE);
+							EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonUnload), FALSE);
+							EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
+							EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonSelectProcess), FALSE);
+							EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), FALSE);
+							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+
+							_beginthread(CloseWorkerThreadProc, 0, nullptr);
+						}
+						// Else do as usual
+						else
+						{
+							ret = DefWindowProc(hWnd, Message, wParam, lParam);
+						}
+					}
+				}
+				break;
+			default:
+				{
+					ret = DefWindowProc(hWnd, Message, wParam, lParam);
+				}
 				break;
 			}
 		}
@@ -2009,42 +2187,42 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 							┃                                                                                                                               ┃
 							┃                                                                                                                               ┃
-							┃	┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓                                         ┃← Desktop
-							┃	┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃                                         ┃
-							┃	┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨                                         ┃
-							┃	┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃                                         ┃
-							┃	┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃                                         ┃
-							┃	┃        │        │        │        │     Select Process     │                    ┃                                         ┃
-							┃	┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────╂────────                                 ┃
-							┃	┃ Font Name                                                        │ State        ┃        ↑                                ┃
-							┃	┠──────────────────────────────────────────────────────────────────┼──────────────┨        │ cyListViewFontListMin          ┃
-							┃	┃                                                                  ┆              ┃        ↓                                ┃
-							┠┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-							┃	┃                                                                  ┆              ┃                          ↑              ┃
-							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                ptSpliitterRange.top     ┃
-							┃	┃                                                                  ┆              ┃                                         ┃
-							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                                         ┃
-							┃	┃                                                                  ┆              ┃                                         ┃
-							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                                         ┃
-							┃	┠──────────────────────────────────────────────────────────────────┴──────────────┨                                         ┃
-							┃	┠─────────────────────────────────────────────────────────────────────────────┬───┨                                         ┃
-							┃	┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃                                         ┃
-							┃	┃                                                                             ├───┨                                         ┃
-							┃	┃ How to load fonts to Windows:                                               │▓▓▓┃                                         ┃
-							┃	┃ 1.Drag-drop font files onto the icon of this application.                   │▓▓▓┃                                         ┃
-							┃	┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▓▓▓┃                                         ┃
-							┃	┃  view, then click "Load" button.                                            │▓▓▓┃                                         ┃
-							┃	┃                                                                             ├───┨                                         ┃
-							┃	┃ How to unload fonts from Windows:                                           │   ┃                                         ┃
-							┃	┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃                                         ┃
-							┃	┃ upper-right cornor.                                                         │   ┃                                         ┃
-							┃	┃                                                                             │   ┃                                         ┃
-							┃	┃ How to load fonts to process:                                               │   ┃                                         ┃
-							┃	┃ 1.Click "Click to select process", select a process.                        │   ┃              ptSpliitterRange.bottom    ┃
-							┃	┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │   ┃                          ↓              ┃
-							┠┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼───╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-							┃	┃ view, then click "Load" button.                                             │ ↓ ┃        } cyEditMessageMin               ┃
-							┃	┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┹────────                                 ┃
+							┃	┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓                                        ┃← Desktop
+							┃	┃FontLoaderEx                                                          ┃_  ┃ □ ┃ x ┃                                        ┃
+							┃	┠────────┬────────┬────────┬────────┬──────────────────────────────────┸┬──┸───┸──┬┨                                        ┃
+							┃	┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     │┃                                        ┃
+							┃	┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┘┃                                        ┃
+							┃	┃        │        │        │        │     Select Process     │  □ Minimize to tray ┃                                        ┃
+							┃	┠────────┴────────┴────────┴────────┴────────────────────────┴──────┬──────────────╂────────                                ┃
+							┃	┃ Font Name                                                         │ State        ┃        ↑                               ┃
+							┃	┠───────────────────────────────────────────────────────────────────┼──────────────┨        │ cyListViewFontListMin         ┃
+							┃	┃                                                                   ┆              ┃        ↓                               ┃
+							┠┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃	┃                                                                   ┆              ┃                          ↑             ┃
+							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                ptSpliitterRange.top    ┃
+							┃	┃                                                                   ┆              ┃                                        ┃
+							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                                        ┃
+							┃	┃                                                                   ┆              ┃                                        ┃
+							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                                        ┃
+							┃	┠───────────────────────────────────────────────────────────────────┴──────────────┨                                        ┃
+							┃	┠──────────────────────────────────────────────────────────────────────────────┬───┨                                        ┃
+							┃	┃ Temporarily load fonts to Windows or specific process                        │ ↑ ┃                                        ┃
+							┃	┃                                                                              ├───┨                                        ┃
+							┃	┃ How to load fonts to Windows:                                                │▓▓▓┃                                        ┃
+							┃	┃ 1.Drag-drop font files onto the icon of this application.                    │▓▓▓┃                                        ┃
+							┃	┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │▓▓▓┃                                        ┃
+							┃	┃  view, then click "Load" button.                                             │▓▓▓┃                                        ┃
+							┃	┃                                                                              ├───┨                                        ┃
+							┃	┃ How to unload fonts from Windows:                                            │   ┃                                        ┃
+							┃	┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃                                        ┃
+							┃	┃ upper-right cornor.                                                          │   ┃                                        ┃
+							┃	┃                                                                              │   ┃                                        ┃
+							┃	┃ How to load fonts to process:                                                │   ┃                                        ┃
+							┃	┃ 1.Click "Click to select process", select a process.                         │   ┃              ptSpliitterRange.bottom   ┃
+							┃	┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │   ┃                          ↓             ┃
+							┠┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼───╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃	┃ view, then click "Load" button.                                              │ ↓ ┃        } cyEditMessageMin              ┃
+							┃	┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┹────────                                ┃
 							┃                                                                                                                               ┃
 							┃                                                                                                                               ┃
 							┃                                                                                                                               ┃
@@ -2077,11 +2255,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							// Calculate the minimal heights of EditMessage
 							HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
 							HDC hDCEditMessage{ GetDC(hWndEditMessage) };
-							HDC hDCEditMessageMemory{ CreateCompatibleDC(hDCEditMessage) };
-							SelectFont(hDCEditMessageMemory, GetWindowFont(hWndEditMessage));
+							SelectFont(hDCEditMessage, GetWindowFont(hWndEditMessage));
 							TEXTMETRIC tm{};
-							GetTextMetrics(hDCEditMessageMemory, &tm);
-							DeleteDC(hDCEditMessageMemory);
+							GetTextMetrics(hDCEditMessage, &tm);
 							ReleaseDC(hWndEditMessage, hDCEditMessage);
 							RECT rcEditMessage{}, rcEditMessageClient{};
 							GetWindowRect(hWndEditMessage, &rcEditMessage);
@@ -2178,7 +2354,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						ptMenu = ptSelectionMark;
 					}
 				}
-
 				UINT uFlags{};
 				if (GetSystemMetrics(SM_MENUDROPALIGNMENT))
 				{
@@ -2193,6 +2368,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			else
 			{
 				ret = DefWindowProc(hWnd, Message, wParam, lParam);
+			}
+		}
+		break;
+	case WM_CTLCOLORSTATIC:
+		{
+			// Change the background color of ButtonBroadcastWM_FONTCHANGE, StaticTimeout and EditMessage to default window background color
+			// From https://social.msdn.microsoft.com/Forums/vstudio/en-US/7b6d1815-87e3-4f47-b5d5-fd4caa0e0a89/why-is-wmctlcolorstatic-sent-for-a-button-instead-of-wmctlcolorbtn?forum=vclanguage
+			// "WM_CTLCOLORSTATIC is sent by any control that displays text which would be displayed using the default dialog/window background color. 
+			// This includes check boxes, radio buttons, group boxes, static text, read-only or disabled edit controls, and disabled combo boxes (all styles)."
+			if (((HWND)lParam == GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE)) || ((HWND)lParam == GetDlgItem(hWnd, (int)ID::StaticTimeout)) || ((HWND)lParam == GetDlgItem(hWnd, (int)ID::EditMessage)))
+			{
+				ret = (LRESULT)GetSysColorBrush(COLOR_WINDOW);
 			}
 		}
 		break;
@@ -2233,44 +2420,44 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							case WMSZ_TOPRIGHT:
 								{
 									/*
-																															 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
-																															 ┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃
-																															 ┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨
-									┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓      ┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃
-									┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃      ┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃
-									┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨      ┃        │        │        │        │     Select Process     │                    ┃
-									┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃      ┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨
-									┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃      ┃ Font Name                                                        │ State        ┃
-									┃        │        │        │        │     Select Process     │                    ┃      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
-									┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨      ┃                                                                  ┆              ┃
-									┃ Font Name                                                        │ State        ┃      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
-									┠──────────────────────────────────────────────────────────────────┼──────────────┨      ┃                                                                  ┆              ┃
-									┃                                                                  ┆              ┃      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
-									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┃                                                                  ┆              ┃
-									┃                                                                  ┆              ┃      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
-									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┃                                                                  ┆              ┃
-									┃                                                                  ┆              ┃      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
-									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┃                                                                  ┆              ┃
-									┃                                                                  ┆              ┃      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
-									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┃                                                                  ┆              ┃
-									┠──────────────────────────────────────────────────────────────────┴──────────────┨  =>  ┠──────────────────────────────────────────────────────────────────┴──────────────┨
-									┠─────────────────────────────────────────────────────────────────────────────┬───┨      ┠─────────────────────────────────────────────────────────────────────────────┬───┨
-									┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃      ┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃
-									┃                                                                             ├───┨      ┃                                                                             ├───┨
-									┃ How to load fonts to Windows:                                               │▓▓▓┃      ┃ How to load fonts to Windows:                                               │▓▓▓┃
-									┃ 1.Drag-drop font files onto the icon of this application.                   │▓▓▓┃      ┃ 1.Drag-drop font files onto the icon of this application.                   │▓▓▓┃
-									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▓▓▓┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▓▓▓┃
-									┃  view, then click "Load" button.                                            │▓▓▓┃      ┃  view, then click "Load" button.                                            │▓▓▓┃
-									┃                                                                             ├───┨      ┃                                                                             ├───┨
-									┃ How to unload fonts from Windows:                                           │   ┃      ┃ How to unload fonts from Windows:                                           │   ┃
-									┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃
-									┃ upper-right cornor.                                                         │   ┃      ┃ upper-right cornor.                                                         │   ┃
-									┃                                                                             │   ┃      ┃                                                                             │   ┃
-									┃ How to load fonts to process:                                               │   ┃      ┃ How to load fonts to process:                                               │   ┃
-									┃ 1.Click "Click to select process", select a process.                        │   ┃      ┃ 1.Click "Click to select process", select a process.                        │   ┃
-									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list ├───┨      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list ├───┨
-									┃ view, then click "Load" button.                                             │ ↓ ┃      ┃ view, then click "Load" button.                                             │ ↓ ┃
-									┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛      ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
+																															  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+																															  ┃FontLoaderEx                                                          ┃_  ┃ □ ┃ x ┃
+																															  ┠────────┬────────┬────────┬────────┬──────────────────────────────────┸┬──┸───┸──┬┨
+									┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓      ┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     │┃
+									┃FontLoaderEx                                                          ┃_  ┃ □ ┃ x ┃      ┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┘┃
+									┠────────┬────────┬────────┬────────┬──────────────────────────────────┸┬──┸───┸──┬┨      ┃        │        │        │        │     Select Process     │  □ Minimize to tray ┃
+									┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     │┃      ┠────────┴────────┴────────┴────────┴────────────────────────┴──────┬──────────────┨
+									┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┘┃      ┃ Font Name                                                         │ State        ┃
+									┃        │        │        │        │     Select Process     │  □ Minimize to tray ┃      ┠───────────────────────────────────────────────────────────────────┼──────────────┨
+									┠────────┴────────┴────────┴────────┴────────────────────────┴──────┬──────────────┨      ┃                                                                   ┆              ┃
+									┃ Font Name                                                         │ State        ┃      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┠───────────────────────────────────────────────────────────────────┼──────────────┨      ┃                                                                   ┆              ┃
+									┃                                                                   ┆              ┃      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┃                                                                   ┆              ┃
+									┃                                                                   ┆              ┃      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┃                                                                   ┆              ┃
+									┃                                                                   ┆              ┃      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┃                                                                   ┆              ┃
+									┃                                                                   ┆              ┃      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┃                                                                   ┆              ┃
+									┠───────────────────────────────────────────────────────────────────┴──────────────┨  =>  ┠───────────────────────────────────────────────────────────────────┴──────────────┨
+									┠──────────────────────────────────────────────────────────────────────────────┬───┨      ┠──────────────────────────────────────────────────────────────────────────────┬───┨
+									┃ Temporarily load fonts to Windows or specific process                        │ ↑ ┃      ┃ Temporarily load fonts to Windows or specific process                        │ ↑ ┃
+									┃                                                                              ├───┨      ┃                                                                              ├───┨
+									┃ How to load fonts to Windows:                                                │▓▓▓┃      ┃ How to load fonts to Windows:                                                │▓▓▓┃
+									┃ 1.Drag-drop font files onto the icon of this application.                    │▓▓▓┃      ┃ 1.Drag-drop font files onto the icon of this application.                    │▓▓▓┃
+									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │▓▓▓┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │▓▓▓┃
+									┃  view, then click "Load" button.                                             │▓▓▓┃      ┃  view, then click "Load" button.                                             │▓▓▓┃
+									┃                                                                              ├───┨      ┃                                                                              ├───┨
+									┃ How to unload fonts from Windows:                                            │   ┃      ┃ How to unload fonts from Windows:                                            │   ┃
+									┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃
+									┃ upper-right cornor.                                                          │   ┃      ┃ upper-right cornor.                                                          │   ┃
+									┃                                                                              │   ┃      ┃                                                                              │   ┃
+									┃ How to load fonts to process:                                                │   ┃      ┃ How to load fonts to process:                                                │   ┃
+									┃ 1.Click "Click to select process", select a process.                         │   ┃      ┃ 1.Click "Click to select process", select a process.                         │   ┃
+									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨
+									┃ view, then click "Load" button.                                              │ ↓ ┃      ┃ view, then click "Load" button.                                              │ ↓ ┃
+									┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛      ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
 									*/
 
 									// Calculate the minimal height of ListViewFontList
@@ -2345,54 +2532,53 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							case WMSZ_BOTTOMRIGHT:
 								{
 									/*
-									┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓      ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
-									┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃      ┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃
-									┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨      ┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨
-									┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃      ┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃
-									┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃      ┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃
-									┃        │        │        │        │     Select Process     │                    ┃      ┃        │        │        │        │     Select Process     │                    ┃
-									┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨      ┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨
-									┃ Font Name                                                        │ State        ┃      ┃ Font Name                                                        │ State        ┃
-									┠──────────────────────────────────────────────────────────────────┼──────────────┨      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
-									┃                                                                  ┆              ┃      ┃                                                                  ┆              ┃
-									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠──────────────────────────────────────────────────────────────────┼──────────────┨
-									┃                                                                  ┆              ┃      ┃                                                                  ┆              ┃
-									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-									┃                                                                  ┆              ┃      ┃                                                                  ┆              ┃
-									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-									┃                                                                  ┆              ┃      ┃                                                                  ┆              ┃
-									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-									┠──────────────────────────────────────────────────────────────────┴──────────────┨  =>  ┠──────────────────────────────────────────────────────────────────┴──────────────┨
-									┠─────────────────────────────────────────────────────────────────────────────┬───┨      ┠─────────────────────────────────────────────────────────────────────────────┬───┨
-									┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃      ┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃
-									┃                                                                             ├───┨      ┃                                                                             ├───┨
-									┃ How to load fonts to Windows:                                               │▓▓▓┃      ┃ How to load fonts to Windows:                                               │▓▓▓┃
-									┃ 1.Drag-drop font files onto the icon of this application.                   │▓▓▓┃      ┃ 1.Drag-drop font files onto the icon of this application.                   │▓▓▓┃
-									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▓▓▓┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▓▓▓┃
-									┃  view, then click "Load" button.                                            │▓▓▓┃      ┃  view, then click "Load" button.                                            │▓▓▓┃
-									┃                                                                             ├───┨      ┃                                                                             │▓▓▓┃
-									┃ How to unload fonts from Windows:                                           │   ┃      ┃ How to unload fonts from Windows:                                           │▓▓▓┃
-									┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the      ├───┨
-									┃ upper-right cornor.                                                         │   ┃      ┃ upper-right cornor.                                                         │   ┃
-									┃                                                                             │   ┃      ┃                                                                             │   ┃
-									┃ How to load fonts to process:                                               │   ┃      ┃ How to load fonts to process:                                               │   ┃
-									┃ 1.Click "Click to select process", select a process.                        │   ┃      ┃ 1.Click "Click to select process", select a process.                        │   ┃
-									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list ├───┨      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │   ┃
-									┃ view, then click "Load" button.                                             │ ↓ ┃      ┃ view, then click "Load" button.                                             │   ┃
-									┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛      ┃ How to unload fonts from process:                                           │   ┃
-																															 ┃ Select all fonts then click "Unload" or "Close" button or the X at the      ├───┨
-																															 ┃  upper-right cornor or terminate selected process.                          │ ↓ ┃
-																															 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
+									┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓      ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+									┃FontLoaderEx                                                          ┃_  ┃ □ ┃ x ┃      ┃FontLoaderEx                                                          ┃_  ┃ □ ┃ x ┃
+									┠────────┬────────┬────────┬────────┬──────────────────────────────────┸┬──┸───┸──┬┨      ┠────────┬────────┬────────┬────────┬──────────────────────────────────┸┬──┸───┸──┬┨
+									┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     │┃      ┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     │┃
+									┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┘┃      ┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┘┃
+									┃        │        │        │        │     Select Process     │  □ Minimize to tray ┃      ┃        │        │        │        │     Select Process     │  □ Minimize to tray ┃
+									┠────────┴────────┴────────┴────────┴────────────────────────┴──────┬──────────────┨      ┠────────┴────────┴────────┴────────┴────────────────────────┴──────┬──────────────┨
+									┃ Font Name                                                         │ State        ┃      ┃ Font Name                                                         │ State        ┃
+									┠───────────────────────────────────────────────────────────────────┼──────────────┨      ┠───────────────────────────────────────────────────────────────────┼──────────────┨
+									┃                                                                   ┆              ┃      ┃                                                                   ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┃                                                                   ┆              ┃      ┃                                                                   ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┃                                                                   ┆              ┃      ┃                                                                   ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┃                                                                   ┆              ┃      ┃                                                                   ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┠───────────────────────────────────────────────────────────────────┴──────────────┨  =>  ┠───────────────────────────────────────────────────────────────────┴──────────────┨
+									┠──────────────────────────────────────────────────────────────────────────────┬───┨      ┠──────────────────────────────────────────────────────────────────────────────┬───┨
+									┃ Temporarily load fonts to Windows or specific process                        │ ↑ ┃      ┃ Temporarily load fonts to Windows or specific process                        │ ↑ ┃
+									┃                                                                              ├───┨      ┃                                                                              ├───┨
+									┃ How to load fonts to Windows:                                                │▓▓▓┃      ┃ How to load fonts to Windows:                                                │▓▓▓┃
+									┃ 1.Drag-drop font files onto the icon of this application.                    │▓▓▓┃      ┃ 1.Drag-drop font files onto the icon of this application.                    │▓▓▓┃
+									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │▓▓▓┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │▓▓▓┃
+									┃  view, then click "Load" button.                                             │▓▓▓┃      ┃  view, then click "Load" button.                                             │▓▓▓┃
+									┃                                                                              ├───┨      ┃                                                                              │▓▓▓┃
+									┃ How to unload fonts from Windows:                                            │   ┃      ┃ How to unload fonts from Windows:                                            │▓▓▓┃
+									┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the       ├───┨
+									┃ upper-right cornor.                                                          │   ┃      ┃ upper-right cornor.                                                          │   ┃
+									┃                                                                              │   ┃      ┃                                                                              │   ┃
+									┃ How to load fonts to process:                                                │   ┃      ┃ How to load fonts to process:                                                │   ┃
+									┃ 1.Click "Click to select process", select a process.                         │   ┃      ┃ 1.Click "Click to select process", select a process.                         │   ┃
+									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │   ┃
+									┃ view, then click "Load" button.                                              │ ↓ ┃      ┃ view, then click "Load" button.                                              │   ┃
+									┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛      ┃ How to unload fonts from process:                                            │   ┃
+																															  ┃ Select all fonts then click "Unload" or "Close" button or the X at the       ├───┨
+																															  ┃  upper-right cornor or terminate selected process.                           │ ↓ ┃
+																															  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
 									*/
 
 									// Calculate the minimal height of EditMessage
 									HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
 									HDC hDCEditMessage{ GetDC(hWndEditMessage) };
-									HDC hDCEditMessageMemory{ CreateCompatibleDC(hDCEditMessage) };
-									SelectFont(hDCEditMessageMemory, GetWindowFont(hWndEditMessage));
+									SelectFont(hDCEditMessage, (HFONT)GetWindowFont(hWndEditMessage));
 									TEXTMETRIC tm{};
-									GetTextMetrics(hDCEditMessageMemory, &tm);
-									DeleteDC(hDCEditMessageMemory);
+									GetTextMetrics(hDCEditMessage, &tm);
+									ReleaseDC(hWndEditMessage, hDCEditMessage);
 									RECT rcEditMessage{}, rcEditMessageClient{};
 									GetWindowRect(hWndEditMessage, &rcEditMessage);
 									GetClientRect(hWndEditMessage, &rcEditMessageClient);
@@ -2449,41 +2635,41 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							case WMSZ_RIGHT:
 								{
 									/*
-									┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓      ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
-									┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃      ┃FontLoaderEx                                                                       ┃_  ┃ □ ┃ x ┃
-									┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨      ┠────────┬────────┬────────┬────────┬───────────────────────────────────┬───────┬───┸───┸───┸───┨
-									┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃      ┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │               ┃
-									┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃      ┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘               ┃
-									┃        │        │        │        │     Select Process     │                    ┃      ┃        │        │        │        │     Select Process     │                                  ┃
-									┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨      ┠────────┴────────┴────────┴────────┴────────────────────────┴───────────────────┬──────────────┨
-									┃ Font Name                                                        │ State        ┃      ┃ Font Name                                                                      │ State        ┃
-									┠──────────────────────────────────────────────────────────────────┼──────────────┨      ┠────────────────────────────────────────────────────────────────────────────────┼──────────────┨
-									┃                                                                  ┆              ┃      ┃                                                                                ┆              ┃
-									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-									┃                                                                  ┆              ┃      ┃                                                                                ┆              ┃
-									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-									┃                                                                  ┆              ┃      ┃                                                                                ┆              ┃
-									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-									┃                                                                  ┆              ┃      ┃                                                                                ┆              ┃
-									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-									┠──────────────────────────────────────────────────────────────────┴──────────────┨  =>  ┠────────────────────────────────────────────────────────────────────────────────┴──────────────┨
-									┠─────────────────────────────────────────────────────────────────────────────┬───┨      ┠───────────────────────────────────────────────────────────────────────────────────────────┬───┨
-									┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃      ┃ Temporarily load fonts to Windows or specific process                                     │ ↑ ┃
-									┃                                                                             ├───┨      ┃                                                                                           ├───┨
-									┃ How to load fonts to Windows:                                               │▓▓▓┃      ┃ How to load fonts to Windows:                                                             │▓▓▓┃
-									┃ 1.Drag-drop font files onto the icon of this application.                   │▓▓▓┃      ┃ 1.Drag-drop font files onto the icon of this application.                                 │▓▓▓┃
-									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▓▓▓┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then    │▓▓▓┃
-									┃  view, then click "Load" button.                                            │▓▓▓┃      ┃  click "Load" button.                                                                     │▓▓▓┃
-									┃                                                                             ├───┨      ┃                                                                                           ├───┨
-									┃ How to unload fonts from Windows:                                           │   ┃      ┃ How to unload fonts from Windows:                                                         │   ┃
-									┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.│   ┃
-									┃ upper-right cornor.                                                         │   ┃      ┃                                                                                           │   ┃
-									┃                                                                             │   ┃      ┃ How to load fonts to process:                                                             │   ┃
-									┃ How to load fonts to process:                                               │   ┃      ┃ 1.Click "Click to select process", select a process.                                      │   ┃
-									┃ 1.Click "Click to select process", select a process.                        │   ┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then    │   ┃
-									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list ├───┨      ┃  click "Load" button.                                                                     ├───┨
-									┃ view, then click "Load" button.                                             │ ↓ ┃      ┃                                                                                           │ ↓ ┃
-									┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛      ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
+									┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓      ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+									┃FontLoaderEx                                                          ┃_  ┃ □ ┃ x ┃      ┃FontLoaderEx                                                                        ┃_  ┃ □ ┃ x ┃
+									┠────────┬────────┬────────┬────────┬──────────────────────────────────┸┬──┸───┸──┬┨      ┠────────┬────────┬────────┬────────┬───────────────────────────────────┬─────────┬──┸───┸───┸───┨
+									┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     │┃      ┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     │              ┃
+									┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┘┃      ┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┘              ┃
+									┃        │        │        │        │     Select Process     │  □ Minimize to tray ┃      ┃        │        │        │        │     Select Process     │  □ Minimize to tray               ┃
+									┠────────┴────────┴────────┴────────┴────────────────────────┴──────┬──────────────┨      ┠────────┴────────┴────────┴────────┴────────────────────────┴────────────────────┬──────────────┨
+									┃ Font Name                                                         │ State        ┃      ┃ Font Name                                                                       │ State        ┃
+									┠───────────────────────────────────────────────────────────────────┼──────────────┨      ┠─────────────────────────────────────────────────────────────────────────────────┼──────────────┨
+									┃                                                                   ┆              ┃      ┃                                                                                 ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┃                                                                   ┆              ┃      ┃                                                                                 ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┃                                                                   ┆              ┃      ┃                                                                                 ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┃                                                                   ┆              ┃      ┃                                                                                 ┆              ┃
+									┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨      ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+									┠───────────────────────────────────────────────────────────────────┴──────────────┨  =>  ┠─────────────────────────────────────────────────────────────────────────────────┴──────────────┨
+									┠──────────────────────────────────────────────────────────────────────────────┬───┨      ┠────────────────────────────────────────────────────────────────────────────────────────────┬───┨
+									┃ Temporarily load fonts to Windows or specific process                        │ ↑ ┃      ┃ Temporarily load fonts to Windows or specific process                                      │ ↑ ┃
+									┃                                                                              ├───┨      ┃                                                                                            ├───┨
+									┃ How to load fonts to Windows:                                                │▓▓▓┃      ┃ How to load fonts to Windows:                                                              │▓▓▓┃
+									┃ 1.Drag-drop font files onto the icon of this application.                    │▓▓▓┃      ┃ 1.Drag-drop font files onto the icon of this application.                                  │▓▓▓┃
+									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │▓▓▓┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then     │▓▓▓┃
+									┃  view, then click "Load" button.                                             │▓▓▓┃      ┃  click "Load" button.                                                                      │▓▓▓┃
+									┃                                                                              ├───┨      ┃                                                                                            ├───┨
+									┃ How to unload fonts from Windows:                                            │   ┃      ┃ How to unload fonts from Windows:                                                          │   ┃
+									┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor. │   ┃
+									┃ upper-right cornor.                                                          │   ┃      ┃                                                                                            │   ┃
+									┃                                                                              │   ┃      ┃ How to load fonts to process:                                                              │   ┃
+									┃ How to load fonts to process:                                                │   ┃      ┃ 1.Click "Click to select process", select a process.                                       │   ┃
+									┃ 1.Click "Click to select process", select a process.                         │   ┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then     │   ┃
+									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨      ┃  click "Load" button.                                                                      ├───┨
+									┃ view, then click "Load" button.                                              │ ↓ ┃      ┃                                                                                            │ ↓ ┃
+									┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛      ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
 									*/
 
 									// Resize ListViewFontList
@@ -2519,48 +2705,48 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					case SIZE_MAXIMIZED:
 						{
 							/*
-							┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
-							┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃
-							┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨
-							┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃
-							┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃
-							┃        │        │        │        │     Select Process     │                    ┃
-							┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨
-							┃ Font Name                                                        │ State        ┃
-							┠──────────────────────────────────────────────────────────────────┼──────────────┨
-							┃                                                                  ┆              ┃
-							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-							┃                                                                  ┆              ┃
-							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-							┃                                                                  ┆              ┃
-							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-							┃                                                                  ┆              ┃
-							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-							┠──────────────────────────────────────────────────────────────────┴──────────────┨  =>
-							┠─────────────────────────────────────────────────────────────────────────────┬───┨
-							┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃
-							┃                                                                             ├───┨
-							┃ How to load fonts to Windows:                                               │▓▓▓┃
-							┃ 1.Drag-drop font files onto the icon of this application.                   │▓▓▓┃
-							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▓▓▓┃
-							┃  view, then click "Load" button.                                            │▓▓▓┃
-							┃                                                                             ├───┨
-							┃ How to unload fonts from Windows:                                           │   ┃
-							┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃
-							┃ upper-right cornor.                                                         │   ┃
-							┃                                                                             │   ┃
-							┃ How to load fonts to process:                                               │   ┃
-							┃ 1.Click "Click to select process", select a process.                        │   ┃
-							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list ├───┨
-							┃  view, then click "Load" button.                                            │ ↓ ┃
-							┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
+							┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+							┃FontLoaderEx                                                          ┃_  ┃ □ ┃ x ┃
+							┠────────┬────────┬────────┬────────┬──────────────────────────────────┸┬──┸───┸──┬┨
+							┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     │┃
+							┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┘┃
+							┃        │        │        │        │     Select Process     │  □ Minimize to tray ┃
+							┠────────┴────────┴────────┴────────┴────────────────────────┴──────┬──────────────┨
+							┃ Font Name                                                         │ State        ┃
+							┠───────────────────────────────────────────────────────────────────┼──────────────┨
+							┃                                                                   ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃                                                                   ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃                                                                   ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃                                                                   ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┠───────────────────────────────────────────────────────────────────┴──────────────┨
+							┠──────────────────────────────────────────────────────────────────────────────┬───┨
+							┃ Temporarily load fonts to Windows or specific process                        │ ↑ ┃
+							┃                                                                              ├───┨
+							┃ How to load fonts to Windows:                                                │▓▓▓┃
+							┃ 1.Drag-drop font files onto the icon of this application.                    │▓▓▓┃
+							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │▓▓▓┃
+							┃  view, then click "Load" button.                                             │▓▓▓┃
+							┃                                                                              ├───┨
+							┃ How to unload fonts from Windows:                                            │   ┃
+							┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃
+							┃ upper-right cornor.                                                          │   ┃
+							┃                                                                              │   ┃
+							┃ How to load fonts to process:                                                │   ┃
+							┃ 1.Click "Click to select process", select a process.                         │   ┃
+							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨
+							┃ view, then click "Load" button.                                              │ ↓ ┃
+							┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
 
 							┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
 							┃FontLoaderEx                                                                                                       ┃_  ┃ □ ┃ x ┃
-							┠────────┬────────┬────────┬────────┬───────────────────────────────────┬───────┬───────────────────────────────────┸───┸───┸───┨
-							┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │                                               ┃
-							┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘                                               ┃
-							┃        │        │        │        │     Select Process     │                                                                  ┃
+							┠────────┬────────┬────────┬────────┬───────────────────────────────────┬─────────┬─────────────────────────────────┸───┸───┸───┨
+							┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     │                                             ┃
+							┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┘                                             ┃
+							┃        │        │        │        │     Select Process     │  □ Minimize to tray                                              ┃
 							┠────────┴────────┴────────┴────────┴────────────────────────┴───────────────────────────────────────────────────┬──────────────┨
 							┃ Font Name                                                                                                      │ State        ┃
 							┠────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────┨
@@ -2650,10 +2836,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							/*
 							┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
 							┃FontLoaderEx                                                                                                       ┃_  ┃ □ ┃ x ┃
-							┠────────┬────────┬────────┬────────┬───────────────────────────────────┬───────┬───────────────────────────────────┸───┸───┸───┨
-							┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │                                               ┃
-							┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘                                               ┃
-							┃        │        │        │        │     Select Process     │                                                                  ┃
+							┠────────┬────────┬────────┬────────┬───────────────────────────────────┬─────────┬─────────────────────────────────┸───┸───┸───┨
+							┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     │                                             ┃
+							┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┘                                             ┃
+							┃        │        │        │        │     Select Process     │  □ Minimize to tray                                              ┃
 							┠────────┴────────┴────────┴────────┴────────────────────────┴───────────────────────────────────────────────────┬──────────────┨
 							┃ Font Name                                                                                                      │ State        ┃
 							┠────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼──────────────┨
@@ -2694,44 +2880,44 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							┃ "Broadcast WM_FONTCHANGE": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.│ ↓ ┃
 							┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
 
-							┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
-							┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃
-							┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸─┬─┨
-							┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   │ ┃
-							┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┘ ┃
-							┃        │        │        │        │     Select Process     │                    ┃
-							┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────┨
-							┃ Font Name                                                        │ State        ┃
-							┠──────────────────────────────────────────────────────────────────┼──────────────┨
-							┃                                                                  ┆              ┃
-							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-							┃                                                                  ┆              ┃
-							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-							┃                                                                  ┆              ┃
-							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-							┃                                                                  ┆              ┃
-							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-							┠──────────────────────────────────────────────────────────────────┴──────────────┨
-							┠─────────────────────────────────────────────────────────────────────────────┬───┨
-							┃ Temporarily load fonts to Windows or specific process                       │ ↑ ┃
-							┃                                                                             ├───┨
-							┃ How to load fonts to Windows:                                               │▓▓▓┃
-							┃ 1.Drag-drop font files onto the icon of this application.                   │▓▓▓┃
-							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list │▓▓▓┃
-							┃  view, then click "Load" button.                                            │▓▓▓┃
-							┃                                                                             ├───┨
-							┃ How to unload fonts from Windows:                                           │   ┃
-							┃ Select all fonts then click "Unload" or "Close" button or the X at the      │   ┃
-							┃ upper-right cornor.                                                         │   ┃
-							┃                                                                             │   ┃
-							┃ How to load fonts to process:                                               │   ┃
-							┃ 1.Click "Click to select process", select a process.                        │   ┃
-							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list ├───┨
-							┃  view, then click "Load" button.                                            │ ↓ ┃
-							┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
+							┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+							┃FontLoaderEx                                                          ┃_  ┃ □ ┃ x ┃
+							┠────────┬────────┬────────┬────────┬──────────────────────────────────┸┬──┸───┸──┬┨
+							┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     │┃
+							┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┘┃
+							┃        │        │        │        │     Select Process     │  □ Minimize to tray ┃
+							┠────────┴────────┴────────┴────────┴────────────────────────┴──────┬──────────────┨
+							┃ Font Name                                                         │ State        ┃
+							┠───────────────────────────────────────────────────────────────────┼──────────────┨
+							┃                                                                   ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃                                                                   ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃                                                                   ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┃                                                                   ┆              ┃
+							┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+							┠───────────────────────────────────────────────────────────────────┴──────────────┨
+							┠──────────────────────────────────────────────────────────────────────────────┬───┨
+							┃ Temporarily load fonts to Windows or specific process                        │ ↑ ┃
+							┃                                                                              ├───┨
+							┃ How to load fonts to Windows:                                                │▓▓▓┃
+							┃ 1.Drag-drop font files onto the icon of this application.                    │▓▓▓┃
+							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │▓▓▓┃
+							┃  view, then click "Load" button.                                             │▓▓▓┃
+							┃                                                                              ├───┨
+							┃ How to unload fonts from Windows:                                            │   ┃
+							┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃
+							┃ upper-right cornor.                                                          │   ┃
+							┃                                                                              │   ┃
+							┃ How to load fonts to process:                                                │   ┃
+							┃ 1.Click "Click to select process", select a process.                         │   ┃
+							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨
+							┃ view, then click "Load" button.                                              │ ↓ ┃
+							┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━┛
 							*/
 
-							// Calculate minimal height of ListViewFontList
+							// Calculate the minimal height of ListViewFontList
 							HWND hWndListViewFontList{ GetDlgItem(hWnd,(int)ID::ListViewFontList) };
 							RECT rcListViewFontList{}, rcListViewFontListClient{};
 							GetWindowRect(hWndListViewFontList, &rcListViewFontList);
@@ -2752,14 +2938,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							}
 							LONG cyListViewFontListMin{ rcListViewFontListItem.bottom + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
 
-							// Calculate minimal height of EditMessage
+							// Calculate the minimal height of EditMessage
 							HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
 							HDC hDCEditMessage{ GetDC(hWndEditMessage) };
-							HDC hDCEditMessageMemory{ CreateCompatibleDC(hDCEditMessage) };
-							SelectFont(hDCEditMessageMemory, GetWindowFont(hWndEditMessage));
+							SelectFont(hDCEditMessage, (HFONT)GetWindowFont(hWndEditMessage));
 							TEXTMETRIC tm{};
-							GetTextMetrics(hDCEditMessageMemory, &tm);
-							DeleteDC(hDCEditMessageMemory);
+							GetTextMetrics(hDCEditMessage, &tm);
+							ReleaseDC(hWndEditMessage, hDCEditMessage);
 							RECT rcEditMessage{}, rcEditMessageClient{};
 							GetWindowRect(hWndEditMessage, &rcEditMessage);
 							GetClientRect(hWndEditMessage, &rcEditMessageClient);
@@ -2871,23 +3056,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 		{
 			// Limit minimize window size
 			/*
-			┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
-			┃FontLoaderEx                                                       ┃_  ┃ □ ┃ x ┃
-			┠────────┬────────┬────────┬────────┬───────────────────────────────┸───╀───┸───╂───────
-			┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000   ┃       ↑
-			┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └───────┨       │ cyButtonOpen
-			┃        │        │        │        │     Select Process     │                  ┃       ↓
-			┠────────┴────────┴────────┴────────┴────────────────────────┴───┬──────────────╂───────
-			┃ Font Name                                                      │ State        ┃       ↑
-			┠────────────────────────────────────────────────────────────────┼──────────────┨       │ cyListViewFontListMin
-			┃                                                                ┆              ┃       ↓
-			┠────────────────────────────────────────────────────────────────┴──────────────╂───────
-			┠───────────────────────────────────────────────────────────────────────────┬───╂───────
-			┃ Temporarily load fonts to Windows or specific process                     ├───┨       } cyEditMessagemin
-			┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━╉───────
-			│                              rcEditTimeout.right                              │
-			│←─────────────────────────────────────────────────────────────────────────────→│
-			│                                                                               │
+			┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+			┃FontLoaderEx                                                         ┃_  ┃ □ ┃ x ┃
+			┠────────┬────────┬────────┬────────┬─────────────────────────────────┸─┬─┸───┸───╂───────
+			┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     ┃       ↑
+			┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┨       │ cyButtonOpen
+			┃        │        │        │        │     Select Process     │  □ Minimize to tray┃       ↓
+			┠────────┴────────┴────────┴────────┴────────────────────────┴─────┬──────────────╂───────
+			┃ Font Name                                                        │ State        ┃       ↑
+			┠──────────────────────────────────────────────────────────────────┼──────────────┨       │ cyListViewFontListMin
+			┃                                                                  ┆              ┃       ↓
+			┠──────────────────────────────────────────────────────────────────┴──────────────╂───────
+			┠─────────────────────────────────────────────────────────────────────────────┬───╂───────
+			┃ Temporarily load fonts to Windows or specific process                       ├───┨       } cyEditMessagemin
+			┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┷━━━╉───────
+			│                               rcEditTimeout.right                               │
+			│←───────────────────────────────────────────────────────────────────────────────→│
+			│                                                                                 │
 			*/
 
 			// Get ButtonOpen window rcangle
@@ -2923,11 +3108,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			// Calculate the minimal height of Editmessage
 			HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
 			HDC hDCEditMessage{ GetDC(hWndEditMessage) };
-			HDC hDCEditMessageMemory{ CreateCompatibleDC(hDCEditMessage) };
-			SelectFont(hDCEditMessageMemory, GetWindowFont(hWndEditMessage));
+			SelectFont(hDCEditMessage, (HFONT)GetWindowFont(hWndEditMessage));
 			TEXTMETRIC tm{};
-			GetTextMetrics(hDCEditMessageMemory, &tm);
-			DeleteDC(hDCEditMessageMemory);
+			GetTextMetrics(hDCEditMessage, &tm);
+			ReleaseDC(hWndEditMessage, hDCEditMessage);
 			RECT rcEditMessage{}, rcEditMessageClient{};
 			GetWindowRect(hWndEditMessage, &rcEditMessage);
 			GetClientRect(hWndEditMessage, &rcEditMessageClient);
@@ -2938,23 +3122,182 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			GetWindowRect(GetDlgItem(hWnd, (int)ID::EditTimeout), &rcEditTimeout);
 			MapWindowRect(HWND_DESKTOP, hWnd, &rcEditTimeout);
 
-			// Calculate minimal window size
+			// Calculate the minimal window size
 			RECT rcMainMin{ 0, 0, rcEditTimeout.right, (rcButtonOpen.bottom - rcButtonOpen.top) + cyListViewFontListMin + (rcSplitter.bottom - rcSplitter.top) + cyEditMessageMin };
 			AdjustWindowRect(&rcMainMin, (DWORD)GetWindowLongPtr(hWnd, GWL_STYLE), FALSE);
 			LPMINMAXINFO lpmmi{ (LPMINMAXINFO)lParam };
 			((LPMINMAXINFO)lParam)->ptMinTrackSize = { rcMainMin.right - rcMainMin.left, rcMainMin.bottom - rcMainMin.top };
 		}
 		break;
-	case WM_CTLCOLORSTATIC:
+	case WM_CLOSE:
 		{
-			// Change the background color of ButtonBroadcastWM_FONTCHANGE, StaticTimeout and EditMessage to default window background color
-			// From https://social.msdn.microsoft.com/Forums/vstudio/en-US/7b6d1815-87e3-4f47-b5d5-fd4caa0e0a89/why-is-wmctlcolorstatic-sent-for-a-button-instead-of-wmctlcolorbtn?forum=vclanguage
-			// "WM_CTLCOLORSTATIC is sent by any control that displays text which would be displayed using the default dialog/window background color. 
-			// This includes check boxes, radio buttons, group boxes, static text, read-only or disabled edit controls, and disabled combo boxes (all styles)."
-			if (((HWND)lParam == GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE)) || ((HWND)lParam == GetDlgItem(hWnd, (int)ID::StaticTimeout)) || ((HWND)lParam == GetDlgItem(hWnd, (int)ID::EditMessage)))
+			// Do cleanup
+			HWND hWndEditMessage{ GetDlgItem(hWnd, (int)ID::EditMessage) };
+
+			std::wstringstream ssMessage{};
+			std::wstring strMessage{};
+			int cchMessageLength{};
+
+			// If loaded via proxy
+			if (ProxyProcessInfo.hProcess)
 			{
-				ret = (LRESULT)GetSysColorBrush(COLOR_WINDOW);
+				// Unload FontLoaderExInjectionDll(64).dll from target process via proxy process
+				COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::PULLDLL, 0, NULL };
+				FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
+				WaitForSingleObject(hEventProxyDllPullingFinished, INFINITE);
+				CloseHandle(hEventProxyDllPullingFinished);
+				switch (ProxyDllPullingResult)
+				{
+				case PROXYDLLPULL::SUCCESSFUL:
+					goto continue_69504405;
+				case PROXYDLLPULL::FAILED:
+					{
+						// Print message
+						ssMessage << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
+						strMessage = ssMessage.str();
+						cchMessageLength = Edit_GetTextLength(hWndEditMessage);
+						Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+						Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+
+						// Re-enable controls
+						EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), TRUE);
+						EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), TRUE);
+						EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+						EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonClose), TRUE);
+						EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonLoad), TRUE);
+						EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonUnload), TRUE);
+
+						// Update syatem tray icon tip
+						if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
+						{
+							NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
+							std::wstringstream ssTip{};
+							std::wstring strTip{};
+							std::size_t nLoadedFonts{};
+							for (const auto& i : FontList)
+							{
+								if (i.IsLoaded())
+								{
+									nLoadedFonts++;
+								}
+							}
+							ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
+							strTip = ssTip.str();
+							wcscpy_s(nid.szTip, strTip.c_str());
+							Shell_NotifyIcon(NIM_MODIFY, &nid);
+						}
+					}
+					goto break_69504405;
+				default:
+					break;
+				}
+			break_69504405:
+				break;
+			continue_69504405:
+
+				// Terminate watch thread
+				SetEvent(hEventTerminateWatchThread);
+				WaitForSingleObject(hThreadWatch, INFINITE);
+				CloseHandle(hEventTerminateWatchThread);
+				CloseHandle(hThreadWatch);
+
+				// Terminate message thread
+				PostMessage(hWndMessage, WM_CLOSE, 0, 0);
+				WaitForSingleObject(hThreadMessage, INFINITE);
+				DWORD dwMessageThreadExitCode{};
+				GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
+				if (dwMessageThreadExitCode)
+				{
+					std::wstringstream ssMessage{};
+					std::wstring strMessage{};
+					ssMessage << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".";
+					strMessage = ssMessage.str();
+					MessageBoxCentered(NULL, strMessage.c_str(), szAppName, MB_ICONERROR);
+				}
+				CloseHandle(hThreadMessage);
+
+				// Terminate proxy process
+				COPYDATASTRUCT cds2{ (ULONG_PTR)COPYDATA::TERMINATE, 0, NULL };
+				FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
+				WaitForSingleObject(ProxyProcessInfo.hProcess, INFINITE);
+				CloseHandle(ProxyProcessInfo.hProcess);
+				ProxyProcessInfo.hProcess = NULL;
+
+				// Close HANDLE to target process and duplicated handles
+				CloseHandle(TargetProcessInfo.hProcess);
+				TargetProcessInfo.hProcess = NULL;
+				CloseHandle(hProcessCurrentDuplicated);
+				CloseHandle(hProcessTargetDuplicated);
 			}
+			// Else DIY
+			else if (TargetProcessInfo.hProcess)
+			{
+				// Unload FontLoaderExInjectionDll(64).dll from target process
+				if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
+				{
+					// Print message
+					ssMessage << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
+					strMessage = ssMessage.str();
+					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
+					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+					Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+
+					// Re-enable controls
+					EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), TRUE);
+					EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), TRUE);
+					EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+					EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonClose), TRUE);
+					EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonLoad), TRUE);
+					EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonUnload), TRUE);
+
+					// Update syatem tray icon tip
+					if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
+					{
+						NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
+						std::wstringstream ssTip{};
+						std::wstring strTip{};
+						std::size_t nLoadedFonts{};
+						for (const auto& i : FontList)
+						{
+							if (i.IsLoaded())
+							{
+								nLoadedFonts++;
+							}
+						}
+						ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
+						strTip = ssTip.str();
+						wcscpy_s(nid.szTip, strTip.c_str());
+						Shell_NotifyIcon(NIM_MODIFY, &nid);
+					}
+					break;
+				}
+
+				// Terminate watch thread
+				SetEvent(hEventTerminateWatchThread);
+				WaitForSingleObject(hThreadWatch, INFINITE);
+				CloseHandle(hEventTerminateWatchThread);
+				CloseHandle(hThreadWatch);
+
+				// Close HANDLE to target process
+				CloseHandle(TargetProcessInfo.hProcess);
+				TargetProcessInfo.hProcess = NULL;
+			}
+
+			// Remove the icon from system tray
+			if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
+			{
+				NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWnd, 0 };
+				Shell_NotifyIcon(NIM_DELETE, &nid);
+			}
+
+			ret = DefWindowProc(hWnd, Message, wParam, lParam);
+		}
+		break;
+	case WM_DESTROY:
+		{
+			DeleteFont(hFontMain);
+
+			PostQuitMessage(0);
 		}
 		break;
 	default:
@@ -3050,17 +3393,12 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 	case WM_DROPFILES:
 		{
 			// Process drag-drop and open fonts
+			HWND hWndEditMessage{ GetDlgItem(GetParent(hWndListViewFontList), (int)ID::EditMessage) };
+
 			bool bIsFontListEmptyBefore{ FontList.empty() };
 
-			HWND hWndMain{ GetParent(hWndListViewFontList) };
-			HWND hWndEditMessage{ GetDlgItem(hWndMain, (int)ID::EditMessage) };
-
-			std::wstringstream ssMessage{};
-			std::wstring strMessage{};
-			int cchMessageLength{};
-
 			UINT nFileCount{ DragQueryFile((HDROP)wParam, 0xFFFFFFFF, NULL, 0) };
-			LVITEM lvi{ LVIF_TEXT, ListView_GetItemCount(hWndListViewFontList) };
+			FONTLISTCHANGEDSTRUCT flcs{ ListView_GetItemCount(hWndListViewFontList) };
 			for (UINT i = 0; i < nFileCount; i++)
 			{
 				WCHAR szFileName[MAX_PATH]{};
@@ -3069,26 +3407,13 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 				{
 					FontList.push_back(szFileName);
 
-					lvi.iSubItem = 0;
-					lvi.pszText = szFileName;
-					ListView_InsertItem(hWndListViewFontList, &lvi);
-					lvi.iSubItem = 1;
-					lvi.pszText = (LPWSTR)L"Not loaded";
-					ListView_SetItem(hWndListViewFontList, &lvi);
-					ListView_SetItemState(hWndListViewFontList, lvi.iItem, LVIS_SELECTED, LVIS_SELECTED);
-					lvi.iItem++;
+					flcs.lpszFontName = szFileName;
+					SendMessage(GetParent(hWndListViewFontList), (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::OPENED, (LPARAM)&flcs);
 
-					ssMessage << szFileName << L" opened\r\n";
-					strMessage = ssMessage.str();
-					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
-					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-					Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
-					ssMessage.str(L"");
+					flcs.iItem++;
 				}
 			}
-			ListView_EnsureVisible(hWndListViewFontList, lvi.iItem - 1, FALSE);
-
-			cchMessageLength = Edit_GetTextLength(hWndEditMessage);
+			int cchMessageLength{ Edit_GetTextLength(hWndEditMessage) };
 			Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 			Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 
@@ -3103,6 +3428,26 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_ENABLED);
 				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_ENABLED);
 				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_ENABLED);
+			}
+
+			// Update syatem tray icon tip
+			if (Button_GetCheck(GetDlgItem(GetParent(hWndListViewFontList), (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
+			{
+				NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), GetParent(hWndListViewFontList), 0, NIF_TIP | NIF_SHOWTIP };
+				std::wstringstream ssTip{};
+				std::wstring strTip{};
+				std::size_t nLoadedFonts{};
+				for (const auto& i : FontList)
+				{
+					if (i.IsLoaded())
+					{
+						nLoadedFonts++;
+					}
+				}
+				ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
+				strTip = ssTip.str();
+				wcscpy_s(nid.szTip, strTip.c_str());
+				Shell_NotifyIcon(NIM_MODIFY, &nid);
 			}
 		}
 		break;
@@ -3158,14 +3503,11 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 					if (idObject == OBJID_CLIENT && idChild == CHILDID_SELF)
 					{
 						// Test whether context menu is triggered by mouse or by keyboard
-						bool bIsContextMenuTiggeredByKeyboard{ false };
 						if (ptCursor.x == -1 && ptCursor.y == -1)
 						{
 							LRESULT lRet{ SendMessage(hWndOwner, EM_POSFROMCHAR, Edit_GetCaretIndex(hWndOwner), NULL) };
 							ptCursor = { LOWORD(lRet), HIWORD(lRet) };
 							ClientToScreen(hWndOwner, &ptCursor);
-
-							bIsContextMenuTiggeredByKeyboard = true;
 						}
 
 						// Test whether context menu pops up in the client area of EditMessage
@@ -3174,9 +3516,9 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 						MapWindowRect(hWndOwner, HWND_DESKTOP, &rcEditMessageClient);
 						if (PtInRect(&rcEditMessageClient, ptCursor))
 						{
-							HMENU hMenuContextEdit{ (HMENU)SendMessage(hWnd, MN_GETHMENU, NULL, NULL) };
+							HMENU hMenuContextEdit{ (HMENU)SendMessage(hWnd, MN_GETHMENU, 0, 0) };
 
-							// Menu Item identifiers in Edit control context menu is the same as corresponding Windows messages
+							// Menu item identifiers in Edit control context menu is the same as corresponding Windows messages
 							DeleteMenu(hMenuContextEdit, WM_UNDO, MF_BYCOMMAND);	// Undo
 							DeleteMenu(hMenuContextEdit, WM_CUT, MF_BYCOMMAND);		// Cut
 							DeleteMenu(hMenuContextEdit, WM_PASTE, MF_BYCOMMAND);	// Paste
@@ -3188,48 +3530,26 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 							GetWindowRect(hWnd, &rcContextMenu);
 							MONITORINFO mi{ sizeof(MONITORINFO) };
 							GetMonitorInfo(MonitorFromPoint(ptCursor, MONITOR_DEFAULTTONEAREST), &mi);
-							int xPosContextMenu{}, yPosContextMenu{ ptCursor.y }, cxContextMenu{ rcContextMenu.right - rcContextMenu.left }, cyContextMenu{ rcContextMenu.bottom - rcContextMenu.top };
-							if (bIsContextMenuTiggeredByKeyboard)
+							SIZE ContextMenuSize{ rcContextMenu.right - rcContextMenu.left, rcContextMenu.bottom - rcContextMenu.top };
+							UINT uFlags{ TPM_WORKAREA };
+							if (ptCursor.y > mi.rcWork.bottom - ContextMenuSize.cy)
 							{
-								if (yPosContextMenu > mi.rcWork.bottom - cyContextMenu)
-								{
-									yPosContextMenu -= cyContextMenu;
-								}
-								if (GetSystemMetrics(SM_MENUDROPALIGNMENT))
-								{
-									if (ptCursor.x - mi.rcWork.left < cxContextMenu)
-									{
-										xPosContextMenu = mi.rcWork.left;
-									}
-									else
-									{
-										xPosContextMenu = ptCursor.x - cxContextMenu;
-									}
-								}
-								else
-								{
-									if (mi.rcWork.right - ptCursor.x < cxContextMenu)
-									{
-										xPosContextMenu = mi.rcWork.right - cxContextMenu;
-									}
-									else
-									{
-										xPosContextMenu = ptCursor.x;
-									}
-								}
+								uFlags |= TPM_BOTTOMALIGN;
 							}
 							else
 							{
-								xPosContextMenu = rcContextMenu.left;
-								if (yPosContextMenu > rcContextMenu.bottom)
-								{
-									if (mi.rcWork.bottom - yPosContextMenu < cyContextMenu)
-									{
-										yPosContextMenu -= cyContextMenu;
-									}
-								}
+								uFlags |= TPM_TOPALIGN;
 							}
-							MoveWindow(hWnd, xPosContextMenu, yPosContextMenu, cxContextMenu, cyContextMenu, FALSE);
+							if (GetSystemMetrics(SM_MENUDROPALIGNMENT))
+							{
+								uFlags |= TPM_RIGHTALIGN;
+							}
+							else
+							{
+								uFlags |= TPM_LEFTALIGN;
+							}
+							CalculatePopupWindowPosition(&ptCursor, &ContextMenuSize, uFlags, NULL, &rcContextMenu);
+							MoveWindow(hWnd, rcContextMenu.left, rcContextMenu.top, ContextMenuSize.cx, ContextMenuSize.cy, FALSE);
 						}
 					}
 				},
@@ -3474,7 +3794,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM
 					case NM_DBLCLK:
 						{
 							// Simulate clicking "OK" button
-							SendMessage(GetDlgItem(hWndDialog, IDOK), BM_CLICK, NULL, NULL);
+							SendMessage(GetDlgItem(hWndDialog, IDOK), BM_CLICK, 0, 0);
 
 							ret = (INT_PTR)TRUE;
 						}
@@ -3556,7 +3876,7 @@ bool EnableDebugPrivilege()
 		}
 
 		TOKEN_PRIVILEGES tp{ 1 , {luid, SE_PRIVILEGE_ENABLED} };
-		if (!AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(tp), NULL, NULL))
+		if (!AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(tp), 0, 0))
 		{
 			CloseHandle(hToken);
 
