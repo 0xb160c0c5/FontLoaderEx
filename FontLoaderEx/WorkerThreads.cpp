@@ -293,7 +293,7 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 		WaitForSingleObject(hEventWorkerThreadReadyToTerminate, INFINITE);
 	}
 
-	PostMessage(hWndMain, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, MAKEWPARAM((WPARAM)WATCHTHREADTERMINATED::TARGET, TERMINATION::TARGET), (LPARAM)bIsWorkerThreadRunning);
+	SendMessage(hWndMain, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, MAKEWPARAM(WATCHTHREADTERMINATED::TARGET, TERMINATION::TARGET), (LPARAM)bIsWorkerThreadRunning);
 
 	if (bIsWorkerThreadRunning)
 	{
@@ -338,7 +338,7 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 		WaitForSingleObject(hEventWorkerThreadReadyToTerminate, INFINITE);
 	}
 
-	PostMessage(hWndMain, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, MAKEWPARAM((WPARAM)WATCHTHREADTERMINATED::PROXY, t), (LPARAM)bIsWorkerThreadRunning);
+	SendMessage(hWndMain, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, MAKEWPARAM(WATCHTHREADTERMINATED::PROXY, t), (LPARAM)bIsWorkerThreadRunning);
 
 	if (bIsWorkerThreadRunning)
 	{

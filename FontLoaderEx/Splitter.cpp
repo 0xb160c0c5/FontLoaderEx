@@ -2,7 +2,7 @@
 #include <windowsx.h>
 #include "Splitter.h"
 
-LRESULT CALLBACK SplitterProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LPARAM lParam);
 
 ATOM InitSplitter()
 {
@@ -11,19 +11,25 @@ ATOM InitSplitter()
 	return RegisterClass(&wc);
 }
 
-LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LPARAM lParam)
 {
 	LRESULT ret{};
 
-	switch (Msg)
+	static HPEN hPenSplitter{};
+
+	switch (Message)
 	{
+	case WM_CREATE:
+		{
+			hPenSplitter = CreatePen(PS_SOLID, 0, (COLORREF)GetSysColor(COLOR_GRAYTEXT));
+		}
+		break;
 	case WM_PAINT:
 		{
 			// Draw a horizontal line in the middle
 			PAINTSTRUCT ps{};
 			HDC hDCSplitter{ BeginPaint(hWndSplitter, &ps) };
 
-			HPEN hPenSplitter{ CreatePen(PS_SOLID, 0, (COLORREF)GetSysColor(COLOR_GRAYTEXT)) };
 			SelectPen(hDCSplitter, hPenSplitter);
 
 			RECT rcSplitterClient{};
@@ -31,14 +37,12 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM
 			MoveToEx(hDCSplitter, rcSplitterClient.left + (rcSplitterClient.bottom - rcSplitterClient.top) / 2, (rcSplitterClient.bottom - rcSplitterClient.top) / 2, NULL);
 			LineTo(hDCSplitter, (rcSplitterClient.right - rcSplitterClient.left) - (rcSplitterClient.bottom - rcSplitterClient.top) / 2, (rcSplitterClient.bottom - rcSplitterClient.top) / 2);
 
-			DeletePen(hPenSplitter);
-
 			EndPaint(hWndSplitter, &ps);
 		}
 		break;
 	case WM_LBUTTONDOWN:
 		{
-			// Capture mouse and send SPLITTERNOTIFICATION::DRAGBEGIN to parent window
+			// Capture mouse and send WM_NOTIFY with SPLITTERNOTIFICATION::DRAGBEGIN to parent window
 			SetCapture(hWndSplitter);
 
 			SPLITTERSTRUCT ss{ hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGBEGIN, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
@@ -47,7 +51,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM
 		break;
 	case WM_MOUSEMOVE:
 		{
-			// If holding left button, send SPLITTERNOTIFICATION::DRAGGING to parent window
+			// If left button is being hold, send WM_NOTIFY with SPLITTERNOTIFICATION::DRAGGING to parent window
 			if ((wParam == MK_LBUTTON))
 			{
 				SPLITTERSTRUCT ss{ hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGGING, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
@@ -57,16 +61,21 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Msg, WPARAM wParam, LPARAM
 		break;
 	case WM_LBUTTONUP:
 		{
-			// Release mouse and send SPLITTERNOTIFICATION::DRAGBEGIN to parent window
+			// Release mouse and send WM_NOTIFY with SPLITTERNOTIFICATION::DRAGBEGIN to parent window
 			ReleaseCapture();
 
 			SPLITTERSTRUCT ss{ hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGEND, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
 			SendMessage(GetParent(hWndSplitter), WM_NOTIFY, (WPARAM)GetDlgCtrlID(hWndSplitter), (LPARAM)&ss);
 		}
 		break;
+	case WM_DESTROY:
+		{
+			DeletePen(hPenSplitter);
+		}
+		break;
 	default:
 		{
-			ret = DefWindowProc(hWndSplitter, Msg, wParam, lParam);
+			ret = DefWindowProc(hWndSplitter, Message, wParam, lParam);
 		}
 		break;
 	}
