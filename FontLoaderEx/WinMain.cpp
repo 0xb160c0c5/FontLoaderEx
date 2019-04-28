@@ -482,10 +482,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 		// lParam = Whether worker thread is still running : bool
 	case USERMESSAGE::WATCHTHREADTERMINATED:
 		{
-			// Wait for watch thread to terminate
-			WaitForSingleObject(hThreadWatch, INFINITE);
-			CloseHandle(hThreadWatch);
-
 			// Disable controls
 			if (!lParam)
 			{
