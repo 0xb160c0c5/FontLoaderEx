@@ -51,6 +51,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	if (!IsWindows7OrGreater())
 	{
 		MessageBox(NULL, L"Windows 7 or higher required.", szAppName, MB_ICONWARNING);
+
 		return 0;
 	}
 
@@ -136,7 +137,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	hIconApplication = LoadIcon(NULL, IDI_APPLICATION);
 
 	// Create window
-	WNDCLASS wc{ CS_HREDRAW | CS_VREDRAW, WndProc, 0, 0, hInstance, hIconApplication, LoadCursor(NULL, IDC_ARROW), GetSysColorBrush(COLOR_WINDOW), NULL, szAppName };
+	WNDCLASS wc{ 0, WndProc, 0, 0, hInstance, hIconApplication, LoadCursor(NULL, IDC_ARROW), GetSysColorBrush(COLOR_WINDOW), NULL, szAppName };
 	if (!RegisterClass(&wc))
 	{
 		return -1;
@@ -158,6 +159,8 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	{
 		if (bRet == -1)
 		{
+			CloseHandle(hMutexSingleton);
+
 			return (int)GetLastError();
 		}
 		else
@@ -269,19 +272,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
 				{
 					NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
-					std::wstringstream ssTip{};
-					std::wstring strTip{};
-					std::size_t nLoadedFonts{};
-					for (const auto& i : FontList)
-					{
-						if (i.IsLoaded())
-						{
-							nLoadedFonts++;
-						}
-					}
-					ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
-					strTip = ssTip.str();
-					wcscpy_s(nid.szTip, strTip.c_str());
+					wcscpy_s(nid.szTip, strFontInfo.c_str());
 					Shell_NotifyIcon(NIM_MODIFY, &nid);
 				}
 			}
@@ -300,6 +291,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					{
 					case IDYES:
 						{
+							// Do cleanup regardless of loaded fonts
 							PostMessage(hWnd, WM_CLOSE, 0, 0);
 						}
 						break;
@@ -336,19 +328,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
 							{
 								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
-								std::wstringstream ssTip{};
-								std::wstring strTip{};
-								std::size_t nLoadedFonts{};
-								for (const auto& i : FontList)
-								{
-									if (i.IsLoaded())
-									{
-										nLoadedFonts++;
-									}
-								}
-								ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
-								strTip = ssTip.str();
-								wcscpy_s(nid.szTip, strTip.c_str());
+								wcscpy_s(nid.szTip, strFontInfo.c_str());
 								Shell_NotifyIcon(NIM_MODIFY, &nid);
 							}
 						}
@@ -413,6 +393,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				if (i.IsLoaded())
 				{
 					bIsSomeFontsLoaded = true;
+
 					break;
 				}
 			}
@@ -459,19 +440,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
 			{
 				NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
-				std::wstringstream ssTip{};
-				std::wstring strTip{};
-				std::size_t nLoadedFonts{};
-				for (const auto& i : FontList)
-				{
-					if (i.IsLoaded())
-					{
-						nLoadedFonts++;
-					}
-				}
-				ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
-				strTip = ssTip.str();
-				wcscpy_s(nid.szTip, strTip.c_str());
+				wcscpy_s(nid.szTip, strFontInfo.c_str());
 				Shell_NotifyIcon(NIM_MODIFY, &nid);
 			}
 		}
@@ -588,12 +557,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			// Update syatem tray icon tip
 			if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
 			{
-				NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
-				std::wstringstream ssTip{};
-				std::wstring strTip{};
-				ssTip << L"0 font(s) opened, 0 font(s) loaded.";
-				strTip = ssTip.str();
-				wcscpy_s(nid.szTip, strTip.c_str());
+				NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP, 0, NULL, L"0 font(s) opened, 0 font(s) loaded." };
 				Shell_NotifyIcon(NIM_MODIFY, &nid);
 			}
 		}
@@ -795,7 +759,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 	static HFONT hFontMain{};
 
-	static LONG EditMessageTextMarginY{};
+	static LONG cyEditMessageTextMargin{};
 
 	static UINT_PTR SizingEdge{};
 	static RECT rcStatusBarFontInfoOld{};
@@ -982,7 +946,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				R"("Broadcast WM_FONTCHANGE": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.)""\r\n"
 				R"("Select process": Select a process to only load fonts to selected process.)""\r\n"
 				R"("Timeout": The time in milliseconds FontLoaderEx waits before reporting failure while injecting dll into target process via proxy process, the default value is 5000. Type 0, 4294967295 or clear content to wait infinitely.)""\r\n"
-				R"("Minimize to tray": If checked, click minimize or close button will minimize the window to system tray.\r\n)"
+				R"("Minimize to tray": If checked, click minimize or close button will minimize the window to system tray.)""\r\n"
 				R"("Font Name": Names of the fonts added to the list view.)""\r\n"
 				R"("State": State of the font. There are five states, "Not loaded", "Loaded", "Load failed", "Unloaded" and "Unload failed".)""\r\n"
 				"\r\n"
@@ -994,26 +958,50 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			RECT rcEditMessageClient{}, rcEditMessageFormatting{};
 			GetClientRect(hWndEditMessage, &rcEditMessageClient);
 			Edit_GetRect(hWndEditMessage, &rcEditMessageFormatting);
-			EditMessageTextMarginY = (rcEditMessageClient.bottom - rcEditMessageClient.top) - (rcEditMessageFormatting.bottom - rcEditMessageFormatting.top);
+			cyEditMessageTextMargin = (rcEditMessageClient.bottom - rcEditMessageClient.top) - (rcEditMessageFormatting.bottom - rcEditMessageFormatting.top);
 		}
 		break;
 	case WM_ACTIVATE:
 		{
-			SetFocus(GetDlgItem(hWnd, (int)ID::ButtonOpen));
-
 			// Process drag-drop font files onto the application icon stage II
 			if (bDragDropHasFonts)
 			{
+				// Disable controls
 				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonOpen), FALSE);
 				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE), FALSE);
 				EnableWindow(GetDlgItem(hWnd, (int)ID::ButtonSelectProcess), FALSE);
 				EnableWindow(GetDlgItem(hWnd, (int)ID::ListViewFontList), FALSE);
 				EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
+				// Update StatusBarFontInfo
+				std::wstringstream ssFontInfo{};
+				std::wstring strFontInfo{};
+				std::size_t nLoadedFonts{};
+				for (const auto& i : FontList)
+				{
+					if (i.IsLoaded())
+					{
+						nLoadedFonts++;
+					}
+				}
+				ssFontInfo << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
+				strFontInfo = ssFontInfo.str();
+				SetWindowText(GetDlgItem(hWnd, (int)ID::StatusBarFontInfo), strFontInfo.c_str());
+
+				// Update syatem tray icon tip
+				if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
+				{
+					NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
+					wcscpy_s(nid.szTip, strFontInfo.c_str());
+					Shell_NotifyIcon(NIM_MODIFY, &nid);
+				}
+
 				_beginthread(DragDropWorkerThreadProc, 0, nullptr);
 
 				bDragDropHasFonts = false;
 			}
+
+			SetFocus(GetDlgItem(hWnd, (int)ID::ButtonOpen));
 		}
 		break;
 	case WM_COMMAND:
@@ -1094,11 +1082,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											}
 										}
 										break;
-									case WM_DESTROY:
-										{
-											ret = (UINT_PTR)FALSE;
-										}
-										break;
 									default:
 										break;
 									}
@@ -1149,26 +1132,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							}
 							delete[] ofn.lpstrFile;
 
-							// Update syatem tray icon tip
-							if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
-							{
-								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
-								std::wstringstream ssTip{};
-								std::wstring strTip{};
-								std::size_t nLoadedFonts{};
-								for (const auto& i : FontList)
-								{
-									if (i.IsLoaded())
-									{
-										nLoadedFonts++;
-									}
-								}
-								ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
-								strTip = ssTip.str();
-								wcscpy_s(nid.szTip, strTip.c_str());
-								Shell_NotifyIcon(NIM_MODIFY, &nid);
-							}
-
 							// Update StatusBarFontInfo
 							std::wstringstream ssFontInfo{};
 							std::wstring strFontInfo{};
@@ -1183,6 +1146,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							ssFontInfo << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
 							strFontInfo = ssFontInfo.str();
 							SetWindowText(GetDlgItem(hWnd, (int)ID::StatusBarFontInfo), strFontInfo.c_str());
+
+							// Update syatem tray icon tip
+							if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
+							{
+								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
+								wcscpy_s(nid.szTip, strFontInfo.c_str());
+								Shell_NotifyIcon(NIM_MODIFY, &nid);
+							}
 						}
 						break;
 					default:
@@ -1210,7 +1181,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
 							// Update StatusBarFontInfo
-							SetWindowText(GetDlgItem(hWnd, (int)ID::StatusBarFontInfo), L"Unloading fonts...");
+							SetWindowText(GetDlgItem(hWnd, (int)ID::StatusBarFontInfo), L"Unloading and closing fonts...");
 
 							// Start worker thread
 							_beginthread(ButtonCloseWorkerThreadProc, 0, (void*)ID::ListViewFontList);
@@ -1289,8 +1260,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							// Show balloon tip if number is out of range
 							HWND hWndEditTimeout{ GetDlgItem(hWnd, (int)ID::EditTimeout) };
 
-							std::wstringstream ssMessage{};
-							std::wstring strMessage{};
+							std::wstringstream ssTipEdit{};
+							std::wstring strTipEdit{};
 
 							BOOL bIsConverted{};
 							DWORD dwTimeoutTemp{ (DWORD)GetDlgItemInt(hWnd, (int)ID::EditTimeout, &bIsConverted, FALSE) };
@@ -1298,9 +1269,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							{
 								if (Edit_GetTextLength(hWndEditTimeout) == 0)
 								{
-									ssMessage << L"Empty text will be treated as infinite.";
-									strMessage = ssMessage.str();
-									EDITBALLOONTIP ebt{ sizeof(EDITBALLOONTIP), L"Infinite", strMessage.c_str(), TTI_WARNING };
+									ssTipEdit << L"Empty text will be treated as infinite.";
+									strTipEdit = ssTipEdit.str();
+									EDITBALLOONTIP ebt{ sizeof(EDITBALLOONTIP), L"Infinite", strTipEdit.c_str(), TTI_INFO };
 									Edit_ShowBalloonTip(hWndEditTimeout, &ebt);
 
 									dwTimeout = INFINITE;
@@ -1318,11 +1289,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							}
 							else
 							{
-								if (dwTimeoutTemp == 0 || dwTimeoutTemp == 0xFFFFFFFF)
+								if (dwTimeoutTemp == 0 || dwTimeoutTemp == 4294967295)
 								{
-									ssMessage << dwTimeoutTemp << L" will be treated as infinite.";
-									strMessage = ssMessage.str();
-									EDITBALLOONTIP ebt{ sizeof(EDITBALLOONTIP), L"Infinite", strMessage.c_str(), TTI_WARNING };
+									ssTipEdit << dwTimeoutTemp << L" will be treated as infinite.";
+									strTipEdit = ssTipEdit.str();
+									EDITBALLOONTIP ebt{ sizeof(EDITBALLOONTIP), L"Infinite", strTipEdit.c_str(), TTI_INFO };
 									Edit_ShowBalloonTip(hWndEditTimeout, &ebt);
 									MessageBeep(0xFFFFFFFF);
 
@@ -1353,9 +1324,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 							static bool bIsSeDebugPrivilegeEnabled{ false };
 
-							static HANDLE hCurrentProcessDuplicated{};
-							static HANDLE hTargetProcessDuplicated{};
-
 							std::wstringstream ssMessage{};
 							std::wstring strMessage{};
 							int cchMessageLength{};
@@ -1368,6 +1336,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									ssMessage << L"Failed to enable " << SE_DEBUG_NAME << L" for " << szAppName << L".";
 									strMessage = ssMessage.str();
 									MessageBoxCentered(NULL, strMessage.c_str(), szAppName, MB_ICONERROR);
+
 									break;
 								}
 								bIsSeDebugPrivilegeEnabled = true;
@@ -1455,8 +1424,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									// Close HANDLE to target process, duplicated handles and synchronization objects
 									CloseHandle(TargetProcessInfo.hProcess);
 									TargetProcessInfo.hProcess = NULL;
-									CloseHandle(hCurrentProcessDuplicated);
-									CloseHandle(hTargetProcessDuplicated);
+									CloseHandle(hProcessCurrentDuplicated);
+									CloseHandle(hProcessTargetDuplicated);
 									CloseHandle(hEventProxyAddFontFinished);
 									CloseHandle(hEventProxyRemoveFontFinished);
 								}
@@ -1480,6 +1449,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 										Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+
 										break;
 									}
 
@@ -1503,16 +1473,51 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 									Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+
 									break;
 								}
 
-								// Determine current and target process type
-								BOOL bIsWOW64Current{}, bIsWOW64Target{};
-								IsWow64Process(GetCurrentProcess(), &bIsWOW64Current);
-								IsWow64Process(SelectedProcessInfo.hProcess, &bIsWOW64Target);
+								// Determine current and target process machine architecture
+								BOOL bIsCurrentProcessWOW64{}, bIsTargetProcessWOW64{}, bIsTargetProcessAArch64{};
+								// Get the function pointer to IsWow64Process2() for compatibility
+								typedef BOOL(__stdcall *pfnIsWow64Process2)(HANDLE hProcess, USHORT *pProcessMachine, USHORT *pNativeMachine);
+								pfnIsWow64Process2 IsWow64Process2_{ (pfnIsWow64Process2)GetProcAddress(GetModuleHandle(L"Kernel32.dll"), "IsWow64Process2") };
+								// For Win10 1709+, IsWow64Process2 exists
+								if (IsWow64Process2_)
+								{
+									USHORT usCurrentProcessMachineArchitecture{}, usTargetProcessMachineArchitecture{}, usNativeMachineArchitecture{};
+									IsWow64Process2_(GetCurrentProcess(), &usCurrentProcessMachineArchitecture, &usNativeMachineArchitecture);
+									IsWow64Process2_(SelectedProcessInfo.hProcess, &usTargetProcessMachineArchitecture, &usNativeMachineArchitecture);
+									if ((usNativeMachineArchitecture == IMAGE_FILE_MACHINE_ARM64) && (usTargetProcessMachineArchitecture == IMAGE_FILE_MACHINE_UNKNOWN))
+									{
+										bIsTargetProcessAArch64 = TRUE;
+									}
+									if ((usNativeMachineArchitecture == IMAGE_FILE_MACHINE_AMD64) && (usCurrentProcessMachineArchitecture == IMAGE_FILE_MACHINE_I386))
+									{
+										bIsCurrentProcessWOW64 = TRUE;
+									}
+									if ((usNativeMachineArchitecture == IMAGE_FILE_MACHINE_AMD64) && (usTargetProcessMachineArchitecture == IMAGE_FILE_MACHINE_I386))
+									{
+										bIsTargetProcessWOW64 = TRUE;
+									}
+								}
+								// Else call bIsWow64Process() instead
+								else
+								{
+									IsWow64Process(GetCurrentProcess(), &bIsCurrentProcessWOW64);
+									IsWow64Process(SelectedProcessInfo.hProcess, &bIsTargetProcessWOW64);
+								}
 
-								// If process types are different, launch FontLoaderExProxy.exe to inject dll
-								if (bIsWOW64Current != bIsWOW64Target)
+								// If target process is AArch64 architecture, pop up message box
+								if (bIsTargetProcessAArch64)
+								{
+									MessageBoxCentered(hWnd, L"Process of AArch64 architecture not supported.", szAppName, MB_ICONERROR);
+
+									break;
+								}
+
+								// If process architectures are different(one is WOW64 and another isn't), launch FontLoaderExProxy.exe to inject dll
+								if (bIsCurrentProcessWOW64 != bIsTargetProcessWOW64)
 								{
 									// Create synchronization objects
 									SECURITY_ATTRIBUTES sa{ sizeof(SECURITY_ATTRIBUTES), NULL, TRUE };
@@ -1562,10 +1567,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									// Launch proxy process, send HANDLE to current process and target process, HWND to message window, HANDLE to synchronization objects and timeout as arguments to proxy process
 									const WCHAR szProxyAppName[]{ L"FontLoaderExProxy.exe" };
 
-									DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(), &hCurrentProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
-									DuplicateHandle(GetCurrentProcess(), SelectedProcessInfo.hProcess, GetCurrentProcess(), &hTargetProcessDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
+									DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(), &hProcessCurrentDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
+									DuplicateHandle(GetCurrentProcess(), SelectedProcessInfo.hProcess, GetCurrentProcess(), &hProcessTargetDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS);
 									std::wstringstream ssParams{};
-									ssParams << (UINT_PTR)hCurrentProcessDuplicated << L" " << (UINT_PTR)hTargetProcessDuplicated << L" " << (UINT_PTR)hWndMessage << L" " << (UINT_PTR)hEventMessageThreadReady << L" " << (UINT_PTR)hEventProxyProcessReady << L" " << dwTimeout;
+									ssParams << (UINT_PTR)hProcessCurrentDuplicated << L" " << (UINT_PTR)hProcessTargetDuplicated << L" " << (UINT_PTR)hWndMessage << L" " << (UINT_PTR)hEventMessageThreadReady << L" " << (UINT_PTR)hEventProxyProcessReady << L" " << dwTimeout;
 									std::size_t cchParamLength{ ssParams.str().length() };
 									std::unique_ptr<WCHAR[]> lpszParams{ new WCHAR[cchParamLength + 1]{} };
 									wcsncpy_s(lpszParams.get(), cchParamLength + 1, ssParams.str().c_str(), cchParamLength);
@@ -1584,8 +1589,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									if (!CreateProcess(ssProxyPath.str().c_str(), lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piProxyProcess))
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
-										CloseHandle(hCurrentProcessDuplicated);
-										CloseHandle(hTargetProcessDuplicated);
+										CloseHandle(hProcessCurrentDuplicated);
+										CloseHandle(hProcessTargetDuplicated);
 
 										ssMessage << L"Failed to launch " << szProxyAppName << L"." << L"\r\n\r\n";
 										strMessage = ssMessage.str();
@@ -1615,6 +1620,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										CloseHandle(hEventProxyProcessHWNDRevieved);
 										CloseHandle(hEventProxyDllInjectionFinished);
 										CloseHandle(hEventProxyDllPullingFinished);
+
 										break;
 									}
 									CloseHandle(piProxyProcess.hThread);
@@ -1680,8 +1686,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											}
 											CloseHandle(hThreadMessage);
 
-											// Close HANDLE to selected process
+											// Close HANDLE to selected process and duplicated handles
 											CloseHandle(SelectedProcessInfo.hProcess);
+											CloseHandle(hProcessCurrentDuplicated);
+											CloseHandle(hProcessTargetDuplicated);
+											CloseHandle(hEventProxyDllPullingFinished);
 										}
 										goto break_90567013;
 									default:
@@ -1770,7 +1779,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 											Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
 
-											CloseHandle(piProxyProcess.hThread);
 											CloseHandle(piProxyProcess.hProcess);
 											piProxyProcess.hProcess = NULL;
 
@@ -1789,8 +1797,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											}
 											CloseHandle(hThreadMessage);
 
-											// Close HANDLE to selected process
+											// Close HANDLE to selected process and duplicated handles
 											CloseHandle(SelectedProcessInfo.hProcess);
+											CloseHandle(hProcessCurrentDuplicated);
+											CloseHandle(hProcessTargetDuplicated);
+											CloseHandle(hEventProxyDllPullingFinished);
 										}
 										break;
 									default:
@@ -1821,6 +1832,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										if (!lstrcmpi(me32.szModule, L"gdi32.dll"))
 										{
 											bIsGDI32Loaded = true;
+
 											break;
 										}
 									} while (Module32Next(hModuleSnapshot, &me32));
@@ -1834,6 +1846,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 										Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+
 										break;
 									}
 									CloseHandle(hModuleSnapshot);
@@ -1848,6 +1861,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 										Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+
 										break;
 									}
 									ssMessage << szInjectionDllName << L" successfully injected into target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L").\r\n\r\n";
@@ -1871,6 +1885,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 										Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+
 										break;
 									}
 									do
@@ -1878,6 +1893,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										if (!lstrcmpi(me322.szModule, szInjectionDllName))
 										{
 											lpModBaseAddr = me322.modBaseAddr;
+
 											break;
 										}
 									} while (Module32Next(hModuleSnapshot2, &me322));
@@ -1891,6 +1907,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 										Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+
 										break;
 									}
 									CloseHandle(hModuleSnapshot2);
@@ -2000,8 +2017,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									// Close HANDLE to target process, duplicated handles and synchronization objects
 									CloseHandle(TargetProcessInfo.hProcess);
 									TargetProcessInfo.hProcess = NULL;
-									CloseHandle(hCurrentProcessDuplicated);
-									CloseHandle(hTargetProcessDuplicated);
+									CloseHandle(hProcessCurrentDuplicated);
+									CloseHandle(hProcessTargetDuplicated);
 									CloseHandle(hEventProxyAddFontFinished);
 									CloseHandle(hEventProxyRemoveFontFinished);
 
@@ -2034,6 +2051,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 										Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+
 										break;
 									}
 
@@ -2121,6 +2139,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				// "Show window" menu item in hMenuContextTray
 			case ID_TRAYMENU_SHOWWINDOW:
 				{
+					// Show main window
 					if (IsWindowVisible(hWnd))
 					{
 						SetForegroundWindow(hWnd);
@@ -2134,6 +2153,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				// "Exit" menu item in hMenuContextTrat
 			case ID_TRAYMENU_EXIT:
 				{
+					// Show main window
 					if (IsWindowVisible(hWnd))
 					{
 						SetForegroundWindow(hWnd);
@@ -2143,6 +2163,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						ShowWindow(hWnd, SW_SHOW);
 					}
 
+					// Simulate clicking close button
 					Button_SetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray), BST_UNCHECKED);
 					PostMessage(hWnd, WM_SYSCOMMAND, (WPARAM)SC_CLOSE, 0);
 				}
@@ -2158,7 +2179,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			{
 			case SC_MINIMIZE:
 				{
-					// Minimize to system tray if ButtonMinimizeToTray is checked
+					// If ButtonMinimizeToTray is checked, minimize to system tray 
 					if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
 					{
 						NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWnd, 0, NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP, (UINT)USERMESSAGE::TRAYNOTIFYICON, hIconApplication };
@@ -2191,7 +2212,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				break;
 			case SC_CLOSE:
 				{
-					// Minimize to system tray if ButtonMinimizeToTray is checked
+					// If ButtonMinimizeToTray is checked, minimize to system tray
 					if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
 					{
 						NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWnd, 0, NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP, (UINT)USERMESSAGE::TRAYNOTIFYICON, hIconApplication };
@@ -2232,7 +2253,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
 							// Update StatusBarFontInfo
-							SetWindowText(GetDlgItem(hWnd, (int)ID::StatusBarFontInfo), L"Unloading fonts...");
+							SetWindowText(GetDlgItem(hWnd, (int)ID::StatusBarFontInfo), L"Unloading and closing fonts...");
 
 							// Start worker thread
 							_beginthread(CloseWorkerThreadProc, 0, nullptr);
@@ -2277,7 +2298,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				break;
 			case ID::Splitter:
 				{
-					static LONG CursorOffsetY{};
+					static LONG cyCursorOffset{};
 					static POINT ptSpliitterRange{};
 
 					switch ((SPLITTERNOTIFICATION)((LPNMHDR)lParam)->code)
@@ -2290,9 +2311,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							RECT rcSplitter{}, rcSplitterClient{};
 							GetWindowRect(hWndSplitter, &rcSplitter);
 							GetClientRect(hWndSplitter, &rcSplitterClient);
-							CursorOffsetY = ((LPSPLITTERSTRUCT)lParam)->ptCursor.y - rcSplitterClient.top;
+							cyCursorOffset = ((LPSPLITTERSTRUCT)lParam)->ptCursor.y - rcSplitterClient.top;
 							MapWindowRect(hWndSplitter, HWND_DESKTOP, &rcSplitterClient);
-							CursorOffsetY += rcSplitterClient.top - rcSplitter.top;
+							cyCursorOffset += rcSplitterClient.top - rcSplitter.top;
 
 							// Confine cursor to a specific rectangle
 							/*
@@ -2362,7 +2383,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							{
 								ListView_DeleteAllItems(hWndListViewFontList);
 							}
-							LONG cyListViewFontListMin{ rcListViewFontListItem.bottom + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
+							LONG cyListViewFontListMin{ (rcListViewFontListItem.bottom - rcListViewFontListClient.top) + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
 
 							// Calculate the minimal height of EditMessage
 							HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
@@ -2374,9 +2395,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							RECT rcEditMessage{}, rcEditMessageClient{};
 							GetWindowRect(hWndEditMessage, &rcEditMessage);
 							GetClientRect(hWndEditMessage, &rcEditMessageClient);
-							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rcEditMessage.bottom - rcEditMessage.top) + (rcEditMessageClient.top - rcEditMessageClient.bottom)) + EditMessageTextMarginY };
+							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rcEditMessage.bottom - rcEditMessage.top) + (rcEditMessageClient.top - rcEditMessageClient.bottom)) + cyEditMessageTextMargin };
 
-							// Calculate confine rectangle
+							// Calculate the Splitter range
 							RECT rcMainClient{}, rcButtonOpen{}, rcStatusBarFontInfo{};
 							GetClientRect(hWnd, &rcMainClient);
 							GetWindowRect(GetDlgItem(hWnd, (int)ID::ButtonOpen), &rcButtonOpen);
@@ -2397,7 +2418,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							RECT rcSplitter{};
 							GetWindowRect(hWndSplitter, &rcSplitter);
 							MapWindowRect(HWND_DESKTOP, hWnd, &rcSplitter);
-							int yPosSplitter{ ptCursor.y - CursorOffsetY };
+							int yPosSplitter{ ptCursor.y - cyCursorOffset };
 							if (yPosSplitter < ptSpliitterRange.x)
 							{
 								yPosSplitter = ptSpliitterRange.x;
@@ -2428,8 +2449,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						// End dragging Splitter
 					case SPLITTERNOTIFICATION::DRAGEND:
 						{
-							// Redraw controls
-							InvalidateRect(hWnd, NULL, FALSE);
+							// Redraw ListViewFontList, Splitter and EditMessage
+							InvalidateRect(GetDlgItem(hWnd, (int)ID::ListViewFontList), NULL, FALSE);
+							InvalidateRect(GetDlgItem(hWnd, (int)ID::EditMessage), NULL, FALSE);
 						}
 						break;
 					default:
@@ -2445,13 +2467,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 	case WM_CONTEXTMENU:
 		{
 			// Show context menu in ListViewFontList
-			if ((HWND)wParam == GetDlgItem(hWnd, (int)ID::ListViewFontList))
-			{
-				POINT ptMenu{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-				if (ptMenu.x == -1 && ptMenu.y == -1)
-				{
-					HWND hWndListViewFontList{ GetDlgItem(hWnd,(int)ID::ListViewFontList) };
+			HWND hWndListViewFontList{ GetDlgItem(hWnd,(int)ID::ListViewFontList) };
 
+			if ((HWND)wParam == hWndListViewFontList)
+			{
+				POINT ptContextMenu{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+				if (ptContextMenu.x == -1 && ptContextMenu.y == -1)
+				{
 					int iSelectionMark{ ListView_GetSelectionMark(hWndListViewFontList) };
 					if (iSelectionMark == -1)
 					{
@@ -2459,14 +2481,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						GetClientRect(hWndListViewFontList, &rcListViewFontListClient);
 						MapWindowRect(hWndListViewFontList, HWND_DESKTOP, &rcListViewFontListClient);
 						GetWindowRect(ListView_GetHeader(hWndListViewFontList), &rcHeaderListViewFontList);
-						ptMenu = { rcListViewFontListClient.left, rcHeaderListViewFontList.bottom };
+						ptContextMenu = { rcListViewFontListClient.left, rcHeaderListViewFontList.bottom };
 					}
 					else
 					{
-						POINT ptSelectionMark{};
-						ListView_GetItemPosition(hWndListViewFontList, iSelectionMark, &ptSelectionMark);
-						ClientToScreen(hWndListViewFontList, &ptSelectionMark);
-						ptMenu = ptSelectionMark;
+						ListView_EnsureVisible(hWndListViewFontList, iSelectionMark, FALSE);
+						ListView_GetItemPosition(hWndListViewFontList, iSelectionMark, &ptContextMenu);
+						ClientToScreen(hWndListViewFontList, &ptContextMenu);
 					}
 				}
 				UINT uFlags{};
@@ -2478,7 +2499,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				{
 					uFlags |= TPM_LEFTALIGN;
 				}
-				TrackPopupMenu(hMenuContextListViewFontList, uFlags | TPM_TOPALIGN | TPM_RIGHTBUTTON, ptMenu.x, ptMenu.y, 0, hWnd, NULL);
+				TrackPopupMenu(hMenuContextListViewFontList, uFlags | TPM_TOPALIGN | TPM_RIGHTBUTTON, ptContextMenu.x, ptContextMenu.y, 0, hWnd, NULL);
 			}
 			else
 			{
@@ -2488,13 +2509,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_CTLCOLORSTATIC:
 		{
-			// Change the background color of ButtonBroadcastWM_FONTCHANGE, StaticTimeout and EditMessage to default window background color
+			// Change the background color of ButtonBroadcastWM_FONTCHANGE, StaticTimeout, ButtonMinimizeToTray and EditMessage to default window background color
 			// From https://social.msdn.microsoft.com/Forums/vstudio/en-US/7b6d1815-87e3-4f47-b5d5-fd4caa0e0a89/why-is-wmctlcolorstatic-sent-for-a-button-instead-of-wmctlcolorbtn?forum=vclanguage
 			// "WM_CTLCOLORSTATIC is sent by any control that displays text which would be displayed using the default dialog/window background color. 
 			// This includes check boxes, radio buttons, group boxes, static text, read-only or disabled edit controls, and disabled combo boxes (all styles)."
-			if (((HWND)lParam == GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE)) || ((HWND)lParam == GetDlgItem(hWnd, (int)ID::StaticTimeout)) || ((HWND)lParam == GetDlgItem(hWnd, (int)ID::EditMessage)))
+			if (((HWND)lParam == GetDlgItem(hWnd, (int)ID::ButtonBroadcastWM_FONTCHANGE)) || ((HWND)lParam == GetDlgItem(hWnd, (int)ID::StaticTimeout)) || ((HWND)lParam == GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) || (HWND)lParam == GetDlgItem(hWnd, (int)ID::EditMessage))
 			{
-				ret = (LRESULT)GetSysColorBrush(COLOR_WINDOW);
+				ret = (LRESULT)GetSysColorBrush(COLOR_WINDOW);;
+			}
+			else
+			{
+				ret = (LRESULT)DefWindowProc(hWnd, Message, wParam, lParam);
 			}
 		}
 		break;
@@ -2509,7 +2534,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_SIZING:
 		{
-			// Get sizing edge
+			// Get the sizing edge
 			SizingEdge = wParam;
 		}
 		break;
@@ -2604,7 +2629,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									{
 										ListView_DeleteAllItems(hWndListViewFontList);
 									}
-									LONG cyListViewFontListMin{ rcListViewFontListItem.bottom + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
+									LONG cyListViewFontListMin{ (rcListViewFontListItem.bottom - rcListViewFontListClient.top) + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
 
 									// Resize ListViewFontList
 									RECT rcButtonOpen{}, rcSplitter{}, rcEditMessage{};
@@ -2716,7 +2741,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									RECT rcEditMessage{}, rcEditMessageClient{};
 									GetWindowRect(hWndEditMessage, &rcEditMessage);
 									GetClientRect(hWndEditMessage, &rcEditMessageClient);
-									LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rcEditMessage.bottom - rcEditMessage.top) + (rcEditMessageClient.top - rcEditMessageClient.bottom)) + EditMessageTextMarginY };
+									LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rcEditMessage.bottom - rcEditMessage.top) + (rcEditMessageClient.top - rcEditMessageClient.bottom)) + cyEditMessageTextMargin };
 
 									// Resize EditMessage
 									bool bIsEditMessageMinimized{ false };
@@ -3097,7 +3122,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							{
 								ListView_DeleteAllItems(hWndListViewFontList);
 							}
-							LONG cyListViewFontListMin{ rcListViewFontListItem.bottom + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
+							LONG cyListViewFontListMin{ (rcListViewFontListItem.bottom - rcListViewFontListClient.top) + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
 
 							// Calculate the minimal height of EditMessage
 							HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
@@ -3109,7 +3134,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							RECT rcEditMessage{}, rcEditMessageClient{};
 							GetWindowRect(hWndEditMessage, &rcEditMessage);
 							GetClientRect(hWndEditMessage, &rcEditMessageClient);
-							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rcEditMessage.bottom - rcEditMessage.top) + (rcEditMessageClient.top - rcEditMessageClient.bottom)) + EditMessageTextMarginY };
+							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rcEditMessage.bottom - rcEditMessage.top) + (rcEditMessageClient.top - rcEditMessageClient.bottom)) + cyEditMessageTextMargin };
 
 							// Calculate new position of splitter
 							HWND hWndSplitter{ GetDlgItem(hWnd, (int)ID::Splitter) };
@@ -3209,7 +3234,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			}
 
 			// Redraw controls
-			InvalidateRect(hWnd, NULL, TRUE);
+			InvalidateRect(hWnd, NULL, FALSE);
 		}
 		break;
 	case WM_GETMINMAXINFO:
@@ -3265,7 +3290,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			{
 				ListView_DeleteAllItems(hWndListViewFontList);
 			}
-			LONG cyListViewFontListMin{ rcListViewFontListItem.bottom + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
+			LONG cyListViewFontListMin{ (rcListViewFontListItem.bottom - rcListViewFontListClient.top) + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
 
 			// Calculate the minimal height of Editmessage
 			HWND hWndEditMessage{ GetDlgItem(hWnd,(int)ID::EditMessage) };
@@ -3277,12 +3302,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			RECT rcEditMessage{}, rcEditMessageClient{};
 			GetWindowRect(hWndEditMessage, &rcEditMessage);
 			GetClientRect(hWndEditMessage, &rcEditMessageClient);
-			LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rcEditMessage.bottom - rcEditMessage.top) + (rcEditMessageClient.top - rcEditMessageClient.bottom)) + EditMessageTextMarginY };
+			LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rcEditMessage.bottom - rcEditMessage.top) + (rcEditMessageClient.top - rcEditMessageClient.bottom)) + cyEditMessageTextMargin };
 
 			// Calculate the minimal window size
 			RECT rcMainMin{ 0, 0, rcEditTimeout.right, (rcButtonOpen.bottom - rcButtonOpen.top) + cyListViewFontListMin + (rcSplitter.bottom - rcSplitter.top) + cyEditMessageMin + (rcStatusBarFontInfo.bottom - rcStatusBarFontInfo.top) };
 			AdjustWindowRect(&rcMainMin, (DWORD)GetWindowLongPtr(hWnd, GWL_STYLE), FALSE);
-			LPMINMAXINFO lpmmi{ (LPMINMAXINFO)lParam };
 			((LPMINMAXINFO)lParam)->ptMinTrackSize = { rcMainMin.right - rcMainMin.left, rcMainMin.bottom - rcMainMin.top };
 		}
 		break;
@@ -3343,19 +3367,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
 						{
 							NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
-							std::wstringstream ssTip{};
-							std::wstring strTip{};
-							std::size_t nLoadedFonts{};
-							for (const auto& i : FontList)
-							{
-								if (i.IsLoaded())
-								{
-									nLoadedFonts++;
-								}
-							}
-							ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
-							strTip = ssTip.str();
-							wcscpy_s(nid.szTip, strTip.c_str());
+							wcscpy_s(nid.szTip, strFontInfo.c_str());
 							Shell_NotifyIcon(NIM_MODIFY, &nid);
 						}
 					}
@@ -3441,19 +3453,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					if (Button_GetCheck(GetDlgItem(hWnd, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
 					{
 						NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
-						std::wstringstream ssTip{};
-						std::wstring strTip{};
-						std::size_t nLoadedFonts{};
-						for (const auto& i : FontList)
-						{
-							if (i.IsLoaded())
-							{
-								nLoadedFonts++;
-							}
-						}
-						ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
-						strTip = ssTip.str();
-						wcscpy_s(nid.szTip, strTip.c_str());
+						wcscpy_s(nid.szTip, strFontInfo.c_str());
 						Shell_NotifyIcon(NIM_MODIFY, &nid);
 					}
 					break;
@@ -3520,6 +3520,7 @@ LRESULT CALLBACK EditTimeoutSubclassProc(HWND hWndEditTimeout, UINT Message, WPA
 						if (!std::iswdigit(i))
 						{
 							bIsNumeric = false;
+
 							break;
 						}
 					}
@@ -3580,7 +3581,8 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 	case WM_DROPFILES:
 		{
 			// Process drag-drop and open fonts
-			HWND hWndEditMessage{ GetDlgItem(GetParent(hWndListViewFontList), (int)ID::EditMessage) };
+			HWND hWndParent{ GetParent(hWndListViewFontList) };
+			HWND hWndEditMessage{ GetDlgItem(hWndParent, (int)ID::EditMessage) };
 
 			bool bIsFontListEmptyBefore{ FontList.empty() };
 
@@ -3617,26 +3619,6 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_ENABLED);
 			}
 
-			// Update syatem tray icon tip
-			if (Button_GetCheck(GetDlgItem(GetParent(hWndListViewFontList), (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
-			{
-				NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), GetParent(hWndListViewFontList), 0, NIF_TIP | NIF_SHOWTIP };
-				std::wstringstream ssTip{};
-				std::wstring strTip{};
-				std::size_t nLoadedFonts{};
-				for (const auto& i : FontList)
-				{
-					if (i.IsLoaded())
-					{
-						nLoadedFonts++;
-					}
-				}
-				ssTip << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
-				strTip = ssTip.str();
-				wcscpy_s(nid.szTip, strTip.c_str());
-				Shell_NotifyIcon(NIM_MODIFY, &nid);
-			}
-
 			// Update StatusBarFontInfo
 			std::wstringstream ssFontInfo{};
 			std::wstring strFontInfo{};
@@ -3650,12 +3632,19 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 			}
 			ssFontInfo << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
 			strFontInfo = ssFontInfo.str();
-			SetWindowText(GetDlgItem(GetParent(hWndListViewFontList), (int)ID::StatusBarFontInfo), strFontInfo.c_str());
+			SetWindowText(GetDlgItem(hWndParent, (int)ID::StatusBarFontInfo), strFontInfo.c_str());
+
+			// Update syatem tray icon tip
+			if (Button_GetCheck(GetDlgItem(hWndParent, (int)ID::ButtonMinimizeToTray)) == BST_CHECKED)
+			{
+				NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
+				wcscpy_s(nid.szTip, strFontInfo.c_str());
+				Shell_NotifyIcon(NIM_MODIFY, &nid);
+			}
 		}
 		break;
 	case WM_WINDOWPOSCHANGED:
 		{
-			LPWINDOWPOS lpwp{ (LPWINDOWPOS)lParam };
 			// Post USERMESSAGE::CHILDWINDOWPOSCHANGED to parent window
 			ret = DefSubclassProc(hWndListViewFontList, Message, wParam, lParam);
 
@@ -3729,13 +3718,13 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 							DeleteMenu(hMenuContextEdit, 0, MF_BYPOSITION);			// Seperator
 
 							// Adjust context menu position
-							RECT rcContextMenu{};
-							GetWindowRect(hWnd, &rcContextMenu);
+							RECT rcContextMenuEdit{};
+							GetWindowRect(hWnd, &rcContextMenuEdit);
 							MONITORINFO mi{ sizeof(MONITORINFO) };
 							GetMonitorInfo(MonitorFromPoint(ptCursor, MONITOR_DEFAULTTONEAREST), &mi);
-							SIZE ContextMenuSize{ rcContextMenu.right - rcContextMenu.left, rcContextMenu.bottom - rcContextMenu.top };
+							SIZE sizeContextMenu{ rcContextMenuEdit.right - rcContextMenuEdit.left, rcContextMenuEdit.bottom - rcContextMenuEdit.top };
 							UINT uFlags{ TPM_WORKAREA };
-							if (ptCursor.y > mi.rcWork.bottom - ContextMenuSize.cy)
+							if (ptCursor.y > mi.rcWork.bottom - sizeContextMenu.cy)
 							{
 								uFlags |= TPM_BOTTOMALIGN;
 							}
@@ -3751,8 +3740,8 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 							{
 								uFlags |= TPM_LEFTALIGN;
 							}
-							CalculatePopupWindowPosition(&ptCursor, &ContextMenuSize, uFlags, NULL, &rcContextMenu);
-							MoveWindow(hWnd, rcContextMenu.left, rcContextMenu.top, ContextMenuSize.cx, ContextMenuSize.cy, FALSE);
+							CalculatePopupWindowPosition(&ptCursor, &sizeContextMenu, uFlags, NULL, &rcContextMenuEdit);
+							MoveWindow(hWnd, rcContextMenuEdit.left, rcContextMenuEdit.top, sizeContextMenu.cx, sizeContextMenu.cy, FALSE);
 						}
 					}
 				},
@@ -3937,9 +3926,9 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM
 												}
 											});
 
-										// Add arrow to the header in ListViewProcessList
+										// Add an arrow to the header in ListViewProcessList
 										Header_GetItem(hWndHeaderListViewProcessList, 1, &hdi);
-										hdi.fmt = hdi.fmt & ~(HDF_SORTDOWN | HDF_SORTUP);
+										hdi.fmt = hdi.fmt & (~(HDF_SORTDOWN | HDF_SORTUP));
 										Header_SetItem(hWndHeaderListViewProcessList, 1, &hdi);
 										Header_GetItem(hWndHeaderListViewProcessList, 0, &hdi);
 										bOrderByProcessAscending ? hdi.fmt = (hdi.fmt & (~HDF_SORTDOWN)) | HDF_SORTUP : hdi.fmt = (hdi.fmt & (~HDF_SORTUP)) | HDF_SORTDOWN;
@@ -3961,9 +3950,9 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM
 												return value1.dwProcessID > value2.dwProcessID;
 											});
 
-										// Add arrow to the header in ListViewProcessList
+										// Add an arrow to the header in ListViewProcessList
 										Header_GetItem(hWndHeaderListViewProcessList, 0, &hdi);
-										hdi.fmt = hdi.fmt & ~(HDF_SORTDOWN | HDF_SORTUP);
+										hdi.fmt = hdi.fmt & (~(HDF_SORTDOWN | HDF_SORTUP));
 										Header_SetItem(hWndHeaderListViewProcessList, 0, &hdi);
 										Header_GetItem(hWndHeaderListViewProcessList, 1, &hdi);
 										bOrderByPIDAscending ? hdi.fmt = (hdi.fmt & (~HDF_SORTDOWN)) | HDF_SORTUP : hdi.fmt = (hdi.fmt & (~HDF_SORTUP)) | HDF_SORTDOWN;
@@ -4067,6 +4056,7 @@ bool EnableDebugPrivilege()
 		if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken))
 		{
 			bRet = false;
+
 			break;
 		}
 
@@ -4075,6 +4065,7 @@ bool EnableDebugPrivilege()
 			CloseHandle(hToken);
 
 			bRet = false;
+
 			break;
 		}
 
@@ -4084,6 +4075,7 @@ bool EnableDebugPrivilege()
 			CloseHandle(hToken);
 
 			bRet = false;
+
 			break;
 		}
 		CloseHandle(hToken);
@@ -4130,6 +4122,7 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 			CloseHandle(hModuleSnapshot);
 
 			bRet = false;
+
 			break;
 		}
 		do
@@ -4137,6 +4130,7 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 			if (!lstrcmpi(me32.szModule, szModuleName))
 			{
 				hModInjectionDll = me32.hModule;
+
 				break;
 			}
 		} while (Module32Next(hModuleSnapshot, &me32));
@@ -4145,6 +4139,7 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 			CloseHandle(hModuleSnapshot);
 
 			bRet = false;
+
 			break;
 		}
 		CloseHandle(hModuleSnapshot);
@@ -4176,6 +4171,7 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 			if (!lpRemoteBuffer)
 			{
 				dwRet = 0;
+
 				break;
 			}
 
@@ -4185,6 +4181,7 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 				VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
 				dwRet = 0;
+
 				break;
 			}
 		}
@@ -4196,6 +4193,7 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
 			dwRet = 0;
+
 			break;
 		}
 
@@ -4206,6 +4204,7 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
 			dwRet = 0;
+
 			break;
 		}
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
@@ -4217,6 +4216,7 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 			CloseHandle(hRemoteThread);
 
 			dwRet = 0;
+
 			break;
 		}
 		CloseHandle(hRemoteThread);
@@ -4258,6 +4258,7 @@ std::wstring GetUniqueName(LPCWSTR lpszString, Scope scope)
 			if (scope == Scope::User)
 			{
 				CloseHandle(hTokenProcess);
+
 				break;
 			}
 
@@ -4271,6 +4272,7 @@ std::wstring GetUniqueName(LPCWSTR lpszString, Scope scope)
 			if (scope == Scope::Session)
 			{
 				CloseHandle(hTokenProcess);
+
 				break;
 			}
 

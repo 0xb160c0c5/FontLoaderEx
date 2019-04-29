@@ -254,6 +254,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						PROXYDLLINJECTION i{ PROXYDLLINJECTION::FAILEDTOENUMERATEMODULES };
 						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(PROXYDLLINJECTION), (void*)&i };
 						FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
+
 						break;
 					}
 					do
@@ -261,6 +262,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						if (!lstrcmpi(me32.szModule, L"gdi32.dll"))
 						{
 							bIsGDI32Loaded = true;
+
 							break;
 						}
 					} while (Module32Next(hModuleSnapshot, &me32));
@@ -271,6 +273,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						PROXYDLLINJECTION i{ PROXYDLLINJECTION::GDI32NOTLOADED };
 						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(PROXYDLLINJECTION), (void*)&i };
 						FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
+
 						break;
 					}
 					CloseHandle(hModuleSnapshot);
@@ -281,6 +284,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						PROXYDLLINJECTION i{ PROXYDLLINJECTION::FAILED };
 						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(PROXYDLLINJECTION), (void*)&i };
 						FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
+
 						break;
 					}
 
@@ -295,6 +299,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						PROXYDLLINJECTION i{ PROXYDLLINJECTION::MODULENOTFOUND };
 						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(PROXYDLLINJECTION), (void*)&i };
 						FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
+
 						break;
 					}
 					do
@@ -302,6 +307,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						if (!lstrcmpi(me322.szModule, szInjectionDllName))
 						{
 							lpModBaseAddr = me322.modBaseAddr;
+
 							break;
 						}
 					} while (Module32Next(hModuleSnapshot2, &me322));
@@ -312,6 +318,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						PROXYDLLINJECTION i{ PROXYDLLINJECTION::MODULENOTFOUND };
 						COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::DLLINJECTIONFINISHED, sizeof(PROXYDLLINJECTION), (void*)&i };
 						FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);
+
 						break;
 					}
 					CloseHandle(hModuleSnapshot2);
@@ -422,6 +429,7 @@ bool EnableDebugPrivilege()
 		if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken))
 		{
 			bRet = false;
+
 			break;
 		}
 
@@ -430,6 +438,7 @@ bool EnableDebugPrivilege()
 			CloseHandle(hToken);
 
 			bRet = false;
+
 			break;
 		}
 
@@ -439,6 +448,7 @@ bool EnableDebugPrivilege()
 			CloseHandle(hToken);
 
 			bRet = false;
+
 			break;
 		}
 		CloseHandle(hToken);
@@ -485,6 +495,7 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 			CloseHandle(hModuleSnapshot);
 
 			bRet = false;
+
 			break;
 		}
 		do
@@ -492,6 +503,7 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 			if (!lstrcmpi(me32.szModule, szModuleName))
 			{
 				hModInjectionDll = me32.hModule;
+
 				break;
 			}
 		} while (Module32Next(hModuleSnapshot, &me32));
@@ -500,6 +512,7 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 			CloseHandle(hModuleSnapshot);
 
 			bRet = false;
+
 			break;
 		}
 		CloseHandle(hModuleSnapshot);
@@ -531,6 +544,7 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 			if (!lpRemoteBuffer)
 			{
 				dwRet = 0;
+
 				break;
 			}
 
@@ -540,6 +554,7 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 				VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
 				dwRet = 0;
+
 				break;
 			}
 		}
@@ -551,6 +566,7 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
 			dwRet = 0;
+
 			break;
 		}
 
@@ -561,6 +577,7 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
 			dwRet = 0;
+
 			break;
 		}
 		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
@@ -572,6 +589,7 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 			CloseHandle(hRemoteThread);
 
 			dwRet = 0;
+
 			break;
 		}
 		CloseHandle(hRemoteThread);

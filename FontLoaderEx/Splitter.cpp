@@ -6,7 +6,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 
 ATOM InitSplitter()
 {
-	WNDCLASS wc{ CS_HREDRAW | CS_VREDRAW, SplitterProc, 0, 0, (HINSTANCE)GetModuleHandle(NULL), NULL, LoadCursor(NULL, IDC_SIZENS), GetSysColorBrush(COLOR_BTNFACE), NULL, UC_SPLITTER };
+	WNDCLASS wc{ 0, SplitterProc, 0, 0, (HINSTANCE)GetModuleHandle(NULL), NULL, LoadCursor(NULL, IDC_SIZENS), GetSysColorBrush(COLOR_BTNFACE), NULL, UC_SPLITTER };
 
 	return RegisterClass(&wc);
 }
@@ -45,7 +45,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 			// Capture mouse and send WM_NOTIFY with SPLITTERNOTIFICATION::DRAGBEGIN to parent window
 			SetCapture(hWndSplitter);
 
-			SPLITTERSTRUCT ss{ hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGBEGIN, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
+			SPLITTERSTRUCT ss{ { hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGBEGIN }, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
 			SendMessage(GetParent(hWndSplitter), WM_NOTIFY, (WPARAM)GetDlgCtrlID(hWndSplitter), (LPARAM)&ss);
 		}
 		break;
@@ -54,7 +54,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 			// If left button is being hold, send WM_NOTIFY with SPLITTERNOTIFICATION::DRAGGING to parent window
 			if ((wParam == MK_LBUTTON))
 			{
-				SPLITTERSTRUCT ss{ hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGGING, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
+				SPLITTERSTRUCT ss{ { hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGGING }, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
 				SendMessage(GetParent(hWndSplitter), WM_NOTIFY, (WPARAM)GetDlgCtrlID(hWndSplitter), (LPARAM)&ss);
 			}
 		}
@@ -64,7 +64,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 			// Release mouse and send WM_NOTIFY with SPLITTERNOTIFICATION::DRAGBEGIN to parent window
 			ReleaseCapture();
 
-			SPLITTERSTRUCT ss{ hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGEND, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
+			SPLITTERSTRUCT ss{ { hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGEND }, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
 			SendMessage(GetParent(hWndSplitter), WM_NOTIFY, (WPARAM)GetDlgCtrlID(hWndSplitter), (LPARAM)&ss);
 		}
 		break;
