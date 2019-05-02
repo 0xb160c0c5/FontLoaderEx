@@ -6,7 +6,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 
 ATOM InitSplitter()
 {
-	WNDCLASS wc{ 0, SplitterProc, 0, 0, (HINSTANCE)GetModuleHandle(NULL), NULL, LoadCursor(NULL, IDC_SIZENS), GetSysColorBrush(COLOR_BTNFACE), NULL, UC_SPLITTER };
+	WNDCLASS wc{ 0, SplitterProc, 0, 0, static_cast<HINSTANCE>(GetModuleHandle(NULL)), NULL, NULL, GetSysColorBrush(COLOR_BTNFACE), NULL, UC_SPLITTER };
 
 	return RegisterClass(&wc);
 }
@@ -15,13 +15,19 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 {
 	LRESULT ret{};
 
-	static HPEN hPenSplitter{};
+	static DWORD dwSplitterStyle;
+
+	static LONG cyCursorOffset{};
 
 	switch (Message)
 	{
 	case WM_CREATE:
 		{
-			hPenSplitter = CreatePen(PS_SOLID, 0, (COLORREF)GetSysColor(COLOR_GRAYTEXT));
+			dwSplitterStyle = static_cast<DWORD>(((LPCREATESTRUCT)lParam)->style);
+			if ((dwSplitterStyle & SPS_HORZ) && (dwSplitterStyle & SPS_VERT))
+			{
+				ret = static_cast<LRESULT>(-1);
+			}
 		}
 		break;
 	case WM_PAINT:
@@ -30,12 +36,21 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 			PAINTSTRUCT ps{};
 			HDC hDCSplitter{ BeginPaint(hWndSplitter, &ps) };
 
-			SelectPen(hDCSplitter, hPenSplitter);
-
 			RECT rcSplitterClient{};
 			GetClientRect(hWndSplitter, &rcSplitterClient);
-			MoveToEx(hDCSplitter, rcSplitterClient.left + (rcSplitterClient.bottom - rcSplitterClient.top) / 2, (rcSplitterClient.bottom - rcSplitterClient.top) / 2, NULL);
-			LineTo(hDCSplitter, (rcSplitterClient.right - rcSplitterClient.left) - (rcSplitterClient.bottom - rcSplitterClient.top) / 2, (rcSplitterClient.bottom - rcSplitterClient.top) / 2);
+			HPEN hPenSplitter{ CreatePen(PS_SOLID, (rcSplitterClient.bottom - rcSplitterClient.top) / 5, static_cast<COLORREF>(GetSysColor(COLOR_GRAYTEXT))) };
+			SelectPen(hDCSplitter, hPenSplitter);
+
+			if (dwSplitterStyle & SPS_HORZ)
+			{
+				MoveToEx(hDCSplitter, rcSplitterClient.left + (rcSplitterClient.bottom - rcSplitterClient.top) / 2, (rcSplitterClient.bottom - rcSplitterClient.top) / 2, NULL);
+				LineTo(hDCSplitter, (rcSplitterClient.right - rcSplitterClient.left) - (rcSplitterClient.bottom - rcSplitterClient.top) / 2, (rcSplitterClient.bottom - rcSplitterClient.top) / 2);
+			}
+			else if (dwSplitterStyle & SPS_VERT)
+			{
+				MoveToEx(hDCSplitter, rcSplitterClient.top + (rcSplitterClient.right - rcSplitterClient.left) / 2, (rcSplitterClient.right - rcSplitterClient.left) / 2, NULL);
+				LineTo(hDCSplitter, (rcSplitterClient.bottom - rcSplitterClient.top) - (rcSplitterClient.right - rcSplitterClient.left) / 2, (rcSplitterClient.right - rcSplitterClient.left) / 2);
+			}
 
 			EndPaint(hWndSplitter, &ps);
 		}
@@ -43,10 +58,28 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 	case WM_LBUTTONDOWN:
 		{
 			// Capture mouse and send WM_NOTIFY with SPLITTERNOTIFICATION::DRAGBEGIN to parent window
-			SetCapture(hWndSplitter);
+			if (!(dwSplitterStyle & SPS_NOCAPTURE))
+			{
+				SetCapture(hWndSplitter);
+			}
 
-			SPLITTERSTRUCT ss{ { hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGBEGIN }, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
-			SendMessage(GetParent(hWndSplitter), WM_NOTIFY, (WPARAM)GetDlgCtrlID(hWndSplitter), (LPARAM)&ss);
+			RECT rcSplitter{}, rcSplitterClient{};
+			GetWindowRect(hWndSplitter, &rcSplitter);
+			GetClientRect(hWndSplitter, &rcSplitterClient);
+			MapWindowRect(hWndSplitter, HWND_DESKTOP, &rcSplitterClient);
+			POINT ptCursor{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+			if (dwSplitterStyle & SPS_HORZ)
+			{
+				cyCursorOffset = ptCursor.y + (rcSplitterClient.top - rcSplitter.top);
+			}
+			else if (dwSplitterStyle & SPS_VERT)
+			{
+				cyCursorOffset = ptCursor.x + (rcSplitterClient.left - rcSplitter.left);
+			}
+			ClientToScreen(hWndSplitter, &ptCursor);
+			ScreenToClient(GetParent(hWndSplitter), &ptCursor);
+			SPLITTERSTRUCT ss{ { hWndSplitter, static_cast<UINT_PTR>(GetDlgCtrlID(hWndSplitter)), static_cast<UINT>(SPLITTERNOTIFICATION::DRAGBEGIN) }, ptCursor, cyCursorOffset };
+			SendMessage(GetParent(hWndSplitter), WM_NOTIFY, static_cast<WPARAM>(GetDlgCtrlID(hWndSplitter)), reinterpret_cast<LPARAM>(&ss));
 		}
 		break;
 	case WM_MOUSEMOVE:
@@ -54,23 +87,52 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 			// If left button is being hold, send WM_NOTIFY with SPLITTERNOTIFICATION::DRAGGING to parent window
 			if ((wParam == MK_LBUTTON))
 			{
-				SPLITTERSTRUCT ss{ { hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGGING }, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
-				SendMessage(GetParent(hWndSplitter), WM_NOTIFY, (WPARAM)GetDlgCtrlID(hWndSplitter), (LPARAM)&ss);
+				POINT ptCursor{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+				ClientToScreen(hWndSplitter, &ptCursor);
+				ScreenToClient(GetParent(hWndSplitter), &ptCursor);
+				SPLITTERSTRUCT ss{ { hWndSplitter, static_cast<UINT_PTR>(GetDlgCtrlID(hWndSplitter)), (UINT)SPLITTERNOTIFICATION::DRAGGING }, ptCursor, cyCursorOffset };
+				SendMessage(GetParent(hWndSplitter), WM_NOTIFY, static_cast<WPARAM>(GetDlgCtrlID(hWndSplitter)), reinterpret_cast<LPARAM>(&ss));
 			}
 		}
 		break;
 	case WM_LBUTTONUP:
 		{
 			// Release mouse and send WM_NOTIFY with SPLITTERNOTIFICATION::DRAGBEGIN to parent window
-			ReleaseCapture();
+			if (!(dwSplitterStyle & SPS_NOCAPTURE))
+			{
+				ReleaseCapture();
+			}
 
-			SPLITTERSTRUCT ss{ { hWndSplitter, (UINT_PTR)GetDlgCtrlID(hWndSplitter), (UINT)SPLITTERNOTIFICATION::DRAGEND }, { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) } };
-			SendMessage(GetParent(hWndSplitter), WM_NOTIFY, (WPARAM)GetDlgCtrlID(hWndSplitter), (LPARAM)&ss);
+			POINT ptCursor{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+			ClientToScreen(hWndSplitter, &ptCursor);
+			ScreenToClient(GetParent(hWndSplitter), &ptCursor);
+			SPLITTERSTRUCT ss{ { hWndSplitter, static_cast<UINT_PTR>(GetDlgCtrlID(hWndSplitter)), (UINT)SPLITTERNOTIFICATION::DRAGEND }, ptCursor, cyCursorOffset };
+			SendMessage(GetParent(hWndSplitter), WM_NOTIFY, static_cast<WPARAM>(GetDlgCtrlID(hWndSplitter)), reinterpret_cast<LPARAM>(&ss));
 		}
 		break;
-	case WM_DESTROY:
+	case WM_SETCURSOR:
 		{
-			DeletePen(hPenSplitter);
+			if (reinterpret_cast<HWND>(wParam) == hWndSplitter)
+			{
+				if (dwSplitterStyle & SPS_HORZ)
+				{
+					SetCursor(LoadCursor(NULL, IDC_SIZENS));
+				}
+				else if (dwSplitterStyle & SPS_VERT)
+				{
+					SetCursor(LoadCursor(NULL, IDC_SIZEWE));
+				}
+
+				ret = static_cast<LRESULT>(TRUE);
+			}
+		}
+		break;
+	case WM_STYLECHANGED:
+		{
+			if (wParam == GWL_STYLE)
+			{
+				dwSplitterStyle = reinterpret_cast<LPSTYLESTRUCT>(lParam)->styleNew;
+			}
 		}
 		break;
 	default:

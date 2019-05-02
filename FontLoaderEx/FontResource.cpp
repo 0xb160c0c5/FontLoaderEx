@@ -41,22 +41,21 @@ bool GlobalRemoveFontProc(const wchar_t* lpszFontName)
 }
 #endif // _DEBUG
 
-
 bool RemoteAddFontProc(const wchar_t* lpszFontName)
 {
-	return CallRemoteProc(TargetProcessInfo.hProcess, lpRemoteAddFontProcAddr, (void*)lpszFontName, (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), INFINITE);
+	return CallRemoteProc(TargetProcessInfo.hProcess, lpRemoteAddFontProcAddr, const_cast<wchar_t*>(lpszFontName), (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), INFINITE);
 }
 
 bool RemoteRemoveFontProc(const wchar_t* lpszFontName)
 {
-	return CallRemoteProc(TargetProcessInfo.hProcess, lpRemoteRemoveFontProcAddr, (void*)lpszFontName, (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), INFINITE);
+	return CallRemoteProc(TargetProcessInfo.hProcess, lpRemoteRemoveFontProcAddr, const_cast<wchar_t*>(lpszFontName), (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), INFINITE);
 }
 
 bool ProxyAddFontProc(const wchar_t* lpszFontName)
 {
 	bool bRet{};
 
-	COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::ADDFONT, (DWORD)((std::wcslen(lpszFontName) + 1) * sizeof(wchar_t)), (void*)lpszFontName };
+	COPYDATASTRUCT cds{ static_cast<ULONG_PTR>(COPYDATA::ADDFONT), static_cast<DWORD>((std::wcslen(lpszFontName) + 1) * sizeof(wchar_t)), const_cast<wchar_t*>(lpszFontName) };
 	FORWARD_WM_COPYDATA(hWndProxy, hWndMain, &cds, SendMessage);
 	WaitForSingleObject(hEventProxyAddFontFinished, INFINITE);
 	ResetEvent(hEventProxyAddFontFinished);
@@ -82,7 +81,7 @@ bool ProxyRemoveFontProc(const wchar_t* lpszFontName)
 {
 	bool bRet{};
 
-	COPYDATASTRUCT cds{ (ULONG_PTR)COPYDATA::REMOVEFONT, (DWORD)((std::wcslen(lpszFontName) + 1) * sizeof(wchar_t)), (void*)lpszFontName };
+	COPYDATASTRUCT cds{ static_cast<ULONG_PTR>(COPYDATA::REMOVEFONT), static_cast<DWORD>((std::wcslen(lpszFontName) + 1) * sizeof(wchar_t)), const_cast<wchar_t*>(lpszFontName) };
 	FORWARD_WM_COPYDATA(hWndProxy, hWndMain, &cds, SendMessage);
 	WaitForSingleObject(hEventProxyRemoveFontFinished, INFINITE);
 	ResetEvent(hEventProxyRemoveFontFinished);

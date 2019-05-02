@@ -18,21 +18,21 @@ void DragDropWorkerThreadProc(void* lpParameter)
 {
 	std::list<FontResource>::iterator iter{ FontList.begin() };
 	FONTLISTCHANGEDSTRUCT flcs{ 0, iter->GetFontName().c_str() };
-	for (flcs.iItem = 0; flcs.iItem < (int)FontList.size(); flcs.iItem++)
+	for (flcs.iItem = 0; flcs.iItem < static_cast<int>(FontList.size()); flcs.iItem++)
 	{
 		if (iter->Load())
 		{
-			SendMessage(hWndMain, (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::OPENED_LOADED, (LPARAM)&flcs);
+			SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED_LOADED), reinterpret_cast<LPARAM>(&flcs));
 		}
 		else
 		{
-			SendMessage(hWndMain, (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::OPENED_NOTLOADED, (LPARAM)&flcs);
+			SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED_NOTLOADED), reinterpret_cast<LPARAM>(&flcs));
 		}
 
 		iter++;
 	}
 
-	PostMessage(hWndMain, (UINT)USERMESSAGE::DRAGDROPWORKERTHREADTERMINATED, (WPARAM)false, 0);
+	PostMessage(hWndMain, static_cast<UINT>(USERMESSAGE::DRAGDROPWORKERTHREADTERMINATED), static_cast<WPARAM>(false), 0);
 }
 
 // Close worker thread
@@ -48,7 +48,7 @@ void CloseWorkerThreadProc(void* lpParameter)
 	FontList.reverse();
 	std::list<FontResource>::iterator iter{ FontList.begin() };
 	FONTLISTCHANGEDSTRUCT flcs{};
-	for (flcs.iItem = (int)FontList.size() - 1; flcs.iItem >= 0; flcs.iItem--)
+	for (flcs.iItem = static_cast<int>(FontList.size()) - 1; flcs.iItem >= 0; flcs.iItem--)
 	{
 		// If target process terminated, wait for watch thread to terminate first
 		if (bIsTargetProcessTerminated)
@@ -68,7 +68,7 @@ void CloseWorkerThreadProc(void* lpParameter)
 			{
 				if (iter->Unload())
 				{
-					SendMessage(hWndMain, (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::UNLOADED_CLOSED, (LPARAM)&flcs);
+					SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::UNLOADED_CLOSED), reinterpret_cast<LPARAM>(&flcs));
 
 					bIsFontListChanged = true;
 
@@ -76,7 +76,7 @@ void CloseWorkerThreadProc(void* lpParameter)
 				}
 				else
 				{
-					SendMessage(hWndMain, (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::NOTUNLOADED, (LPARAM)&flcs);
+					SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::NOTUNLOADED), reinterpret_cast<LPARAM>(&flcs));
 
 					bIsUnloadingSuccessful = false;
 
@@ -85,7 +85,7 @@ void CloseWorkerThreadProc(void* lpParameter)
 			}
 			else
 			{
-				SendMessage(hWndMain, (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::CLOSED, (LPARAM)&flcs);
+				SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::CLOSED), reinterpret_cast<LPARAM>(&flcs));
 
 				iter = FontList.erase(iter);
 			}
@@ -93,7 +93,7 @@ void CloseWorkerThreadProc(void* lpParameter)
 	}
 	FontList.reverse();
 
-	PostMessage(hWndMain, (UINT)USERMESSAGE::CLOSEWORKERTHREADTERMINATED, (WPARAM)bIsFontListChanged, MAKELPARAM(bIsUnloadingInterrupted, bIsUnloadingSuccessful));
+	PostMessage(hWndMain, static_cast<UINT>(USERMESSAGE::CLOSEWORKERTHREADTERMINATED), static_cast<WPARAM>(bIsFontListChanged), MAKELPARAM(bIsUnloadingInterrupted, bIsUnloadingSuccessful));
 
 	bIsWorkerThreadRunning = false;
 	SetEvent(hEventWorkerThreadReadyToTerminate);
@@ -106,14 +106,14 @@ void ButtonCloseWorkerThreadProc(void* lpParameter)
 	bIsWorkerThreadRunning = true;
 	hEventWorkerThreadReadyToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
 
-	HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)((INT_PTR)lpParameter & INT_MAX)) };
+	HWND hWndListViewFontList{ GetDlgItem(hWndMain, PtrToInt(lpParameter)) };
 
 	bool bIsFontListChanged{ false };
 
 	FontList.reverse();
 	std::list<FontResource>::iterator iter{ FontList.begin() };
 	FONTLISTCHANGEDSTRUCT flcs{};
-	for (flcs.iItem = (int)FontList.size() - 1; flcs.iItem >= 0; flcs.iItem--)
+	for (flcs.iItem = static_cast<int>(FontList.size()) - 1; flcs.iItem >= 0; flcs.iItem--)
 	{
 		// If target process terminated, wait for watch thread to terminate first
 		if (bIsTargetProcessTerminated)
@@ -135,20 +135,20 @@ void ButtonCloseWorkerThreadProc(void* lpParameter)
 					{
 						bIsFontListChanged = true;
 
-						SendMessage(hWndMain, (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::UNLOADED_CLOSED, (LPARAM)&flcs);
+						SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::UNLOADED_CLOSED), reinterpret_cast<LPARAM>(&flcs));
 
 						iter = FontList.erase(iter);
 					}
 					else
 					{
-						SendMessage(hWndMain, (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::NOTUNLOADED, (LPARAM)&flcs);
+						SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::NOTUNLOADED), reinterpret_cast<LPARAM>(&flcs));
 
 						iter++;
 					}
 				}
 				else
 				{
-					SendMessage(hWndMain, (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::CLOSED, (LPARAM)&flcs);
+					SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::CLOSED), reinterpret_cast<LPARAM>(&flcs));
 
 					iter = FontList.erase(iter);
 				}
@@ -161,7 +161,7 @@ void ButtonCloseWorkerThreadProc(void* lpParameter)
 	}
 	FontList.reverse();
 
-	PostMessage(hWndMain, (UINT)USERMESSAGE::BUTTONCLOSEWORKERTHREADTERMINATED, (WPARAM)bIsFontListChanged, 0);
+	PostMessage(hWndMain, static_cast<UINT>(USERMESSAGE::BUTTONCLOSEWORKERTHREADTERMINATED), static_cast<WPARAM>(bIsFontListChanged), 0);
 
 	bIsWorkerThreadRunning = false;
 	SetEvent(hEventWorkerThreadReadyToTerminate);
@@ -174,13 +174,13 @@ void ButtonLoadWorkerThreadProc(void* lpParameter)
 	bIsWorkerThreadRunning = true;
 	hEventWorkerThreadReadyToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
 
-	HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)((INT_PTR)lpParameter & INT_MAX)) };
+	HWND hWndListViewFontList{ GetDlgItem(hWndMain, PtrToInt(lpParameter)) };
 
 	bool bIsFontListChanged{ false };
 
 	std::list<FontResource>::iterator iter{ FontList.begin() };
 	FONTLISTCHANGEDSTRUCT flcs{};
-	for (flcs.iItem = 0; flcs.iItem < (int)FontList.size(); flcs.iItem++)
+	for (flcs.iItem = 0; flcs.iItem < static_cast<int>(FontList.size()); flcs.iItem++)
 	{
 		// If target process terminated, wait for watch thread to terminate first
 		if (bIsTargetProcessTerminated)
@@ -200,11 +200,11 @@ void ButtonLoadWorkerThreadProc(void* lpParameter)
 				{
 					bIsFontListChanged = true;
 
-					SendMessage(hWndMain, (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::LOADED, (LPARAM)&flcs);
+					SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::LOADED), reinterpret_cast<LPARAM>(&flcs));
 				}
 				else
 				{
-					SendMessage(hWndMain, (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::NOTLOADED, (LPARAM)&flcs);
+					SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::NOTLOADED), reinterpret_cast<LPARAM>(&flcs));
 				}
 			}
 			iter++;
@@ -224,13 +224,13 @@ void ButtonUnloadWorkerThreadProc(void* lpParameter)
 	bIsWorkerThreadRunning = true;
 	hEventWorkerThreadReadyToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
 
-	HWND hWndListViewFontList{ GetDlgItem(hWndMain, (int)((INT_PTR)lpParameter & INT_MAX)) };
+	HWND hWndListViewFontList{ GetDlgItem(hWndMain, PtrToInt(lpParameter)) };
 
 	bool bIsFontListChanged{ false };
 
 	std::list<FontResource>::iterator iter{ FontList.begin() };
 	FONTLISTCHANGEDSTRUCT flcs{};
-	for (flcs.iItem = 0; flcs.iItem < (int)FontList.size(); flcs.iItem++)
+	for (flcs.iItem = 0; flcs.iItem < static_cast<int>(FontList.size()); flcs.iItem++)
 	{
 		// If target process terminated, wait for watch thread to terminate first
 		if (bIsTargetProcessTerminated)
@@ -250,18 +250,18 @@ void ButtonUnloadWorkerThreadProc(void* lpParameter)
 				{
 					bIsFontListChanged = true;
 
-					SendMessage(hWndMain, (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::UNLOADED, (LPARAM)&flcs);
+					SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::UNLOADED), reinterpret_cast<LPARAM>(&flcs));
 				}
 				else
 				{
-					SendMessage(hWndMain, (UINT)USERMESSAGE::FONTLISTCHANGED, (WPARAM)FONTLISTCHANGED::NOTUNLOADED, (LPARAM)&flcs);
+					SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::NOTUNLOADED), reinterpret_cast<LPARAM>(&flcs));
 				}
 			}
 			iter++;
 		}
 	}
 
-	PostMessage(hWndMain, (UINT)USERMESSAGE::BUTTONUNLOADWORKERTHREADTERMINATED, (WPARAM)bIsFontListChanged, 0);
+	PostMessage(hWndMain, static_cast<UINT>(USERMESSAGE::BUTTONUNLOADWORKERTHREADTERMINATED), static_cast<WPARAM>(bIsFontListChanged), 0);
 
 	bIsWorkerThreadRunning = false;
 	SetEvent(hEventWorkerThreadReadyToTerminate);
@@ -293,7 +293,7 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 		WaitForSingleObject(hEventWorkerThreadReadyToTerminate, INFINITE);
 	}
 
-	SendMessage(hWndMain, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, MAKEWPARAM(WATCHTHREADTERMINATED::TARGET, TERMINATION::TARGET), (LPARAM)bIsWorkerThreadRunning);
+	SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATED), MAKEWPARAM(WATCHTHREADTERMINATED::TARGET, TERMINATION::TARGET), static_cast<LPARAM>(bIsWorkerThreadRunning));
 
 	if (bIsWorkerThreadRunning)
 	{
@@ -338,7 +338,7 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 		WaitForSingleObject(hEventWorkerThreadReadyToTerminate, INFINITE);
 	}
 
-	SendMessage(hWndMain, (UINT)USERMESSAGE::WATCHTHREADTERMINATED, MAKEWPARAM(WATCHTHREADTERMINATED::PROXY, t), (LPARAM)bIsWorkerThreadRunning);
+	SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATED), MAKEWPARAM(WATCHTHREADTERMINATED::PROXY, t), static_cast<LPARAM>(bIsWorkerThreadRunning));
 
 	if (bIsWorkerThreadRunning)
 	{
@@ -360,14 +360,14 @@ unsigned int __stdcall MessageThreadProc(void* lpParameter)
 	PeekMessage(&Message, NULL, 0, 0, PM_NOREMOVE);
 
 	// Create message-only window
-	WNDCLASS wc{ 0, MessageWndProc, 0, 0, (HINSTANCE)GetModuleHandle(NULL), NULL, NULL, NULL, NULL, L"FontLoaderExMessage" };
+	WNDCLASS wc{ 0, MessageWndProc, 0, 0, static_cast<HINSTANCE>(GetModuleHandle(NULL)), NULL, NULL, NULL, NULL, L"FontLoaderExMessage" };
 	if (!RegisterClass(&wc))
 	{
 		SetEvent(hEventMessageThreadNotReady);
 
 		return 0xFFFFFFFF;
 	}
-	if (!(hWndMessage = CreateWindow(L"FontLoaderExMessage", L"FontLoaderExMessage", NULL, 0, 0, 0, 0, HWND_MESSAGE, NULL, (HINSTANCE)GetModuleHandle(NULL), NULL)))
+	if (!(hWndMessage = CreateWindow(L"FontLoaderExMessage", L"FontLoaderExMessage", NULL, 0, 0, 0, 0, HWND_MESSAGE, NULL, static_cast<HINSTANCE>(GetModuleHandle(NULL)), NULL)))
 	{
 		SetEvent(hEventMessageThreadNotReady);
 
@@ -381,7 +381,7 @@ unsigned int __stdcall MessageThreadProc(void* lpParameter)
 	{
 		if (bRet == -1)
 		{
-			unsigned int uiLastError{ (unsigned int)GetLastError() };
+			unsigned int uiLastError{ static_cast<unsigned int>(GetLastError()) };
 			DestroyWindow(hWndMessage);
 			UnregisterClass(L"FontLoaderExMessage", (HINSTANCE)GetModuleHandle(NULL));
 
@@ -394,7 +394,7 @@ unsigned int __stdcall MessageThreadProc(void* lpParameter)
 	}
 	UnregisterClass(L"FontLoaderExMessage", (HINSTANCE)GetModuleHandle(NULL));
 
-	return (unsigned int)Message.wParam;
+	return static_cast<unsigned int>(Message.wParam);
 }
 
 LRESULT CALLBACK MessageWndProc(HWND hWndMessage, UINT Message, WPARAM wParam, LPARAM lParam)
@@ -407,47 +407,47 @@ LRESULT CALLBACK MessageWndProc(HWND hWndMessage, UINT Message, WPARAM wParam, L
 		// COPYDATASTRUCT::lpData = Data
 	case WM_COPYDATA:
 		{
-			switch ((COPYDATA)((PCOPYDATASTRUCT)lParam)->dwData)
+			switch (static_cast<COPYDATA>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->dwData))
 			{
 				// Get proxy SeDebugPrivilege enabling result
 			case COPYDATA::PROXYPROCESSDEBUGPRIVILEGEENABLINGFINISHED:
 				{
-					ProxyDebugPrivilegeEnablingResult = *(PROXYPROCESSDEBUGPRIVILEGEENABLING*)((PCOPYDATASTRUCT)lParam)->lpData;
+					ProxyDebugPrivilegeEnablingResult = *static_cast<PROXYPROCESSDEBUGPRIVILEGEENABLING*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
 					SetEvent(hEventProxyProcessDebugPrivilegeEnablingFinished);
 				}
 				break;
 				// Recieve HWND to proxy process
 			case COPYDATA::PROXYPROCESSHWNDSENT:
 				{
-					hWndProxy = *(HWND*)((PCOPYDATASTRUCT)lParam)->lpData;
+					hWndProxy = *static_cast<HWND*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
 					SetEvent(hEventProxyProcessHWNDRevieved);
 				}
 				break;
 				// Get proxy dll injection result
 			case COPYDATA::DLLINJECTIONFINISHED:
 				{
-					ProxyDllInjectionResult = *(PROXYDLLINJECTION*)((PCOPYDATASTRUCT)lParam)->lpData;
+					ProxyDllInjectionResult = *static_cast<PROXYDLLINJECTION*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
 					SetEvent(hEventProxyDllInjectionFinished);
 				}
 				break;
 				// Get proxy dll pull result
 			case COPYDATA::DLLPULLINGFINISHED:
 				{
-					ProxyDllPullingResult = *(PROXYDLLPULL*)((PCOPYDATASTRUCT)lParam)->lpData;
+					ProxyDllPullingResult = *static_cast<PROXYDLLPULL*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
 					SetEvent(hEventProxyDllPullingFinished);
 				}
 				break;
 				// Get add font result
 			case COPYDATA::ADDFONTFINISHED:
 				{
-					ProxyAddFontResult = *(ADDFONT*)((PCOPYDATASTRUCT)lParam)->lpData;
+					ProxyAddFontResult = *static_cast<ADDFONT*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
 					SetEvent(hEventProxyAddFontFinished);
 				}
 				break;
 				// Get remove font result
 			case COPYDATA::REMOVEFONTFINISHED:
 				{
-					ProxyRemoveFontResult = *(REMOVEFONT*)((PCOPYDATASTRUCT)lParam)->lpData;
+					ProxyRemoveFontResult = *static_cast<REMOVEFONT*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
 					SetEvent(hEventProxyRemoveFontFinished);
 				}
 				break;
