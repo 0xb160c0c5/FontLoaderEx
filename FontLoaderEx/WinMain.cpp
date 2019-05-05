@@ -215,7 +215,7 @@ bool EnableDebugPrivilege();
 bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout);
 bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout);
 
-enum class ID : WORD { ButtonOpen = 0x20, ButtonClose, ButtonLoad, ButtonUnload, ButtonBroadcastWM_FONTCHANGE, StaticTimeout, EditTimeout, ButtonSelectProcess, ButtonMinimizeToTray, ListViewFontList, Splitter, EditMessage, StatusBarFontInfo };
+enum class ID : WORD { ButtonOpen = 0x20, ButtonClose, ButtonLoad, ButtonUnload, ButtonBroadcastWM_FONTCHANGE, StaticTimeout, EditTimeout, ButtonSelectProcess, ButtonMinimizeToTray, ListViewFontList, Splitter, EditMessage, StatusBarFontInfo, ProgressBarFont };
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 {
@@ -253,8 +253,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_UNLOAD, MF_BYCOMMAND | MF_GRAYED);
 				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 				EnableMenuItem(hMenuContextListViewFontList, ID_MENU_SELECTALL, MF_BYCOMMAND | MF_GRAYED);
+				if (!TargetProcessInfo.hProcess)
+				{
+					EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonBroadcastWM_FONTCHANGE)), TRUE);
+				}
 
 				// Update StatusBarFontInfo
+				HWND hWndStatusBarFontInfo{ GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)) };
 				std::wstringstream ssFontInfo{};
 				std::wstring strFontInfo{};
 				std::size_t nLoadedFonts{};
@@ -267,7 +272,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				}
 				ssFontInfo << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
 				strFontInfo = ssFontInfo.str();
-				SetWindowText(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), strFontInfo.c_str());
+				SendMessage(hWndStatusBarFontInfo, SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(strFontInfo.c_str()));
+
+				// Set ProgressBarFont
+				HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+				SendMessage(hWndProgressBarFont, PBM_SETPOS, 0, 0);
+				ShowWindow(hWndProgressBarFont, SW_HIDE);
+
+				int aiStatusBarFontInfoParts[]{ -1 };
+				SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 1, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 
 				// Update syatem tray icon tip
 				if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
@@ -311,6 +324,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							}
 
 							// Update StatusBarFontInfo
+							HWND hWndStatusBarFontInfo{ GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)) };
 							std::wstringstream ssFontInfo{};
 							std::wstring strFontInfo{};
 							std::size_t nLoadedFonts{};
@@ -323,7 +337,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							}
 							ssFontInfo << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
 							strFontInfo = ssFontInfo.str();
-							SetWindowText(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), strFontInfo.c_str());
+							SendMessage(hWndStatusBarFontInfo, SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(strFontInfo.c_str()));
+
+							// Set ProgressBarFont
+							HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+							SendMessage(hWndProgressBarFont, PBM_SETPOS, 0, 0);
+							ShowWindow(hWndProgressBarFont, SW_HIDE);
+
+							int aiStatusBarFontInfoParts[]{ -1 };
+							SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 1, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 
 							// Update syatem tray icon tip
 							if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
@@ -417,6 +439,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			}
 
 			// Update StatusBarFontInfo
+			HWND hWndStatusBarFontInfo{ GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)) };
 			std::wstringstream ssFontInfo{};
 			std::wstring strFontInfo{};
 			std::size_t nLoadedFonts{};
@@ -429,7 +452,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			}
 			ssFontInfo << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
 			strFontInfo = ssFontInfo.str();
-			SetWindowText(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), strFontInfo.c_str());
+			SendMessage(hWndStatusBarFontInfo, SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(strFontInfo.c_str()));
+
+			// Set ProgressBarFont
+			HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+			SendMessage(hWndProgressBarFont, PBM_SETPOS, 0, 0);
+			ShowWindow(hWndProgressBarFont, SW_HIDE);
+
+			int aiStatusBarFontInfoParts[]{ -1 };
+			SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 1, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 
 			// Update syatem tray icon tip
 			if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
@@ -438,13 +469,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				wcscpy_s(nid.szTip, strFontInfo.c_str());
 				Shell_NotifyIcon(NIM_MODIFY, &nid);
 			}
+
+			cchMessageLength = Edit_GetTextLength(hWndEditMessage);
+			Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+			Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 		}
 		break;
-		// Watch thread terminated notofication
-		// LOWORD(wParam) = Which thread(TargetProcessWatchThreadProc/ProxyAndTargetProcessWatchThreadProc) : enum WATCHTHREADTERMINATED
-		// HIWORD(wParam) = What terminated(Proxy/Target) : enum TERMINATION
+		// Watch thread about to termiate notification
+		// wParam = What terminated(Proxy/Target) : enum TERMINATION
 		// lParam = Whether worker thread is still running : bool
-	case USERMESSAGE::WATCHTHREADTERMINATED:
+	case USERMESSAGE::WATCHTHREADTERMINATING:
 		{
 			// Disable controls
 			if (!lParam)
@@ -459,16 +493,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 			}
 
-			// Clear FontList and ListViewFontList
-			FontResource::RegisterAddRemoveFontProc(NullAddFontProc, NullRemoveFontProc);
-			FontList.clear();
+			// Clear ListViewFontList
 			ListView_DeleteAllItems(GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList)));
 
 			HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
-			int cchMessageLength{};
-			switch (static_cast<TERMINATION>(HIWORD(wParam)))
+			int cchMessageLength{ Edit_GetTextLength(hWndEditMessage) };
+			Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+			Edit_ReplaceSel(hWndEditMessage, L"\r\n");
+			switch (static_cast<TERMINATION>(wParam))
 			{
 				// If proxy process terminates, just print message
 			case TERMINATION::PROXY:
@@ -504,30 +538,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				break;
 			}
 
-			if (static_cast<TERMINATION>(LOWORD(wParam)) == TERMINATION::PROXY)
-			{
-				// Terminate message thread
-				SendMessage(hWndMessage, WM_CLOSE, 0, 0);
-				WaitForSingleObject(hThreadMessage, INFINITE);
-			}
-
-			// Register global AddFont() and RemoveFont() procedures
-			FontResource::RegisterAddRemoveFontProc(GlobalAddFontProc, GlobalRemoveFontProc);
-
 			// Revert the caption of ButtonSelectProcess to default
 			Button_SetText(GetDlgItem(hWnd, static_cast<int>(ID::ButtonSelectProcess)), L"Click to select process");
+		}
+		break;
+		// Watch thread terminated notofication
+		// lParam = Whether worker thread is still running : bool
+	case USERMESSAGE::WATCHTHREADTERMINATED:
+		{
+			// Update StatusBarFontInfo
+			SendMessage(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(L"0 font(s) opened, 0 font(s) loaded."));
 
-			// Close HANDLE to proxy process and target process, duplicated handles and synchronization objects
-			CloseHandle(TargetProcessInfo.hProcess);
-			TargetProcessInfo.hProcess = NULL;
-			CloseHandle(hProcessCurrentDuplicated);
-			CloseHandle(hProcessTargetDuplicated);
-			if (static_cast<TERMINATION>(LOWORD(wParam)) == TERMINATION::PROXY)
+			// Update syatem tray icon tip
+			if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
 			{
-				CloseHandle(ProxyProcessInfo.hProcess);
-				ProxyProcessInfo.hProcess = NULL;
-				CloseHandle(hEventProxyAddFontFinished);
-				CloseHandle(hEventProxyRemoveFontFinished);
+				NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP, 0, NULL, L"0 font(s) opened, 0 font(s) loaded." };
+				Shell_NotifyIcon(NIM_MODIFY, &nid);
 			}
 
 			// Enable controls
@@ -545,16 +571,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			}
 			EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::EditTimeout)), TRUE);
 			EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonBroadcastWM_FONTCHANGE)), TRUE);
-
-			// Update StatusBarFontInfo
-			SetWindowText(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), L"0 font(s) opened, 0 font(s) loaded.");
-
-			// Update syatem tray icon tip
-			if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
-			{
-				NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP, 0, NULL, L"0 font(s) opened, 0 font(s) loaded." };
-				Shell_NotifyIcon(NIM_MODIFY, &nid);
-			}
 		}
 		break;
 		// Font list changed notofication
@@ -563,8 +579,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 	case USERMESSAGE::FONTLISTCHANGED:
 		{
 			// Modify ListViewFontList and print messages to EditMessage
-			HWND hWndListViewFontList{ GetDlgItem(hWndMain, static_cast<int>(ID::ListViewFontList)) };
-			HWND hWndEditMessage{ GetDlgItem(hWndMain, static_cast<int>(ID::EditMessage)) };
+			HWND hWndListViewFontList{ GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList)) };
+			HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
+			HWND hWndProgressBarFont{ GetDlgItem(GetDlgItem(hWnd, (int)ID::StatusBarFontInfo), static_cast<int>(ID::ProgressBarFont)) };
 
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
@@ -598,6 +615,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
 
 					ssMessage << reinterpret_cast<FONTLISTCHANGEDSTRUCT*>(lParam)->lpszFontName << L" opened and successfully loaded\r\n";
+
+					SendMessage(hWndProgressBarFont, PBM_STEPIT, 0, 0);
 				}
 				break;
 			case FONTLISTCHANGED::OPENED_NOTLOADED:
@@ -612,6 +631,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
 
 					ssMessage << L"Opened but failed to load " << reinterpret_cast<FONTLISTCHANGEDSTRUCT*>(lParam)->lpszFontName << L"\r\n";
+
+					SendMessage(hWndProgressBarFont, PBM_STEPIT, 0, 0);
 				}
 				break;
 			case FONTLISTCHANGED::LOADED:
@@ -622,6 +643,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
 
 					ssMessage << reinterpret_cast<FONTLISTCHANGEDSTRUCT*>(lParam)->lpszFontName << L" successfully loaded\r\n";
+
+					SendMessage(hWndProgressBarFont, PBM_STEPIT, 0, 0);
 				}
 				break;
 			case FONTLISTCHANGED::NOTLOADED:
@@ -632,6 +655,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
 
 					ssMessage << L"Failed to load " << reinterpret_cast<FONTLISTCHANGEDSTRUCT*>(lParam)->lpszFontName << L"\r\n";
+
+					SendMessage(hWndProgressBarFont, PBM_STEPIT, 0, 0);
 				}
 				break;
 			case FONTLISTCHANGED::UNLOADED:
@@ -642,6 +667,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
 
 					ssMessage << reinterpret_cast<FONTLISTCHANGEDSTRUCT*>(lParam)->lpszFontName << L" successfully unloaded\r\n";
+
+					SendMessage(hWndProgressBarFont, PBM_STEPIT, 0, 0);
 				}
 				break;
 			case FONTLISTCHANGED::NOTUNLOADED:
@@ -652,6 +679,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					ListView_EnsureVisible(hWndListViewFontList, lvi.iItem, FALSE);
 
 					ssMessage << L"Failed to unload " << reinterpret_cast<FONTLISTCHANGEDSTRUCT*>(lParam)->lpszFontName << L"\r\n";
+
+					SendMessage(hWndProgressBarFont, PBM_STEPIT, 0, 0);
 				}
 				break;
 			case FONTLISTCHANGED::UNLOADED_CLOSED:
@@ -660,6 +689,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					ListView_DeleteItem(hWndListViewFontList, lvi.iItem);
 
 					ssMessage << reinterpret_cast<FONTLISTCHANGEDSTRUCT*>(lParam)->lpszFontName << L" successfully unloaded and closed\r\n";
+
+					SendMessage(hWndProgressBarFont, PBM_STEPIT, 0, 0);
 				}
 				break;
 			case FONTLISTCHANGED::CLOSED:
@@ -668,6 +699,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					ListView_DeleteItem(hWndListViewFontList, lvi.iItem);
 
 					ssMessage << reinterpret_cast<FONTLISTCHANGEDSTRUCT*>(lParam)->lpszFontName << L" closed\r\n";
+
+					SendMessage(hWndProgressBarFont, PBM_STEPIT, 0, 0);
+				}
+				break;
+			case FONTLISTCHANGED::UNTOUCHED:
+				{
+					SendMessage(hWndProgressBarFont, PBM_STEPIT, 0, 0);
 				}
 				break;
 			default:
@@ -859,14 +897,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			RECT rcStaticTimeout{};
 			GetWindowRect(hWndStaticTimeout, &rcStaticTimeout);
 			MapWindowRect(HWND_DESKTOP, hWnd, &rcStaticTimeout);
-			HWND hWndEditTimeout{ CreateWindow(WC_EDIT, L"5000", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_LEFT | ES_NUMBER | ES_AUTOHSCROLL | ES_NOHIDESEL, rcStaticTimeout.right, rcMainClient.top, 80, 21, hWnd, reinterpret_cast<HMENU>(ID::EditTimeout), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
+			HWND hWndEditTimeout{ CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | ES_LEFT | ES_NUMBER | ES_AUTOHSCROLL | ES_NOHIDESEL, rcStaticTimeout.right, rcMainClient.top, 80, 21, hWnd, reinterpret_cast<HMENU>(ID::EditTimeout), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
 			SetWindowFont(hWndEditTimeout, hFontMain, TRUE);
 
+			Edit_SetText(hWndEditTimeout, L"5000");
 			Edit_LimitText(hWndEditTimeout, 10);
 
 			SetWindowSubclass(hWndEditTimeout, EditTimeoutSubclassProc, 0, NULL);
-
-			dwTimeout = 5000;
 
 			// Initialize ButtonSelectProcess
 			HWND hWndButtonSelectProcess{ CreateWindow(WC_BUTTON, L"&Select process", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON, rcButtonUnload.right, rcButtonUnload.bottom - 21, 250, 21, hWnd, reinterpret_cast<HMENU>(ID::ButtonSelectProcess), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
@@ -877,8 +914,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			SetWindowFont(hWndButtonMinimizeToTray, hFontMain, TRUE);
 
 			// Initialize StatusBar
-			HWND hWndStatusBarFontInfo{ CreateWindow(STATUSCLASSNAME, L"0 font(s) opened, 0 font(s) loaded.", WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 0, 0, hWnd, reinterpret_cast<HMENU>(ID::StatusBarFontInfo), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
+			HWND hWndStatusBarFontInfo{ CreateWindow(STATUSCLASSNAME, NULL, WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 0, 0, hWnd, reinterpret_cast<HMENU>(ID::StatusBarFontInfo), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
 			SetWindowFont(hWndButtonMinimizeToTray, hFontMain, TRUE);
+
+			SendMessage(hWndStatusBarFontInfo, SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(L"0 font(s) opened, 0 font(s) loaded."));
+
+			// Initialize ProgreeBarFont
+			HWND hWndProgressBarFont{ CreateWindow(PROGRESS_CLASS, L"ProgressBar", WS_CHILD | PBS_SMOOTH, 0, 0, 0, 0, hWndStatusBarFontInfo, reinterpret_cast<HMENU>(ID::ProgressBarFont), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
+
+			SendMessage(hWndProgressBarFont, PBM_SETRANGE, 0, MAKELPARAM(0, 1));
+			SendMessage(hWndProgressBarFont, PBM_SETSTEP, 1, 0);
+			SendMessage(hWndProgressBarFont, PBM_SETSTATE, PBST_NORMAL, 0);
 
 			// Initialize Splitter
 			RECT rcStatusBarFontInfo{};
@@ -970,27 +1016,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
 				// Update StatusBarFontInfo
-				std::wstringstream ssFontInfo{};
-				std::wstring strFontInfo{};
-				std::size_t nLoadedFonts{};
-				for (const auto& i : FontList)
-				{
-					if (i.IsLoaded())
-					{
-						nLoadedFonts++;
-					}
-				}
-				ssFontInfo << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
-				strFontInfo = ssFontInfo.str();
-				SetWindowText(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), strFontInfo.c_str());
+				HWND hWndStatusBarFontInfo{ GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)) };
+				SendMessage(hWndStatusBarFontInfo, SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(L"Loading fonts..."));
 
-				// Update syatem tray icon tip
-				if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
-				{
-					NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
-					wcscpy_s(nid.szTip, strFontInfo.c_str());
-					Shell_NotifyIcon(NIM_MODIFY, &nid);
-				}
+				// Set ProgressBarFont
+				HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+				RECT rcStatusBarFontInfo{};
+				GetClientRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
+				int aiStatusBarFontInfoParts[]{ rcStatusBarFontInfo.right - 120, -1 };
+				SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
+				RECT rcProgressBarFont{};
+				SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
+				SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_SHOWWINDOW);
+
+				SendMessage(hWndProgressBarFont, PBM_SETRANGE, 0, MAKELPARAM(0, FontList.size()));
 
 				// Start worker thread
 				_beginthread(DragDropWorkerThreadProc, 0, nullptr);
@@ -1142,7 +1181,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							}
 							ssFontInfo << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
 							strFontInfo = ssFontInfo.str();
-							SetWindowText(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), strFontInfo.c_str());
+							SendMessage(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(strFontInfo.c_str()));
 
 							// Update syatem tray icon tip
 							if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
@@ -1169,7 +1208,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						{
 							// Disable controls
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonOpen)), FALSE);
-							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonClose)), FALSE);
+							EnableWindow(reinterpret_cast<HWND>(lParam), FALSE);
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonLoad)), FALSE);
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonUnload)), FALSE);
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonBroadcastWM_FONTCHANGE)), FALSE);
@@ -1178,7 +1217,36 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
 							// Update StatusBarFontInfo
-							SetWindowText(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), L"Unloading and closing fonts...");
+							HWND hWndStatusBarFontInfo{ GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)) };
+							SendMessage(hWndStatusBarFontInfo, SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(L"Unloading and closing fonts..."));
+
+							// Set ProgressBarFont
+							HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+							RECT rcStatusBarFontInfo{};
+							GetClientRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
+							int aiStatusBarFontInfoParts[]{ rcStatusBarFontInfo.right - 120, -1 };
+							SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
+							RECT rcProgressBarFont{};
+							SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
+							SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_SHOWWINDOW);
+
+							HWND hWndListViewFontList{ (GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList))) };
+							int iSelectedItemsCount{}, iItemCount{ ListView_GetItemCount(hWndListViewFontList) };
+							for (int i = 0; i < iItemCount; i++)
+							{
+								if (ListView_GetItemState(hWndListViewFontList, i, LVIS_SELECTED) & LVIS_SELECTED)
+								{
+									iSelectedItemsCount++;
+								}
+							}
+							SendMessage(hWndProgressBarFont, PBM_SETRANGE, 0, MAKELPARAM(0, iSelectedItemsCount));
+
+							// Update syatem tray icon tip
+							if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
+							{
+								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP, 0, NULL, L"Unloading and closing fonts..." };
+								Shell_NotifyIcon(NIM_MODIFY, &nid);
+							}
 
 							// Start worker thread
 							_beginthread(ButtonCloseWorkerThreadProc, 0, reinterpret_cast<void*>(ID::ListViewFontList));
@@ -1200,7 +1268,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							// Disable controls
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonOpen)), FALSE);
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonClose)), FALSE);
-							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonLoad)), FALSE);
+							EnableWindow(reinterpret_cast<HWND>(lParam), FALSE);
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonUnload)), FALSE);
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonBroadcastWM_FONTCHANGE)), FALSE);
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonSelectProcess)), FALSE);
@@ -1208,7 +1276,36 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
 							// Update StatusBarFontInfo
-							SetWindowText(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), L"Loading fonts...");
+							HWND hWndStatusBarFontInfo{ GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)) };
+							SendMessage(hWndStatusBarFontInfo, SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(L"Loading fonts..."));
+
+							// Set ProgressBarFont
+							HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+							RECT rcStatusBarFontInfo{};
+							GetClientRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
+							int aiStatusBarFontInfoParts[]{ rcStatusBarFontInfo.right - 120, -1 };
+							SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
+							RECT rcProgressBarFont{};
+							SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
+							SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_SHOWWINDOW);
+
+							HWND hWndListViewFontList{ (GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList))) };
+							int iSelectedItemsCount{}, iItemCount{ ListView_GetItemCount(hWndListViewFontList) };
+							for (int i = 0; i < iItemCount; i++)
+							{
+								if (ListView_GetItemState(hWndListViewFontList, i, LVIS_SELECTED) & LVIS_SELECTED)
+								{
+									iSelectedItemsCount++;
+								}
+							}
+							SendMessage(hWndProgressBarFont, PBM_SETRANGE, 0, MAKELPARAM(0, iSelectedItemsCount));
+
+							// Update syatem tray icon tip
+							if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
+							{
+								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP, 0, NULL, L"Loading fonts..." };
+								Shell_NotifyIcon(NIM_MODIFY, &nid);
+							}
 
 							// Start worker thread
 							_beginthread(ButtonLoadWorkerThreadProc, 0, reinterpret_cast<void*>(ID::ListViewFontList));
@@ -1230,14 +1327,43 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonOpen)), FALSE);
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonClose)), FALSE);
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonLoad)), FALSE);
-							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonUnload)), FALSE);
+							EnableWindow(reinterpret_cast<HWND>(lParam), FALSE);
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonBroadcastWM_FONTCHANGE)), FALSE);
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonSelectProcess)), FALSE);
 							EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList)), FALSE);
 							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
 							// Update StatusBarFontInfo
-							SetWindowText(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), L"Unloading fonts...");
+							HWND hWndStatusBarFontInfo{ GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)) };
+							SendMessage(hWndStatusBarFontInfo, SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(L"Unloading fonts..."));
+
+							// Set ProgressBarFont
+							HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+							RECT rcStatusBarFontInfo{};
+							GetClientRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
+							int aiStatusBarFontInfoParts[]{ rcStatusBarFontInfo.right - 120, -1 };
+							SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
+							RECT rcProgressBarFont{};
+							SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
+							SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_SHOWWINDOW);
+
+							HWND hWndListViewFontList{ (GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList))) };
+							int iSelectedItemsCount{}, iItemCount{ ListView_GetItemCount(hWndListViewFontList) };
+							for (int i = 0; i < iItemCount; i++)
+							{
+								if (ListView_GetItemState(hWndListViewFontList, i, LVIS_SELECTED) & LVIS_SELECTED)
+								{
+									iSelectedItemsCount++;
+								}
+							}
+							SendMessage(hWndProgressBarFont, PBM_SETRANGE, 0, MAKELPARAM(0, iSelectedItemsCount));
+
+							// Update syatem tray icon tip
+							if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
+							{
+								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP, 0, NULL, L"Unloading fonts..." };
+								Shell_NotifyIcon(NIM_MODIFY, &nid);
+							}
 
 							// Start worker thread
 							_beginthread(ButtonUnloadWorkerThreadProc, 0, reinterpret_cast<void*>(ID::ListViewFontList));
@@ -1255,32 +1381,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					case EN_UPDATE:
 						{
 							// Show balloon tip if number is out of range
-							HWND hWndEditTimeout{ GetDlgItem(hWnd, static_cast<int>(ID::EditTimeout)) };
-
 							std::wstringstream ssTipEdit{};
 							std::wstring strTipEdit{};
 
 							BOOL bIsConverted{};
-							DWORD dwTimeoutTemp{ (DWORD)GetDlgItemInt(hWnd, static_cast<int>(ID::EditTimeout), &bIsConverted, FALSE) };
+							DWORD dwTimeoutTemp{ static_cast<DWORD>(GetDlgItemInt(hWnd, static_cast<int>(ID::EditTimeout), &bIsConverted, FALSE)) };
 							if (!bIsConverted)
 							{
-								if (Edit_GetTextLength(hWndEditTimeout) == 0)
+								if (Edit_GetTextLength(reinterpret_cast<HWND>(lParam)) == 0)
 								{
 									ssTipEdit << L"Empty text will be treated as infinite.";
 									strTipEdit = ssTipEdit.str();
 									EDITBALLOONTIP ebt{ sizeof(EDITBALLOONTIP), L"Infinite", strTipEdit.c_str(), TTI_INFO };
-									Edit_ShowBalloonTip(hWndEditTimeout, &ebt);
+									Edit_ShowBalloonTip(reinterpret_cast<HWND>(lParam), &ebt);
 
 									dwTimeout = INFINITE;
 								}
 								else
 								{
-									DWORD dwCaretIndex{ Edit_GetCaretIndex(hWndEditTimeout) };
+									DWORD dwCaretIndex{ Edit_GetCaretIndex(reinterpret_cast<HWND>(lParam)) };
 									SetDlgItemInt(hWnd, static_cast<int>(ID::EditTimeout), static_cast<UINT>(dwTimeout), FALSE);
-									Edit_SetCaretIndex(hWndEditTimeout, dwCaretIndex);
+									Edit_SetCaretIndex(reinterpret_cast<HWND>(lParam), dwCaretIndex);
 
 									EDITBALLOONTIP ebt{ sizeof(EDITBALLOONTIP), L"Out of range", L"Valid timeout value is 0 ~ 4294967295.", TTI_ERROR };
-									Edit_ShowBalloonTip(hWndEditTimeout, &ebt);
+									Edit_ShowBalloonTip(reinterpret_cast<HWND>(lParam), &ebt);
 								}
 								MessageBeep(0xFFFFFFFF);
 							}
@@ -1291,7 +1415,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									ssTipEdit << dwTimeoutTemp << L" will be treated as infinite.";
 									strTipEdit = ssTipEdit.str();
 									EDITBALLOONTIP ebt{ sizeof(EDITBALLOONTIP), L"Infinite", strTipEdit.c_str(), TTI_INFO };
-									Edit_ShowBalloonTip(hWndEditTimeout, &ebt);
+									Edit_ShowBalloonTip(reinterpret_cast<HWND>(lParam), &ebt);
 									MessageBeep(0xFFFFFFFF);
 
 									dwTimeout = INFINITE;
@@ -1317,7 +1441,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					case BN_CLICKED:
 						{
 							HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
-							HWND hWndButtonSelectProcess{ GetDlgItem(hWnd, static_cast<int>(ID::ButtonSelectProcess)) };
 
 							static bool bIsSeDebugPrivilegeEnabled{ false };
 
@@ -1530,26 +1653,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										usTargetProcessMachineArchitecture = IMAGE_FILE_MACHINE_AMD64;
 									}
 #endif // _WIN64
-								}
-
-								// If target process is ARM/AArch64 architecture, pop up message box
-								if (usTargetProcessMachineArchitecture == IMAGE_FILE_MACHINE_ARM)
-								{
-									CloseHandle(SelectedProcessInfo.hProcess);
-
-									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-									Edit_ReplaceSel(hWndEditMessage, L"Process of ARM architecture not supported.\r\n\r\n");
-
-									break;
-								}
-								if (usTargetProcessMachineArchitecture == IMAGE_FILE_MACHINE_ARM64)
-								{
-									CloseHandle(SelectedProcessInfo.hProcess);
-
-									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-									Edit_ReplaceSel(hWndEditMessage, L"Process of AArch64 architecture not supported.\r\n\r\n");
-
-									break;
 								}
 
 								// If process architectures are different(one is WOW64 and another isn't), launch FontLoaderExProxy.exe to inject dll
@@ -1772,7 +1875,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											// Change the caption of ButtonSelectProcess
 											std::wstringstream Caption{};
 											Caption << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")";
-											Button_SetText(hWndButtonSelectProcess, Caption.str().c_str());
+											Button_SetText(reinterpret_cast<HWND>(lParam), Caption.str().c_str());
 
 											// Set TargetProcessInfo and ProxyProcessInfo
 											TargetProcessInfo = SelectedProcessInfo;
@@ -1973,7 +2076,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									// Change the caption of ButtonSelectProcess
 									std::wstringstream Caption{};
 									Caption << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")";
-									Button_SetText(hWndButtonSelectProcess, Caption.str().c_str());
+									Button_SetText(reinterpret_cast<HWND>(lParam), Caption.str().c_str());
 
 									// Set TargetProcessInfo
 									TargetProcessInfo = SelectedProcessInfo;
@@ -1982,12 +2085,31 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									hEventTerminateWatchThread = CreateEvent(NULL, TRUE, FALSE, NULL);
 									hThreadWatch = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, TargetProcessWatchThreadProc, nullptr, 0, nullptr));
 								}
+								// Else prompt user target process architecture is not supported
 								else
 								{
 									CloseHandle(SelectedProcessInfo.hProcess);
 
-									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-									Edit_ReplaceSel(hWndEditMessage, L"Target process architecture unknown.\r\n\r\n");
+									// ARM and AArch64 is not supported
+									if (usTargetProcessMachineArchitecture == IMAGE_FILE_MACHINE_ARM)
+									{
+										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+										Edit_ReplaceSel(hWndEditMessage, L"Process of ARM architecture not supported.\r\n\r\n");
+
+										break;
+									}
+									if (usTargetProcessMachineArchitecture == IMAGE_FILE_MACHINE_ARM64)
+									{
+										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+										Edit_ReplaceSel(hWndEditMessage, L"Process of AArch64 architecture not supported.\r\n\r\n");
+
+										break;
+									}
+									else
+									{
+										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+										Edit_ReplaceSel(hWndEditMessage, L"Target process architecture unknown.\r\n\r\n");
+									}
 								}
 							}
 							// If p == nullptr, clear selected process
@@ -2080,7 +2202,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonBroadcastWM_FONTCHANGE)), TRUE);
 
 									// Revert the caption of ButtonSelectProcess to default
-									Button_SetText(hWndButtonSelectProcess, L"Select process");
+									Button_SetText(reinterpret_cast<HWND>(lParam), L"Select process");
 								}
 								// Else DIY
 								else if (TargetProcessInfo.hProcess)
@@ -2123,7 +2245,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonBroadcastWM_FONTCHANGE)), TRUE);
 
 									// Revert the caption of ButtonSelectProcess to default
-									Button_SetText(hWndButtonSelectProcess, L"Select process");
+									Button_SetText(reinterpret_cast<HWND>(lParam), L"Select process");
 								}
 							}
 						}
@@ -2141,7 +2263,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					case BN_CLICKED:
 						{
 							// If unchecked, remove the icon from system tray
-							if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_UNCHECKED)
+							if (Button_GetCheck(reinterpret_cast<HWND>(lParam)) == BST_UNCHECKED)
 							{
 								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWnd, 0 };
 								Shell_NotifyIcon(NIM_DELETE, &nid);
@@ -2306,7 +2428,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							EnableMenuItem(GetSystemMenu(hWnd, FALSE), SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
 
 							// Update StatusBarFontInfo
-							SetWindowText(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), L"Unloading and closing fonts...");
+							HWND hWndStatusBarFontInfo{ GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)) };
+							SendMessage(hWndStatusBarFontInfo, SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(L"Unloading and closing fonts..."));
+
+							// Set ProgressBarFont
+							HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+							RECT rcStatusBarFontInfo{};
+							GetClientRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
+							int aiStatusBarFontInfoParts[]{ rcStatusBarFontInfo.right - 120, -1 };
+							SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
+							RECT rcProgressBarFont{};
+							SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
+							SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_SHOWWINDOW);
+
+							SendMessage(hWndProgressBarFont, PBM_SETRANGE, 0, MAKELPARAM(0, FontList.size()));
 
 							// Start worker thread
 							_beginthread(CloseWorkerThreadProc, 0, nullptr);
@@ -2707,6 +2842,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									GetWindowRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
 									MapWindowRect(HWND_DESKTOP, hWnd, &rcStatusBarFontInfo);
 
+									// Resize ProgressBarFont
+									HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+									if (IsWindowVisible(hWndProgressBarFont))
+									{
+										RECT rcStatusBarFontInfo{};
+										GetClientRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
+										int aiStatusBarFontInfoParts[]{ rcStatusBarFontInfo.right - 120, -1 };
+										SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
+										RECT rcProgressBarFont{};
+										SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
+										MoveWindow(hWndProgressBarFont, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, FALSE);
+									}
+
 									// Resize Splitter
 									HWND hWndSplitter{ GetDlgItem(hWnd, static_cast<int>(ID::Splitter)) };
 									RECT rcButtonOpen{}, rcListViewFontList{}, rcSplitter{}, rcEditMessage{};
@@ -2785,6 +2933,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									RECT rcStatusBarFontInfo{};
 									GetWindowRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
 									MapWindowRect(HWND_DESKTOP, hWnd, &rcStatusBarFontInfo);
+
+									// Resize ProgressBarFont
+									HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+									if (IsWindowVisible(hWndProgressBarFont))
+									{
+										RECT rcStatusBarFontInfo{};
+										GetClientRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
+										int aiStatusBarFontInfoParts[]{ rcStatusBarFontInfo.right - 120, -1 };
+										SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
+										RECT rcProgressBarFont{};
+										SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
+										MoveWindow(hWndProgressBarFont, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, FALSE);
+									}
 
 									// Calculate the minimal height of ListViewFontList
 									HWND hWndListViewFontList{ GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList)) };
@@ -2907,6 +3068,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									GetWindowRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
 									MapWindowRect(HWND_DESKTOP, hWnd, &rcStatusBarFontInfo);
 
+									// Resize ProgressBarFont
+									HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+									if (IsWindowVisible(hWndProgressBarFont))
+									{
+										RECT rcStatusBarFontInfo{};
+										GetClientRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
+										int aiStatusBarFontInfoParts[]{ rcStatusBarFontInfo.right - 120, -1 };
+										SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
+										RECT rcProgressBarFont{};
+										SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
+										MoveWindow(hWndProgressBarFont, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, FALSE);
+									}
+
 									// Calculate the minimal height of EditMessage
 									HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
 									HDC hDCEditMessage{ GetDC(hWndEditMessage) };
@@ -3011,6 +3185,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									// Resize StatusBarFontInfo
 									HWND hWndStatusBarFontInfo{ GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)) };
 									FORWARD_WM_SIZE(hWndStatusBarFontInfo, 0, 0, 0, SendMessage);
+
+									// Resize ProgressBarFont
+									HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+									if (IsWindowVisible(hWndProgressBarFont))
+									{
+										RECT rcStatusBarFontInfo{};
+										GetClientRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
+										int aiStatusBarFontInfoParts[]{ rcStatusBarFontInfo.right - 120, -1 };
+										SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
+										RECT rcProgressBarFont{};
+										SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
+										MoveWindow(hWndProgressBarFont, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, FALSE);
+									}
 
 									// Resize ListViewFontList
 									HWND hWndListViewFontList{ GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList)) };
@@ -3138,6 +3325,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							RECT rcStatusBarFontInfo{};
 							GetWindowRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
 							MapWindowRect(HWND_DESKTOP, hWnd, &rcStatusBarFontInfo);
+
+							// Resize ProgressBarFont
+							HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+							if (IsWindowVisible(hWndProgressBarFont))
+							{
+								RECT rcStatusBarFontInfo{};
+								GetClientRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
+								int aiStatusBarFontInfoParts[]{ rcStatusBarFontInfo.right - 120, -1 };
+								SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
+								RECT rcProgressBarFont{};
+								SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
+								MoveWindow(hWndProgressBarFont, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, FALSE);
+							}
 
 							// Resize Splitter
 							HWND hWndSplitter{ GetDlgItem(hWnd, static_cast<int>(ID::Splitter)) };
@@ -3529,6 +3729,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonUnload)), TRUE);
 
 						// Update StatusBarFontInfo
+						HWND hWndStatusBarFontInfo{ GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)) };
 						std::wstringstream ssFontInfo{};
 						std::wstring strFontInfo{};
 						std::size_t nLoadedFonts{};
@@ -3541,7 +3742,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						}
 						ssFontInfo << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
 						strFontInfo = ssFontInfo.str();
-						SetWindowText(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), strFontInfo.c_str());
+						SendMessage(hWndStatusBarFontInfo, SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(strFontInfo.c_str()));
+
+						// Set ProgressBarFont
+						HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+						SendMessage(hWndProgressBarFont, PBM_SETPOS, 0, 0);
+						ShowWindow(hWndProgressBarFont, SW_HIDE);
+
+						int aiStatusBarFontInfoParts[]{ -1 };
+						SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 1, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 
 						// Update syatem tray icon tip
 						if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
@@ -3614,6 +3823,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					EnableWindow(GetDlgItem(hWnd, static_cast<int>(ID::ButtonUnload)), TRUE);
 
 					// Update StatusBarFontInfo
+					HWND hWndStatusBarFontInfo{ GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)) };
 					std::wstringstream ssFontInfo{};
 					std::wstring strFontInfo{};
 					std::size_t nLoadedFonts{};
@@ -3626,7 +3836,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					}
 					ssFontInfo << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
 					strFontInfo = ssFontInfo.str();
-					SetWindowText(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), strFontInfo.c_str());
+					SendMessage(hWndStatusBarFontInfo, SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(strFontInfo.c_str()));
+
+					// Set ProgressBarFont
+					HWND hWndProgressBarFont{ GetDlgItem(hWndStatusBarFontInfo, static_cast<int>(ID::ProgressBarFont)) };
+					SendMessage(hWndProgressBarFont, PBM_SETPOS, 0, 0);
+					ShowWindow(hWndProgressBarFont, SW_HIDE);
+
+					int aiStatusBarFontInfoParts[]{ -1 };
+					SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 1, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 
 					// Update syatem tray icon tip
 					if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
@@ -3811,7 +4029,7 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 			}
 			ssFontInfo << FontList.size() << L" font(s) opened, " << nLoadedFonts << L" font(s) loaded.";
 			strFontInfo = ssFontInfo.str();
-			SetWindowText(GetDlgItem(hWndParent, static_cast<int>(ID::StatusBarFontInfo)), strFontInfo.c_str());
+			SendMessage(GetDlgItem(hWndParent, static_cast<int>(ID::StatusBarFontInfo)), SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(strFontInfo.c_str()));
 
 			// Update syatem tray icon tip
 			if (Button_GetCheck(GetDlgItem(hWndParent, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
@@ -4343,7 +4561,22 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 	PathAppend(szDllPath, szModuleName);
 
 	// Call LoadLibraryW with module full path to inject dll into hProcess
-	bRet = CallRemoteProc(hProcess, GetProcAddress(GetModuleHandle(L"Kernel32"), "LoadLibraryW"), szDllPath, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), dwTimeout);
+	DWORD dwRemoteThreadExitCode{};
+	if (CallRemoteProc(hProcess, GetProcAddress(GetModuleHandle(L"Kernel32"), "LoadLibraryW"), szDllPath, (std::wcslen(szDllPath) + 1) * sizeof(WCHAR), dwTimeout, &dwRemoteThreadExitCode))
+	{
+		if (dwRemoteThreadExitCode)
+		{
+			bRet = true;
+		}
+		else
+		{
+			bRet = false;
+		}
+	}
+	else
+	{
+		bRet = false;
+	}
 
 	return bRet;
 }
@@ -4387,15 +4620,30 @@ bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout)
 		CloseHandle(hModuleSnapshot);
 
 		// Call FreeLibrary with HMODULE to unload dll from hProcess
-		bRet = CallRemoteProc(hProcess, GetProcAddress(GetModuleHandle(L"Kernel32"), "FreeLibrary"), hModInjectionDll, 0, dwTimeout);
+		DWORD dwRemoteThreadExitCode{};
+		if (CallRemoteProc(hProcess, GetProcAddress(GetModuleHandle(L"Kernel32"), "FreeLibrary"), hModInjectionDll, 0, dwTimeout, &dwRemoteThreadExitCode))
+		{
+			if (dwRemoteThreadExitCode)
+			{
+				bRet = true;
+			}
+			else
+			{
+				bRet = false;
+			}
+		}
+		else
+		{
+			bRet = false;
+		}
 	} while (false);
 
 	return bRet;
 }
 
-DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize, DWORD dwTimeout)
+bool CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, std::size_t cbParamSize, DWORD dwTimeout, LPDWORD lpdwRemoteThreadExitCode)
 {
-	DWORD dwRet{};
+	bool bRet{};
 
 	do
 	{
@@ -4412,7 +4660,7 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 			lpRemoteBuffer = VirtualAllocEx(hProcess, NULL, cbParamSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 			if (!lpRemoteBuffer)
 			{
-				dwRet = 0;
+				bRet = false;
 
 				break;
 			}
@@ -4422,7 +4670,7 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 			{
 				VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
-				dwRet = 0;
+				bRet = false;
 
 				break;
 			}
@@ -4434,22 +4682,26 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 		{
 			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
-			dwRet = 0;
+			bRet = false;
 
 			break;
 		}
 
 		// Wait for remote thread to terminate with timeout
-		if (WaitForSingleObject(hRemoteThread, dwTimeout) == WAIT_TIMEOUT)
+		DWORD dwWaitResult{ WaitForSingleObject(hRemoteThread, dwTimeout) };
+		if (dwWaitResult == WAIT_OBJECT_0)
+		{
+			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
+		}
+		else
 		{
 			CloseHandle(hRemoteThread);
 			VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
-			dwRet = 0;
+			bRet = false;
 
 			break;
 		}
-		VirtualFreeEx(hProcess, lpRemoteBuffer, 0, MEM_RELEASE);
 
 		// Get exit code of remote thread
 		DWORD dwRemoteThreadExitCode{};
@@ -4457,16 +4709,21 @@ DWORD CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter,
 		{
 			CloseHandle(hRemoteThread);
 
-			dwRet = 0;
+			bRet = false;
 
 			break;
 		}
 		CloseHandle(hRemoteThread);
 
-		dwRet = dwRemoteThreadExitCode;
+		bRet = true;
+
+		if (lpdwRemoteThreadExitCode)
+		{
+			*lpdwRemoteThreadExitCode = dwRemoteThreadExitCode;
+		}
 	} while (false);
 
-	return dwRet;
+	return bRet;
 }
 
 std::wstring GetUniqueName(LPCWSTR lpszString, Scope scope)

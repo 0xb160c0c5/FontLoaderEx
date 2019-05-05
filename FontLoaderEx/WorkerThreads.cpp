@@ -17,9 +17,10 @@ HANDLE hEventWorkerThreadReadyToTerminate{};
 void DragDropWorkerThreadProc(void* lpParameter)
 {
 	std::list<FontResource>::iterator iter{ FontList.begin() };
-	FONTLISTCHANGEDSTRUCT flcs{ 0, iter->GetFontName().c_str() };
+	FONTLISTCHANGEDSTRUCT flcs{};
 	for (flcs.iItem = 0; flcs.iItem < static_cast<int>(FontList.size()); flcs.iItem++)
 	{
+		flcs.lpszFontName = iter->GetFontName().c_str();
 		if (iter->Load())
 		{
 			SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED_LOADED), reinterpret_cast<LPARAM>(&flcs));
@@ -125,7 +126,7 @@ void ButtonCloseWorkerThreadProc(void* lpParameter)
 		// Else do as usual
 		else
 		{
-			if ((ListView_GetItemState(hWndListViewFontList, flcs.iItem, LVIS_SELECTED) & LVIS_SELECTED))
+			if (ListView_GetItemState(hWndListViewFontList, flcs.iItem, LVIS_SELECTED) & LVIS_SELECTED)
 			{
 				std::wstring strTemp{ iter->GetFontName() };
 				flcs.lpszFontName = strTemp.c_str();
@@ -192,19 +193,26 @@ void ButtonLoadWorkerThreadProc(void* lpParameter)
 		// Else do as usual
 		else
 		{
-			if ((ListView_GetItemState(hWndListViewFontList, flcs.iItem, LVIS_SELECTED) & LVIS_SELECTED) && (!(iter->IsLoaded())))
+			if (ListView_GetItemState(hWndListViewFontList, flcs.iItem, LVIS_SELECTED) & LVIS_SELECTED)
 			{
-				std::wstring strTemp{ iter->GetFontName() };
-				flcs.lpszFontName = strTemp.c_str();
-				if (iter->Load())
+				if (iter->IsLoaded())
 				{
-					bIsFontListChanged = true;
-
-					SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::LOADED), reinterpret_cast<LPARAM>(&flcs));
+					SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::UNTOUCHED), 0);
 				}
 				else
 				{
-					SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::NOTLOADED), reinterpret_cast<LPARAM>(&flcs));
+					std::wstring strTemp{ iter->GetFontName() };
+					flcs.lpszFontName = strTemp.c_str();
+					if (iter->Load())
+					{
+						bIsFontListChanged = true;
+
+						SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::LOADED), reinterpret_cast<LPARAM>(&flcs));
+					}
+					else
+					{
+						SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::NOTLOADED), reinterpret_cast<LPARAM>(&flcs));
+					}
 				}
 			}
 			iter++;
@@ -242,19 +250,26 @@ void ButtonUnloadWorkerThreadProc(void* lpParameter)
 		// Else do as usual
 		else
 		{
-			if ((ListView_GetItemState(hWndListViewFontList, flcs.iItem, LVIS_SELECTED) & LVIS_SELECTED) && (iter->IsLoaded()))
+			if (ListView_GetItemState(hWndListViewFontList, flcs.iItem, LVIS_SELECTED) & LVIS_SELECTED)
 			{
-				std::wstring strTemp{ iter->GetFontName() };
-				flcs.lpszFontName = strTemp.c_str();
-				if (iter->Unload())
+				if (iter->IsLoaded())
 				{
-					bIsFontListChanged = true;
+					std::wstring strTemp{ iter->GetFontName() };
+					flcs.lpszFontName = strTemp.c_str();
+					if (iter->Unload())
+					{
+						bIsFontListChanged = true;
 
-					SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::UNLOADED), reinterpret_cast<LPARAM>(&flcs));
+						SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::UNLOADED), reinterpret_cast<LPARAM>(&flcs));
+					}
+					else
+					{
+						SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::NOTUNLOADED), reinterpret_cast<LPARAM>(&flcs));
+					}
 				}
 				else
 				{
-					SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::NOTUNLOADED), reinterpret_cast<LPARAM>(&flcs));
+					SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::UNTOUCHED), 0);
 				}
 			}
 			iter++;
@@ -293,7 +308,22 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 		WaitForSingleObject(hEventWorkerThreadReadyToTerminate, INFINITE);
 	}
 
-	SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATED), MAKEWPARAM(WATCHTHREADTERMINATED::TARGET, TERMINATION::TARGET), static_cast<LPARAM>(bIsWorkerThreadRunning));
+	SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATING), static_cast<WPARAM>(TERMINATION::TARGET), static_cast<LPARAM>(bIsWorkerThreadRunning));
+
+	// Clear FontList
+	FontResource::RegisterAddRemoveFontProc(NullAddFontProc, NullRemoveFontProc);
+	FontList.clear();
+
+	// Register global AddFont() and RemoveFont() procedures
+	FontResource::RegisterAddRemoveFontProc(GlobalAddFontProc, GlobalRemoveFontProc);
+
+	// Close HANDLE to proxy process and target process, duplicated handles and synchronization objects
+	CloseHandle(TargetProcessInfo.hProcess);
+	TargetProcessInfo.hProcess = NULL;
+	CloseHandle(hProcessCurrentDuplicated);
+	CloseHandle(hProcessTargetDuplicated);
+
+	SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATED), 0, static_cast<LPARAM>(bIsWorkerThreadRunning));
 
 	if (bIsWorkerThreadRunning)
 	{
@@ -338,7 +368,30 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 		WaitForSingleObject(hEventWorkerThreadReadyToTerminate, INFINITE);
 	}
 
-	SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATED), MAKEWPARAM(WATCHTHREADTERMINATED::PROXY, t), static_cast<LPARAM>(bIsWorkerThreadRunning));
+	SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATING), static_cast<WPARAM>(t), static_cast<LPARAM>(bIsWorkerThreadRunning));
+
+	// Clear FontList
+	FontResource::RegisterAddRemoveFontProc(NullAddFontProc, NullRemoveFontProc);
+	FontList.clear();
+
+	// Register global AddFont() and RemoveFont() procedures
+	FontResource::RegisterAddRemoveFontProc(GlobalAddFontProc, GlobalRemoveFontProc);
+
+	// Terminate message thread
+	SendMessage(hWndMessage, WM_CLOSE, 0, 0);
+	WaitForSingleObject(hThreadMessage, INFINITE);
+
+	// Close HANDLE to proxy process and target process, duplicated handles and synchronization objects
+	CloseHandle(TargetProcessInfo.hProcess);
+	TargetProcessInfo.hProcess = NULL;
+	CloseHandle(hProcessCurrentDuplicated);
+	CloseHandle(hProcessTargetDuplicated);
+	CloseHandle(ProxyProcessInfo.hProcess);
+	ProxyProcessInfo.hProcess = NULL;
+	CloseHandle(hEventProxyAddFontFinished);
+	CloseHandle(hEventProxyRemoveFontFinished);
+
+	SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATED), 0, static_cast<LPARAM>(bIsWorkerThreadRunning));
 
 	if (bIsWorkerThreadRunning)
 	{

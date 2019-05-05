@@ -43,12 +43,28 @@ bool GlobalRemoveFontProc(const wchar_t* lpszFontName)
 
 bool RemoteAddFontProc(const wchar_t* lpszFontName)
 {
-	return CallRemoteProc(TargetProcessInfo.hProcess, lpRemoteAddFontProcAddr, const_cast<wchar_t*>(lpszFontName), (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), INFINITE);
+	DWORD dwRemoteThreadExitCode{};
+	if (CallRemoteProc(TargetProcessInfo.hProcess, lpRemoteAddFontProcAddr, const_cast<wchar_t*>(lpszFontName), (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), INFINITE, &dwRemoteThreadExitCode))
+	{
+		return static_cast<bool>(dwRemoteThreadExitCode);
+	}
+	else
+	{
+		return false;
+	}
 }
 
 bool RemoteRemoveFontProc(const wchar_t* lpszFontName)
 {
-	return CallRemoteProc(TargetProcessInfo.hProcess, lpRemoteRemoveFontProcAddr, const_cast<wchar_t*>(lpszFontName), (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), INFINITE);
+	DWORD dwRemoteThreadExitCode{};
+	if (CallRemoteProc(TargetProcessInfo.hProcess, lpRemoteRemoveFontProcAddr, const_cast<wchar_t*>(lpszFontName), (std::wcslen(lpszFontName) + 1) * sizeof(wchar_t), INFINITE, &dwRemoteThreadExitCode))
+	{
+		return static_cast<bool>(dwRemoteThreadExitCode);
+	}
+	else
+	{
+		return false;
+	}
 }
 
 bool ProxyAddFontProc(const wchar_t* lpszFontName)
