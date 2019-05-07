@@ -5,13 +5,12 @@
 #include <sstream>
 #include <atomic>
 #include <climits>
+#include <cassert>
 #include "FontResource.h"
 #include "Globals.h"
 #include "resource.h"
 
-std::atomic<bool> bIsWorkerThreadRunning{ false };
-std::atomic<bool> bIsTargetProcessTerminated{ false };
-HANDLE hEventWorkerThreadReadyToTerminate{};
+std::atomic_flag IsTargetProcessTerminated{};
 
 // Process drag-drop font files onto the application icon stage II worker thread
 void DragDropWorkerThreadProc(void* lpParameter)
@@ -37,11 +36,8 @@ void DragDropWorkerThreadProc(void* lpParameter)
 }
 
 // Close worker thread
-void CloseWorkerThreadProc(void* lpParameter)
+unsigned int __stdcall CloseWorkerThreadProc(void* lpParameter)
 {
-	bIsWorkerThreadRunning = true;
-	hEventWorkerThreadReadyToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
-
 	bool bIsUnloadingSuccessful{ true };
 	bool bIsUnloadingInterrupted{ false };
 	bool bIsFontListChanged{ false };
@@ -52,17 +48,19 @@ void CloseWorkerThreadProc(void* lpParameter)
 	for (flcs.iItem = static_cast<int>(FontList.size()) - 1; flcs.iItem >= 0; flcs.iItem--)
 	{
 		// If target process terminated, wait for watch thread to terminate first
-		if (bIsTargetProcessTerminated)
+		if (IsTargetProcessTerminated.test_and_set())
 		{
 			SetEvent(hEventWorkerThreadReadyToTerminate);
 			WaitForSingleObject(hThreadWatch, INFINITE);
 
 			bIsUnloadingInterrupted = true;
+
 			break;
 		}
 		// Else do as usual
 		else
 		{
+			IsTargetProcessTerminated.clear();
 			std::wstring strTemp{ iter->GetFontName() };
 			flcs.lpszFontName = strTemp.c_str();
 			if (iter->IsLoaded())
@@ -96,19 +94,15 @@ void CloseWorkerThreadProc(void* lpParameter)
 
 	PostMessage(hWndMain, static_cast<UINT>(USERMESSAGE::CLOSEWORKERTHREADTERMINATED), static_cast<WPARAM>(bIsFontListChanged), MAKELPARAM(bIsUnloadingInterrupted, bIsUnloadingSuccessful));
 
-	bIsWorkerThreadRunning = false;
-	SetEvent(hEventWorkerThreadReadyToTerminate);
-	CloseHandle(hEventWorkerThreadReadyToTerminate);
+	return 0;
 }
 
 // Unload and close selected fonts worker thread
-void ButtonCloseWorkerThreadProc(void* lpParameter)
+unsigned int __stdcall ButtonCloseWorkerThreadProc(void* lpParameter)
 {
-	bIsWorkerThreadRunning = true;
-	hEventWorkerThreadReadyToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
-
 	HWND hWndListViewFontList{ GetDlgItem(hWndMain, PtrToInt(lpParameter)) };
 
+	bool bIsInterrupted{ false };
 	bool bIsFontListChanged{ false };
 
 	FontList.reverse();
@@ -117,15 +111,19 @@ void ButtonCloseWorkerThreadProc(void* lpParameter)
 	for (flcs.iItem = static_cast<int>(FontList.size()) - 1; flcs.iItem >= 0; flcs.iItem--)
 	{
 		// If target process terminated, wait for watch thread to terminate first
-		if (bIsTargetProcessTerminated)
+		if (IsTargetProcessTerminated.test_and_set())
 		{
 			SetEvent(hEventWorkerThreadReadyToTerminate);
 			WaitForSingleObject(hThreadWatch, INFINITE);
+
+			bIsInterrupted = true;
+
 			break;
 		}
 		// Else do as usual
 		else
 		{
+			IsTargetProcessTerminated.clear();
 			if (ListView_GetItemState(hWndListViewFontList, flcs.iItem, LVIS_SELECTED) & LVIS_SELECTED)
 			{
 				std::wstring strTemp{ iter->GetFontName() };
@@ -162,21 +160,17 @@ void ButtonCloseWorkerThreadProc(void* lpParameter)
 	}
 	FontList.reverse();
 
-	PostMessage(hWndMain, static_cast<UINT>(USERMESSAGE::BUTTONCLOSEWORKERTHREADTERMINATED), static_cast<WPARAM>(bIsFontListChanged), 0);
+	PostMessage(hWndMain, static_cast<UINT>(USERMESSAGE::BUTTONCLOSEWORKERTHREADTERMINATED), static_cast<WPARAM>(bIsFontListChanged), static_cast<LPARAM>(bIsInterrupted));
 
-	bIsWorkerThreadRunning = false;
-	SetEvent(hEventWorkerThreadReadyToTerminate);
-	CloseHandle(hEventWorkerThreadReadyToTerminate);
+	return 0;
 }
 
 // Load selected fonts worker thread
-void ButtonLoadWorkerThreadProc(void* lpParameter)
+unsigned int __stdcall ButtonLoadWorkerThreadProc(void* lpParameter)
 {
-	bIsWorkerThreadRunning = true;
-	hEventWorkerThreadReadyToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
-
 	HWND hWndListViewFontList{ GetDlgItem(hWndMain, PtrToInt(lpParameter)) };
 
+	bool bIsInterrupted{ false };
 	bool bIsFontListChanged{ false };
 
 	std::list<FontResource>::iterator iter{ FontList.begin() };
@@ -184,15 +178,19 @@ void ButtonLoadWorkerThreadProc(void* lpParameter)
 	for (flcs.iItem = 0; flcs.iItem < static_cast<int>(FontList.size()); flcs.iItem++)
 	{
 		// If target process terminated, wait for watch thread to terminate first
-		if (bIsTargetProcessTerminated)
+		if (IsTargetProcessTerminated.test_and_set())
 		{
 			SetEvent(hEventWorkerThreadReadyToTerminate);
 			WaitForSingleObject(hThreadWatch, INFINITE);
+
+			bIsInterrupted = true;
+
 			break;
 		}
 		// Else do as usual
 		else
 		{
+			IsTargetProcessTerminated.clear();
 			if (ListView_GetItemState(hWndListViewFontList, flcs.iItem, LVIS_SELECTED) & LVIS_SELECTED)
 			{
 				if (iter->IsLoaded())
@@ -219,21 +217,17 @@ void ButtonLoadWorkerThreadProc(void* lpParameter)
 		}
 	}
 
-	PostMessage(hWndMain, (UINT)USERMESSAGE::BUTTONLOADWORKERTHREADTERMINATED, (WPARAM)bIsFontListChanged, 0);
+	PostMessage(hWndMain, static_cast<UINT>(USERMESSAGE::BUTTONCLOSEWORKERTHREADTERMINATED), static_cast<WPARAM>(bIsFontListChanged), static_cast<LPARAM>(bIsInterrupted));
 
-	bIsWorkerThreadRunning = false;
-	SetEvent(hEventWorkerThreadReadyToTerminate);
-	CloseHandle(hEventWorkerThreadReadyToTerminate);
+	return 0;
 }
 
 // Unload selected fonts worker thread
-void ButtonUnloadWorkerThreadProc(void* lpParameter)
+unsigned int __stdcall ButtonUnloadWorkerThreadProc(void* lpParameter)
 {
-	bIsWorkerThreadRunning = true;
-	hEventWorkerThreadReadyToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
-
 	HWND hWndListViewFontList{ GetDlgItem(hWndMain, PtrToInt(lpParameter)) };
 
+	bool bIsInterrupted{ false };
 	bool bIsFontListChanged{ false };
 
 	std::list<FontResource>::iterator iter{ FontList.begin() };
@@ -241,15 +235,19 @@ void ButtonUnloadWorkerThreadProc(void* lpParameter)
 	for (flcs.iItem = 0; flcs.iItem < static_cast<int>(FontList.size()); flcs.iItem++)
 	{
 		// If target process terminated, wait for watch thread to terminate first
-		if (bIsTargetProcessTerminated)
+		if (IsTargetProcessTerminated.test_and_set())
 		{
 			SetEvent(hEventWorkerThreadReadyToTerminate);
 			WaitForSingleObject(hThreadWatch, INFINITE);
+
+			bIsInterrupted = true;
+
 			break;
 		}
 		// Else do as usual
 		else
 		{
+			IsTargetProcessTerminated.clear();
 			if (ListView_GetItemState(hWndListViewFontList, flcs.iItem, LVIS_SELECTED) & LVIS_SELECTED)
 			{
 				if (iter->IsLoaded())
@@ -276,11 +274,9 @@ void ButtonUnloadWorkerThreadProc(void* lpParameter)
 		}
 	}
 
-	PostMessage(hWndMain, static_cast<UINT>(USERMESSAGE::BUTTONUNLOADWORKERTHREADTERMINATED), static_cast<WPARAM>(bIsFontListChanged), 0);
+	PostMessage(hWndMain, static_cast<UINT>(USERMESSAGE::BUTTONCLOSEWORKERTHREADTERMINATED), static_cast<WPARAM>(bIsFontListChanged), static_cast<LPARAM>(bIsInterrupted));
 
-	bIsWorkerThreadRunning = false;
-	SetEvent(hEventWorkerThreadReadyToTerminate);
-	CloseHandle(hEventWorkerThreadReadyToTerminate);
+	return 0;
 }
 
 // Target process watch thread
@@ -298,14 +294,26 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 		}
 		break;
 	default:
+		{
+			assert(0 && "WaitForSingleObject() failed");
+		}
 		break;
 	}
 
 	// Singal worker thread and wait for worker thread to ready to exit
-	if (bIsWorkerThreadRunning)
+	// Because only one worker thread runs at a time, so use bitwise-or to get the handle to running worker thread
+	bool bIsWorkerThreadRunning{ false };
+	switch (WaitForSingleObject(reinterpret_cast<HANDLE>(reinterpret_cast<UINT_PTR>(hThreadCloseWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonCloseWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonLoadWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonUnloadWorkerThreadProc)), 0))
 	{
-		bIsTargetProcessTerminated = true;
-		WaitForSingleObject(hEventWorkerThreadReadyToTerminate, INFINITE);
+	case WAIT_TIMEOUT:
+		{
+			bIsWorkerThreadRunning = true;
+			IsTargetProcessTerminated.test_and_set();
+			WaitForSingleObject(hEventWorkerThreadReadyToTerminate, INFINITE);
+		}
+		break;
+	default:
+		break;
 	}
 
 	SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATING), static_cast<WPARAM>(TERMINATION::TARGET), static_cast<LPARAM>(bIsWorkerThreadRunning));
@@ -323,12 +331,7 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 	CloseHandle(hProcessCurrentDuplicated);
 	CloseHandle(hProcessTargetDuplicated);
 
-	SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATED), 0, static_cast<LPARAM>(bIsWorkerThreadRunning));
-
-	if (bIsWorkerThreadRunning)
-	{
-		bIsTargetProcessTerminated = false;
-	}
+	PostMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATED), 0, static_cast<LPARAM>(bIsWorkerThreadRunning));
 
 	return 0;
 }
@@ -358,14 +361,26 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 		}
 		break;
 	default:
+		{
+			assert(0 && "WaitForSingleObject() failed");
+		}
 		break;
 	}
 
 	// Singal worker thread and wait for worker thread to ready to exit
-	if (bIsWorkerThreadRunning)
+	// Because only one worker thread runs at a time, so use bitwise-or to get the handle to running worker thread
+	bool bIsWorkerThreadRunning{ false };
+	switch (WaitForSingleObject(reinterpret_cast<HANDLE>(reinterpret_cast<UINT_PTR>(hThreadCloseWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonCloseWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonLoadWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonUnloadWorkerThreadProc)), 0))
 	{
-		bIsTargetProcessTerminated = true;
-		WaitForSingleObject(hEventWorkerThreadReadyToTerminate, INFINITE);
+	case WAIT_TIMEOUT:
+		{
+			bIsWorkerThreadRunning = true;
+			IsTargetProcessTerminated.test_and_set();
+			WaitForSingleObject(hEventWorkerThreadReadyToTerminate, INFINITE);
+		}
+		break;
+	default:
+		break;
 	}
 
 	SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATING), static_cast<WPARAM>(t), static_cast<LPARAM>(bIsWorkerThreadRunning));
@@ -391,12 +406,7 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	CloseHandle(hEventProxyAddFontFinished);
 	CloseHandle(hEventProxyRemoveFontFinished);
 
-	SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATED), 0, static_cast<LPARAM>(bIsWorkerThreadRunning));
-
-	if (bIsWorkerThreadRunning)
-	{
-		bIsTargetProcessTerminated = false;
-	}
+	PostMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATED), 0, static_cast<LPARAM>(bIsWorkerThreadRunning));
 
 	return 0;
 }

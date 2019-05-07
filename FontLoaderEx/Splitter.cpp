@@ -57,7 +57,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 		break;
 	case WM_LBUTTONDOWN:
 		{
-			// Capture mouse and send WM_NOTIFY with SPLITTERNOTIFICATION::DRAGBEGIN to parent window
+			// Capture cursor and send WM_NOTIFY with SPLITTERNOTIFICATION::DRAGBEGIN to parent window
 			if (!(dwSplitterStyle & SPS_NOCAPTURE))
 			{
 				SetCapture(hWndSplitter);
@@ -97,7 +97,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 		break;
 	case WM_LBUTTONUP:
 		{
-			// Release mouse and send WM_NOTIFY with SPLITTERNOTIFICATION::DRAGBEGIN to parent window
+			// Release cursor and send WM_NOTIFY with SPLITTERNOTIFICATION::DRAGBEGIN to parent window
 			if (!(dwSplitterStyle & SPS_NOCAPTURE))
 			{
 				ReleaseCapture();

@@ -13,6 +13,7 @@
 #include <cwchar>
 #include <string>
 #include <sstream>
+#include <cassert>
 
 constexpr WCHAR szAppName[]{ L"FontLoaderExProxy" };
 constexpr WCHAR szParentAppName[]{ L"FontLoaderEx" };
@@ -52,6 +53,9 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		case IDNO:
 			break;
 		default:
+			{
+				assert(0 && "invalid option");
+			}
 			break;
 		}
 
@@ -76,18 +80,18 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 	MSG Message{};
 	BOOL bRet{};
-	while ((bRet = GetMessage(&Message, NULL, 0, 0)) != 0)
+	while (bRet = GetMessage(&Message, NULL, 0, 0))
 	{
 		if (bRet == -1)
 		{
-			return (int)GetLastError();
+			return static_cast<int>(GetLastError());
 		}
 		else
 		{
 			DispatchMessage(&Message);
 		}
 	}
-	return (int)Message.wParam;
+	return static_cast<int>(Message.wParam);
 }
 
 HANDLE hProcessParent{};
@@ -139,6 +143,9 @@ unsigned int __stdcall ParentProcessWatchThreadProc(void* lpParameter)
 		}
 		break;
 	default:
+		{
+			assert(0 && "WaitForMultipleObjects failed");
+		}
 		break;
 	}
 
@@ -155,6 +162,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 	{
 	case USERMESSAGE::WATCHTHREADTERMINATED:
 		{
+			// Wait for watch thread to terminate
+			WaitForSingleObject(hThreadWatch, INFINITE);
+
 			// Destroy message-only window
 			PostMessage(hWnd, WM_CLOSE, 0, 0);
 		}
@@ -181,25 +191,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			// Get information from command line
 			int argc{};
 			LPWSTR* argv = CommandLineToArgvW(GetCommandLine(), &argc);
-#ifdef _WIN64
+
 			// Get handles to parent process and message window
-			hProcessParent = reinterpret_cast<HANDLE>(std::wcstoull(argv[0], nullptr, 16));
-			hProcessTarget = reinterpret_cast<HANDLE>(std::wcstoull(argv[1], nullptr, 16));
-			hWndParentMessage = reinterpret_cast<HWND>(std::wcstoull(argv[2], nullptr, 16));
+			hProcessParent = static_cast<HANDLE>(ULongToHandle(std::wcstoul(argv[0], nullptr, 16)));
+			assert(hProcessParent);
+			hProcessTarget = static_cast<HANDLE>(ULongToHandle(std::wcstoul(argv[1], nullptr, 16)));
+			assert(hProcessTarget);
+			hWndParentMessage = static_cast<HWND>(ULongToHandle(std::wcstoul(argv[2], nullptr, 16)));
+			assert(hWndParentMessage);
 
 			// Get handles to synchronization objects
-			hEventMessageThreadReady = reinterpret_cast<HANDLE>(std::wcstoull(argv[3], nullptr, 16));
-			hEventProxyProcessReady = reinterpret_cast<HANDLE>(std::wcstoull(argv[4], nullptr, 16));
-#else
-			// Get handles to parent process and message window
-			hProcessParent = reinterpret_cast<HANDLE>(std::wcstoul(argv[0], nullptr, 16));
-			hProcessTarget = reinterpret_cast<HANDLE>(std::wcstoul(argv[1], nullptr, 16));
-			hWndParentMessage = reinterpret_cast<HWND>(std::wcstoul(argv[2], nullptr, 16));
-
-			// Get handles to synchronization objects
-			hEventMessageThreadReady = reinterpret_cast<HANDLE>(std::wcstoul(argv[3], nullptr, 16));
-			hEventProxyProcessReady = reinterpret_cast<HANDLE>(std::wcstoul(argv[4], nullptr, 16));
-#endif	// _WIN64
+			hEventMessageThreadReady = static_cast<HANDLE>(ULongToHandle(std::wcstoul(argv[3], nullptr, 16)));
+			assert(hEventMessageThreadReady);
+			hEventProxyProcessReady = static_cast<HANDLE>(ULongToHandle(std::wcstoul(argv[4], nullptr, 16)));
+			assert(hEventProxyProcessReady);
 
 			// Get timeout
 			dwTimeout = static_cast<DWORD>(std::wcstoul(argv[5], nullptr, 10));
@@ -231,6 +236,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			// Start watch thread and create synchronization object
 			hEventTerminateWatchThread = CreateEvent(NULL, TRUE, FALSE, NULL);
 			hThreadWatch = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, ParentProcessWatchThreadProc, hWnd, 0, nullptr));
+			assert(hThreadWatch);
 		}
 		break;
 	case WM_COPYDATA:
@@ -246,6 +252,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 					// Check whether target process loads gdi32.dll as AddFontResourceEx() and RemoveFontResourceEx() are in it
 					HANDLE hModuleSnapshot{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetThreadId(hProcessTarget)) };
+					assert(hModuleSnapshot);
 					MODULEENTRY32 me32{ sizeof(MODULEENTRY32) };
 					bool bIsGDI32Loaded{ false };
 					if (!Module32First(hModuleSnapshot, &me32))
@@ -291,6 +298,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 					// Get base address of FontLoaderExInjectionDll(64).dll in target process
 					HANDLE hModuleSnapshot2{ CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetProcessId(hProcessTarget)) };
+					assert(hModuleSnapshot2);
 					MODULEENTRY32 me322{ sizeof(MODULEENTRY32) };
 					BYTE* lpModBaseAddr{};
 					if (!Module32First(hModuleSnapshot2, &me322))
@@ -326,8 +334,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 					// Calculate addresses of AddFont() and RemoveFont() in target process
 					HMODULE hModInjectionDll{ LoadLibrary(szInjectionDllName) };
+					assert(hModInjectionDll);
 					void* lpLocalAddFontProcAddr{ GetProcAddress(hModInjectionDll, "AddFont") };
+					assert(lpLocalAddFontProcAddr);
 					void* lpLocalRemoveFontProcAddr{ GetProcAddress(hModInjectionDll, "RemoveFont") };
+					assert(lpLocalRemoveFontProcAddr);
 					FreeLibrary(hModInjectionDll);
 					lpRemoteAddFontProcAddr = reinterpret_cast<void*>(reinterpret_cast<UINT_PTR>(lpModBaseAddr) + (reinterpret_cast<UINT_PTR>(lpLocalAddFontProcAddr) - reinterpret_cast<UINT_PTR>(hModInjectionDll)));
 					lpRemoteRemoveFontProcAddr = reinterpret_cast<void*>(reinterpret_cast<UINT_PTR>(lpModBaseAddr) + (reinterpret_cast<UINT_PTR>(lpLocalRemoveFontProcAddr) - reinterpret_cast<UINT_PTR>(hModInjectionDll)));

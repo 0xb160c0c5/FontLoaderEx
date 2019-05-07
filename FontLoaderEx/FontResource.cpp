@@ -1,16 +1,12 @@
 ﻿#include <Windows.h>
 #include <windowsx.h>
 #include <cwchar>
+#include <cassert>
 #include "FontResource.h"
 #include "Globals.h"
 
 FontResource::AddFontProc FontResource::AddFontProc_{};
 FontResource::RemoveFontProc FontResource::RemoveFontProc_{};
-
-HWND hWndProxy{};
-
-HANDLE hEventProxyAddFontFinished{};
-HANDLE hEventProxyRemoveFontFinished{};
 
 ADDFONT ProxyAddFontResult{};
 REMOVEFONT ProxyRemoveFontResult{};
@@ -86,7 +82,11 @@ bool ProxyAddFontProc(const wchar_t* lpszFontName)
 		{
 			bRet = false;
 		}
+		break;
 	default:
+		{
+			assert(0 && "invalid ProxyAddFontResult");
+		}
 		break;
 	}
 
@@ -112,7 +112,11 @@ bool ProxyRemoveFontProc(const wchar_t* lpszFontName)
 		{
 			bRet = false;
 		}
+		break;
 	default:
+		{
+			assert(0 && "invalid ProxyRemoveFontResult");
+		}
 		break;
 	}
 

@@ -22,16 +22,22 @@ struct FONTLISTCHANGEDSTRUCT
 enum class TERMINATION : DWORD { PROXY, TARGET };
 
 extern void DragDropWorkerThreadProc(void* lpParameter);
-extern void CloseWorkerThreadProc(void* lpParameter);
-extern void ButtonCloseWorkerThreadProc(void* lpParameter);
-extern void ButtonLoadWorkerThreadProc(void* lpParameter);
-extern void ButtonUnloadWorkerThreadProc(void* lpParameter);
+extern unsigned int __stdcall CloseWorkerThreadProc(void* lpParameter);
+extern unsigned int __stdcall ButtonCloseWorkerThreadProc(void* lpParameter);
+extern unsigned int __stdcall ButtonLoadWorkerThreadProc(void* lpParameter);
+extern unsigned int __stdcall ButtonUnloadWorkerThreadProc(void* lpParameter);
 extern unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter);
 extern unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter);
 extern unsigned int __stdcall MessageThreadProc(void* lpParameter);
 
+extern HANDLE hThreadCloseWorkerThreadProc;
+extern HANDLE hThreadButtonCloseWorkerThreadProc;
+extern HANDLE hThreadButtonLoadWorkerThreadProc;
+extern HANDLE hThreadButtonUnloadWorkerThreadProc;
 extern HANDLE hThreadWatch;
 extern HANDLE hThreadMessage;
+
+extern HANDLE hEventWorkerThreadReadyToTerminate;
 
 struct ProcessInfo
 {
