@@ -418,46 +418,56 @@ HWND hWndMessage{};
 // Message thread
 unsigned int __stdcall MessageThreadProc(void* lpParameter)
 {
-	// Force Windows to create message queue for current thread
-	MSG Message{};
-	PeekMessage(&Message, NULL, 0, 0, PM_NOREMOVE);
-
 	// Create message-only window
 	WNDCLASS wc{ 0, MessageWndProc, 0, 0, static_cast<HINSTANCE>(GetModuleHandle(NULL)), NULL, NULL, NULL, NULL, L"FontLoaderExMessage" };
 	if (!RegisterClass(&wc))
 	{
 		SetEvent(hEventMessageThreadNotReady);
 
-		return 0xFFFFFFFF;
+		return 0xFFFFFFFFu;
 	}
 	if (!(hWndMessage = CreateWindow(L"FontLoaderExMessage", L"FontLoaderExMessage", NULL, 0, 0, 0, 0, HWND_MESSAGE, NULL, static_cast<HINSTANCE>(GetModuleHandle(NULL)), NULL)))
 	{
 		SetEvent(hEventMessageThreadNotReady);
 
-		return 0xFFFFFFFF;
+		return 0xFFFFFFFFu;
 	}
 
 	SetEvent(hEventMessageThreadReady);
 
+	MSG Message{};
+	unsigned int uiRet{};
 	BOOL bRet{};
-	while ((bRet = GetMessage(&Message, NULL, 0, 0)) != 0)
+	do
 	{
-		if (bRet == -1)
+		switch (bRet = GetMessage(&Message, NULL, 0, 0))
 		{
-			unsigned int uiLastError{ static_cast<unsigned int>(GetLastError()) };
-			DestroyWindow(hWndMessage);
-			UnregisterClass(L"FontLoaderExMessage", (HINSTANCE)GetModuleHandle(NULL));
+		case -1:
+			{
+				uiRet = static_cast<unsigned int>(GetLastError());
 
-			return uiLastError;
-		}
-		else
-		{
-			DispatchMessage(&Message);
-		}
-	}
-	UnregisterClass(L"FontLoaderExMessage", (HINSTANCE)GetModuleHandle(NULL));
+				DestroyWindow(hWndMessage);
+				BOOL bRetUnregisterClass{ UnregisterClass(L"FontLoaderExMessage", (HINSTANCE)GetModuleHandle(NULL)) };
+				assert(bRetUnregisterClass);
+			}
+			break;
+		case 0:
+			{
+				BOOL bRetUnregisterClass{ UnregisterClass(L"FontLoaderExMessage", (HINSTANCE)GetModuleHandle(NULL)) };
+				assert(bRetUnregisterClass);
 
-	return static_cast<unsigned int>(Message.wParam);
+				uiRet = static_cast<unsigned int>(Message.wParam);
+			}
+			break;
+		default:
+			{
+				DispatchMessage(&Message);
+			}
+			break;
+		}
+	} while (bRet);
+
+	return uiRet;
 }
 
 LRESULT CALLBACK MessageWndProc(HWND hWndMessage, UINT Message, WPARAM wParam, LPARAM lParam)
@@ -479,7 +489,7 @@ LRESULT CALLBACK MessageWndProc(HWND hWndMessage, UINT Message, WPARAM wParam, L
 					SetEvent(hEventProxyProcessDebugPrivilegeEnablingFinished);
 				}
 				break;
-				// Recieve HWND to proxy process
+				// receive HWND to proxy process
 			case COPYDATA::PROXYPROCESSHWNDSENT:
 				{
 					hWndProxy = *static_cast<HWND*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);

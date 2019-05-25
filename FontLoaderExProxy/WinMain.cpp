@@ -45,9 +45,11 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 			{
 				STARTUPINFO sa{ sizeof(STARTUPINFO) };
 				PROCESS_INFORMATION pi{};
-				CreateProcess(L"FontLoaderEx.exe", NULL, NULL, NULL, FALSE, 0, NULL, NULL, &sa, &pi);
-				CloseHandle(pi.hThread);
-				CloseHandle(pi.hProcess);
+				if (CreateProcess(L"FontLoaderEx.exe", NULL, NULL, NULL, FALSE, 0, NULL, NULL, &sa, &pi))
+				{
+					CloseHandle(pi.hThread);
+					CloseHandle(pi.hProcess);
+				}
 			}
 			break;
 		case IDNO:
@@ -79,19 +81,35 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	}
 
 	MSG Message{};
+	int iRet{};
 	BOOL bRet{};
-	while (bRet = GetMessage(&Message, NULL, 0, 0))
+	do
 	{
-		if (bRet == -1)
+		switch (bRet = GetMessage(&Message, NULL, 0, 0))
 		{
-			return static_cast<int>(GetLastError());
+		case -1:
+			{
+				iRet = static_cast<int>(GetLastError());
+			}
+			break;
+		case 0:
+			{
+				iRet = static_cast<int>(Message.wParam);
+			}
+			break;
+		default:
+			{
+				if (!IsDialogMessage(hWndMain, &Message))
+				{
+					TranslateMessage(&Message);
+					DispatchMessage(&Message);
+				}
+			}
+			break;
 		}
-		else
-		{
-			DispatchMessage(&Message);
-		}
-	}
-	return static_cast<int>(Message.wParam);
+	} while (bRet);
+
+	return iRet;
 }
 
 HANDLE hProcessParent{};
@@ -104,12 +122,12 @@ HANDLE hEventProxyProcessReady{};
 DWORD dwTimeout{};
 
 enum class USERMESSAGE : UINT { TERMINATE = WM_USER + 0x100, WATCHTHREADTERMINATED };
-enum class COPYDATA : ULONG_PTR { PROXYPROCESSHWNDSENT, PROXYPROCESSDEBUGPRIVILEGEENABLEFINISHED, INJECTDLL, DLLINJECTIONFINISHED, PULLDLL, DLLPULLINGFINISHED, ADDFONT, ADDFONTFINISHED, REMOVEFONT, REMOVEFONTFINISHED, TERMINATE };
-enum class PROXYPROCESSDEBUGPRIVILEGEENABLING : UINT { SUCCESSFUL, FAILED };
-enum class PROXYDLLINJECTION : UINT { SUCCESSFUL, FAILED, FAILEDTOENUMERATEMODULES, GDI32NOTLOADED, MODULENOTFOUND };
-enum class PROXYDLLPULL : UINT { SUCCESSFUL, FAILED };
-enum class ADDFONT : UINT { SUCCESSFUL, FAILED };
-enum class REMOVEFONT : UINT { SUCCESSFUL, FAILED };
+enum class COPYDATA : ULONG_PTR { PROXYPROCESSHWNDSENT = 1, PROXYPROCESSDEBUGPRIVILEGEENABLEFINISHED, INJECTDLL, DLLINJECTIONFINISHED, PULLDLL, DLLPULLINGFINISHED, ADDFONT, ADDFONTFINISHED, REMOVEFONT, REMOVEFONTFINISHED, TERMINATE };
+enum class PROXYPROCESSDEBUGPRIVILEGEENABLING : UINT { SUCCESSFUL = 1, FAILED };
+enum class PROXYDLLINJECTION : UINT { SUCCESSFUL = 1, FAILED, FAILEDTOENUMERATEMODULES, GDI32NOTLOADED, MODULENOTFOUND };
+enum class PROXYDLLPULL : UINT { SUCCESSFUL = 1, FAILED };
+enum class ADDFONT : UINT { SUCCESSFUL = 1, FAILED };
+enum class REMOVEFONT : UINT { SUCCESSFUL = 1, FAILED };
 
 void* lpRemoteAddFontProcAddr{};
 void* lpRemoteRemoveFontProcAddr{};
@@ -192,7 +210,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			int argc{};
 			LPWSTR* argv = CommandLineToArgvW(GetCommandLine(), &argc);
 
-			// Get handles to parent process and message window
+			// Get handles to parent process and message-only window
 			hProcessParent = static_cast<HANDLE>(ULongToHandle(std::wcstoul(argv[0], nullptr, 16)));
 			assert(hProcessParent);
 			hProcessTarget = static_cast<HANDLE>(ULongToHandle(std::wcstoul(argv[1], nullptr, 16)));
@@ -211,9 +229,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 			// Wait for message thread to ready
 			WaitForSingleObject(hEventMessageThreadReady, INFINITE);
-
-			// Notify parent process ready
-			SetEvent(hEventProxyProcessReady);
 
 			// Send HWND to message window to parent process
 			COPYDATASTRUCT cds2{ static_cast<ULONG_PTR>(COPYDATA::PROXYPROCESSHWNDSENT), sizeof(HWND), &hWnd };
@@ -237,6 +252,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			hEventTerminateWatchThread = CreateEvent(NULL, TRUE, FALSE, NULL);
 			hThreadWatch = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, ParentProcessWatchThreadProc, hWnd, 0, nullptr));
 			assert(hThreadWatch);
+
+			// Notify parent process ready
+			SetEvent(hEventProxyProcessReady);
 		}
 		break;
 	case WM_COPYDATA:

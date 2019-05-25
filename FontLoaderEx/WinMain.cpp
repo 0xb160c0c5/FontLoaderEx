@@ -2,6 +2,10 @@
 #error Unicode character set required
 #endif // UNICODE && _UNICODE
 
+#ifdef _DEBUG
+#define SHOWPOSINFO
+#endif // _DEBUG
+
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #pragma comment(lib, "ComCtl32.lib")
 #pragma comment(lib, "Shlwapi.lib")
@@ -158,36 +162,48 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	hMenuContextTray = GetSubMenu(LoadMenu(hInstance, MAKEINTRESOURCE(IDR_CONTEXTMENU1)), 1);
 
 	MSG Message{};
+	int iRet{};
 	BOOL bRet{};
-	while (bRet = GetMessage(&Message, NULL, 0, 0))
+	do
 	{
-		if (bRet == -1)
+		switch (bRet = GetMessage(&Message, NULL, 0, 0))
 		{
-			CloseHandle(hMutexSingleton);
-
-			return static_cast<int>(GetLastError());
-		}
-		else
-		{
-			if (!IsDialogMessage(hWndMain, &Message))
+		case -1:
 			{
-				TranslateMessage(&Message);
-				DispatchMessage(&Message);
+				CloseHandle(hMutexSingleton);
+
+				iRet = static_cast<int>(GetLastError());
 			}
+			break;
+		case 0:
+			{
+				CloseHandle(hMutexSingleton);
+
+				iRet = static_cast<int>(Message.wParam);
+			}
+			break;
+		default:
+			{
+				if (!IsDialogMessage(hWndMain, &Message))
+				{
+					TranslateMessage(&Message);
+					DispatchMessage(&Message);
+				}
+			}
+			break;
 		}
-	}
+	} while (bRet);
 
-	CloseHandle(hMutexSingleton);
-
-	return static_cast<int>(Message.wParam);
+	return iRet;
 }
 
 LRESULT CALLBACK EditTimeoutSubclassProc(HWND hWndEditTimeout, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
 LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
 LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
-#ifdef _DEBUG
+#ifdef SHOWPOSINFO
+LRESULT CALLBACK SplitterSubclassProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
 LRESULT CALLBACK ProgressBarFontSubclassProc(HWND hWndProgressBarFont, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
-#endif // _DEBUG
+#endif // SHOWPOSINFO
 INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM IParam);
 
 void* lpRemoteAddFontProcAddr{};
@@ -810,7 +826,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					if (!(lParam & SWP_NOSIZE))
 					{
 						int iSelectionMark{ ListView_GetSelectionMark(reinterpret_cast<HWND>(wParam)) };
-						if (iSelectionMark = -1)
+						if (iSelectionMark == -1)
 						{
 							int iItemCount{ ListView_GetItemCount(reinterpret_cast<HWND>(wParam)) };
 							for (int i = iItemCount - 1; i >= 0; i--)
@@ -901,6 +917,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 	static UINT_PTR SizingEdge{};
 	static RECT rcStatusBarFontInfoOld{};
 	static int PreviousShowCmd{};
+
+	static HPEN hPenSplitter{};
 
 	switch (Message)
 	{
@@ -999,7 +1017,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			RECT rcButtonBroadcastWM_FONTCHANGE{};
 			GetWindowRect(hWndButtonBroadcastWM_FONTCHANGE, &rcButtonBroadcastWM_FONTCHANGE);
 			MapWindowRect(HWND_DESKTOP, hWnd, &rcButtonBroadcastWM_FONTCHANGE);
-			HWND hWndStaticTimeout{ CreateWindow(WC_STATIC, L"&Timeout:", WS_CHILD | WS_VISIBLE | SS_LEFT , rcButtonBroadcastWM_FONTCHANGE.right + 20, rcMainClient.top + 1, 50, 19, hWnd, reinterpret_cast<HMENU>(ID::StaticTimeout), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
+			HWND hWndStaticTimeout{ CreateWindow(WC_STATIC, L"&Timeout:", WS_CHILD | WS_VISIBLE | SS_LEFT, rcButtonBroadcastWM_FONTCHANGE.right + 20, rcMainClient.top + 1, 50, 19, hWnd, reinterpret_cast<HMENU>(ID::StaticTimeout), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
 			assert(hWndStaticTimeout);
 			SetWindowFont(hWndStaticTimeout, hFontMain, TRUE);
 
@@ -1033,31 +1051,42 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			SendMessage(hWndStatusBarFontInfo, SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(L"0 font(s) opened, 0 font(s) loaded."));
 
 			// Initialize ProgreeBarFont
-			HWND hWndProgressBarFont{ CreateWindow(PROGRESS_CLASS, NULL, WS_CHILD | PBS_SMOOTH, 0, 0, 0, 0, hWndStatusBarFontInfo, reinterpret_cast<HMENU>(ID::ProgressBarFont), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
+			HWND hWndProgressBarFont{ CreateWindow(PROGRESS_CLASS, NULL, WS_CHILD, 0, 0, 0, 0, hWndStatusBarFontInfo, reinterpret_cast<HMENU>(ID::ProgressBarFont), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
 			assert(hWndProgressBarFont);
 
 			SendMessage(hWndProgressBarFont, PBM_SETRANGE, 0, MAKELPARAM(0, 1));
 			SendMessage(hWndProgressBarFont, PBM_SETSTEP, 1, 0);
 			SendMessage(hWndProgressBarFont, PBM_SETSTATE, PBST_NORMAL, 0);
 
-#ifdef _DEBUG
+#ifdef SHOWPOSINFO
 			SetWindowSubclass(hWndProgressBarFont, ProgressBarFontSubclassProc, 0, 0);
-#endif // _DEBUG
+#endif // SHOWPOSINFO
 
 			// Initialize Splitter
 			RECT rcStatusBarFontInfo{};
 			GetWindowRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
 			MapWindowRect(HWND_DESKTOP, hWnd, &rcStatusBarFontInfo);
-			HWND hWndSplitter{ CreateWindow(UC_SPLITTER, NULL, WS_CHILD | WS_VISIBLE | SPS_HORZ, rcMainClient.left, rcButtonOpen.bottom + ((rcMainClient.bottom - rcMainClient.top) - (rcButtonOpen.bottom - rcButtonOpen.top) - (rcStatusBarFontInfo.bottom - rcStatusBarFontInfo.top)) / 2 - 2, rcMainClient.right - rcMainClient.left, 5, hWnd, reinterpret_cast<HMENU>(ID::Splitter), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
+			HWND hWndSplitter{ CreateWindow(UC_SPLITTER, NULL, WS_CHILD | WS_VISIBLE | SPS_HORZ | SPS_PARENTWIDTH | SPS_AUTODRAG | SPS_NONOTIFY, rcMainClient.left, rcButtonOpen.bottom + ((rcMainClient.bottom - rcMainClient.top) - (rcButtonOpen.bottom - rcButtonOpen.top) - (rcStatusBarFontInfo.bottom - rcStatusBarFontInfo.top)) / 2 - 2, 0, 5, hWnd, reinterpret_cast<HMENU>(ID::Splitter), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
 			assert(hWndSplitter);
+			//HWND hWndSplitter{ NULL };
+
+#ifdef SHOWPOSINFO
+			SetWindowSubclass(hWndSplitter, SplitterSubclassProc, 0, 0);
+#endif // SHOWPOSINFO
+
+			SendMessage(hWndSplitter, SPM_SETMARGIN, 3, 0);
+
+			RECT rcSplitterClient{};
+			GetClientRect(hWndSplitter, &rcSplitterClient);
+			hPenSplitter = CreatePen(PS_SOLID, (rcSplitterClient.bottom - rcSplitterClient.top) / 5, static_cast<COLORREF>(GetSysColor(COLOR_GRAYTEXT)));
 
 			// Initialize ListViewFontList
 			RECT rcSplitter{};
 			GetWindowRect(hWndSplitter, &rcSplitter);
 			MapWindowRect(HWND_DESKTOP, hWnd, &rcSplitter);
 			HWND hWndListViewFontList{ CreateWindow(WC_LISTVIEW, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | WS_CLIPSIBLINGS | LVS_REPORT | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER, rcMainClient.left, rcButtonOpen.bottom, rcMainClient.right - rcMainClient.left, rcSplitter.top - rcButtonOpen.bottom, hWnd, reinterpret_cast<HMENU>(ID::ListViewFontList), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
-			ListView_SetExtendedListViewStyle(hWndListViewFontList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 			assert(hWndListViewFontList);
+			ListView_SetExtendedListViewStyle(hWndListViewFontList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 			SetWindowFont(hWndListViewFontList, hFontMain, TRUE);
 
 			RECT rcListViewFontListClient{};
@@ -1114,11 +1143,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 			SetWindowSubclass(hWndEditMessage, EditMessageSubclassProc, 0, NULL);
 
+			// Link ListViewFontList and EditMessage to Splitter
+			SendMessage(hWndSplitter, SPM_SETLINKEDCTL, MAKEWPARAM(1, SLC_TOP), reinterpret_cast<LPARAM>(&hWndListViewFontList));
+			SendMessage(hWndSplitter, SPM_SETLINKEDCTL, MAKEWPARAM(1, SLC_BOTTOM), reinterpret_cast<LPARAM>(&hWndEditMessage));
+
 			// Get vertical margin of the formatting rectangle in EditMessage
 			RECT rcEditMessageClient{}, rcEditMessageFormatting{};
 			GetClientRect(hWndEditMessage, &rcEditMessageClient);
 			Edit_GetRect(hWndEditMessage, &rcEditMessageFormatting);
 			cyEditMessageTextMargin = (rcEditMessageClient.bottom - rcEditMessageClient.top) - (rcEditMessageFormatting.bottom - rcEditMessageFormatting.top);
+
+			ret = 0;
 		}
 		break;
 	case WM_ACTIVATE:
@@ -1145,7 +1180,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 				RECT rcProgressBarFont{};
 				SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
-				SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_SHOWWINDOW);
+				SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
 				SendMessage(hWndProgressBarFont, PBM_SETRANGE, 0, MAKELPARAM(0, FontList.size()));
 
@@ -1156,7 +1191,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				bDragDropHasFonts = false;
 			}
 
-			SetFocus(GetDlgItem(hWnd, static_cast<int>(ID::ButtonOpen)));
+			ret = DefWindowProc(hWnd, Message, wParam, lParam);
 		}
 		break;
 	case WM_COMMAND:
@@ -1347,7 +1382,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 							RECT rcProgressBarFont{};
 							SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
-							SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_SHOWWINDOW);
+							SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
 							HWND hWndListViewFontList{ (GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList))) };
 							int iSelectedItemCount{}, iItemCount{ ListView_GetItemCount(hWndListViewFontList) };
@@ -1409,7 +1444,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 							RECT rcProgressBarFont{};
 							SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
-							SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_SHOWWINDOW);
+							SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
 							HWND hWndListViewFontList{ (GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList))) };
 							int iSelectedItemCount{}, iItemCount{ ListView_GetItemCount(hWndListViewFontList) };
@@ -1470,7 +1505,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 							RECT rcProgressBarFont{};
 							SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
-							SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_SHOWWINDOW);
+							SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
 							HWND hWndListViewFontList{ (GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList))) };
 							int iSelectedItemCount{}, iItemCount{ ListView_GetItemCount(hWndListViewFontList) };
@@ -1671,7 +1706,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									CloseHandle(ProxyProcessInfo.hProcess);
 									ProxyProcessInfo.hProcess = NULL;
 
-									// Close HANDLE to target process, duplicated handles and synchronization objects
+									// Close the handle to target process, duplicated handles and synchronization objects
 									CloseHandle(TargetProcessInfo.hProcess);
 									TargetProcessInfo.hProcess = NULL;
 									CloseHandle(hProcessCurrentDuplicated);
@@ -1709,7 +1744,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hEventTerminateWatchThread);
 									CloseHandle(hThreadWatch);
 
-									// Close HANDLE to target process
+									// Close the handle to target process
 									CloseHandle(TargetProcessInfo.hProcess);
 									TargetProcessInfo.hProcess = NULL;
 								}
@@ -1913,20 +1948,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									}
 									CloseHandle(piProxyProcess.hThread);
 
-									// Wait for proxy process to ready
-									WaitForSingleObject(hEventProxyProcessReady, INFINITE);
-									CloseHandle(hEventProxyProcessReady);
-									CloseHandle(hEventMessageThreadReady);
-									CloseHandle(hEventParentProcessRunning);
-
-									ssMessage << szProxyAppName << L"(" << piProxyProcess.dwProcessId << L") succesfully launched.\r\n\r\n";
-									strMessage = ssMessage.str();
-									cchMessageLength = Edit_GetTextLength(hWndEditMessage);
-									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-									Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
-									ssMessage.str(L"");
-
-									// Wait for message-only window to recieve HWND to proxy process
+									// Wait for message-only window to receive HWND to proxy process
 									WaitForSingleObject(hEventProxyProcessHWNDRevieved, INFINITE);
 									CloseHandle(hEventProxyProcessHWNDRevieved);
 
@@ -1980,6 +2002,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											CloseHandle(SelectedProcessInfo.hProcess);
 											CloseHandle(hProcessCurrentDuplicated);
 											CloseHandle(hProcessTargetDuplicated);
+
+											CloseHandle(hEventProxyProcessReady);
+											CloseHandle(hEventMessageThreadReady);
+											CloseHandle(hEventParentProcessRunning);
+											CloseHandle(hEventProxyDllInjectionFinished);
 											CloseHandle(hEventProxyDllPullingFinished);
 										}
 										goto break_90567013;
@@ -1989,6 +2016,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 								break_90567013:
 									break;
 								continue_90567013:
+
+									// Wait for proxy process to ready
+									WaitForSingleObject(hEventProxyProcessReady, INFINITE);
+									CloseHandle(hEventProxyProcessReady);
+									CloseHandle(hEventMessageThreadReady);
+									CloseHandle(hEventParentProcessRunning);
+
+									ssMessage << szProxyAppName << L"(" << piProxyProcess.dwProcessId << L") succesfully launched.\r\n\r\n";
+									strMessage = ssMessage.str();
+									cchMessageLength = Edit_GetTextLength(hWndEditMessage);
+									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+									Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+									ssMessage.str(L"");
 
 									// Begin dll injection
 									COPYDATASTRUCT cds{ static_cast<ULONG_PTR>(COPYDATA::INJECTDLL), 0, NULL };
@@ -2346,7 +2386,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									CloseHandle(ProxyProcessInfo.hProcess);
 									ProxyProcessInfo.hProcess = NULL;
 
-									// Close HANDLE to target process, duplicated handles and synchronization objects
+									// Close the handle to target process, duplicated handles and synchronization objects
 									CloseHandle(TargetProcessInfo.hProcess);
 									TargetProcessInfo.hProcess = NULL;
 									CloseHandle(hProcessCurrentDuplicated);
@@ -2393,7 +2433,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hEventTerminateWatchThread);
 									CloseHandle(hThreadWatch);
 
-									// Close HANDLE to target process
+									// Close the handle to target process
 									CloseHandle(TargetProcessInfo.hProcess);
 									TargetProcessInfo.hProcess = NULL;
 
@@ -2596,7 +2636,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 							RECT rcProgressBarFont{};
 							SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
-							SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_SHOWWINDOW);
+							SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
 							SendMessage(hWndProgressBarFont, PBM_SETRANGE, 0, MAKELPARAM(0, FontList.size()));
 
@@ -2644,158 +2684,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					}
 				}
 				break;
-			case ID::Splitter:
-				{
-					static POINT ptSpliitterRange{};
-
-					switch (static_cast<SPLITTERNOTIFICATION>(reinterpret_cast<LPNMHDR>(lParam)->code))
-					{
-						// Begin dragging Splitter
-					case SPLITTERNOTIFICATION::DRAGBEGIN:
-						{
-							// Confine cursor to a specific rectangle
-							/*
-							┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-							┃                                                                                                                                                                      ┃
-							┃                                                                                                                                                                      ┃
-							┃	┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓                                                                               ┃← Desktop
-							┃	┃FontLoaderEx                                                          ┃_  ┃ □ ┃ x ┃                                                                               ┃
-							┃	┠────────┬────────┬────────┬────────┬──────────────────────────────────┸┬──┸───┸──┬┨                                                                               ┃
-							┃	┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     │┃                                                                               ┃
-							┃	┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┘┃                                                                               ┃
-							┃	┃        │        │        │        │     Select Process     │  □ Minimize to tray ┃                                                                               ┃
-							┃	┠────────┴────────┴────────┴────────┴────────────────────────┴──────┬──────────────╂────────                                                                       ┃
-							┃	┃ Font Name                                                         │ State        ┃        ↑                                                                      ┃
-							┃	┠───────────────────────────────────────────────────────────────────┼──────────────┨        │ cyListViewFontListMin                                                ┃
-							┃	┃                                                                   ┆              ┃        ↓                                                                      ┃
-							┠┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-							┃	┃                                                                   ┆              ┃                          ↑                                                    ┃
-							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                ptSpliitterRange.top                                           ┃
-							┃	┃                                                                   ┆              ┃                                                                               ┃
-							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                                                                               ┃
-							┃	┃                                                                   ┆              ┃                                                                               ┃
-							┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                                                                               ┃
-							┃	┠───────────────────────────────────────────────────────────────────┴──────────────┨                                                                               ┃
-							┃	┠──────────────────────────────────────────────────────────────────────────────┬───┨                                                                               ┃
-							┃	┃ Temporarily load fonts to Windows or specific process                        │ ↑ ┃                                                                               ┃
-							┃	┃                                                                              ├───┨                                                                               ┃
-							┃	┃ How to load fonts to Windows:                                                │▓▓▓┃                                                                               ┃
-							┃	┃ 1.Drag-drop font files onto the icon of this application.                    │▓▓▓┃                                                                               ┃
-							┃	┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │▓▓▓┃                                                                               ┃
-							┃	┃  view, then click "Load" button.                                             │▓▓▓┃                                                                               ┃
-							┃	┃                                                                              ├───┨                                                                               ┃
-							┃	┃ How to unload fonts from Windows:                                            │   ┃                                                                               ┃
-							┃	┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃                                                                               ┃
-							┃	┃ upper-right cornor.                                                          │   ┃                                                                               ┃
-							┃	┃                                                                              │   ┃                                                                               ┃
-							┃	┃ How to load fonts to process:                                                │   ┃                                                                               ┃
-							┃	┃ 1.Click "Click to select process", select a process.                         │   ┃              ptSpliitterRange.bottom                                          ┃
-							┃	┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │   ┃                          ↓                                                    ┃
-							┠┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼───╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
-							┃	┃ view, then click "Load" button.                                              │ ↓ ┃        } cyEditMessageMin                                                     ┃
-							┃	┠──────────────────────────────────────────────────────────────────────────────┴───┨────────                                                                       ┃
-							┃	┃ 0 font(s) opened, 0 font(s) loaded.                                              ┃        } cyStatusBarFontInfo                                                  ┃
-							┃	┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛────────                                                                       ┃
-							┃                                                                                                                                                                      ┃
-							┃                                                                                                                                                                      ┃
-							┃                                                                                                                                                                      ┃
-							┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-							*/
-
-							// Calculate the minimal height of ListViewFontList
-							HWND hWndListViewFontList{ GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList)) };
-							RECT rcListViewFontList{}, rcListViewFontListClient{}, rcHeaderListViewFontList{};
-							GetWindowRect(hWndListViewFontList, &rcListViewFontList);
-							GetClientRect(hWndListViewFontList, &rcListViewFontListClient);
-							GetWindowRect(ListView_GetHeader(hWndListViewFontList), &rcHeaderListViewFontList);
-							bool bIsInserted{ false };
-							if (ListView_GetItemCount(hWndListViewFontList) == 0)
-							{
-								bIsInserted = true;
-
-								LVITEM lvi{};
-								ListView_InsertItem(hWndListViewFontList, &lvi);
-							}
-							RECT rcListViewFontListItem{};
-							ListView_GetItemRect(hWndListViewFontList, 0, &rcListViewFontListItem, LVIR_BOUNDS);
-							if (bIsInserted)
-							{
-								ListView_DeleteAllItems(hWndListViewFontList);
-							}
-							LONG cyListViewFontListMin{ (rcListViewFontListItem.bottom - rcListViewFontListItem.top) + (rcHeaderListViewFontList.bottom - rcHeaderListViewFontList.top) + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
-
-							// Calculate the minimal height of EditMessage
-							HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
-							HDC hDCEditMessage{ GetDC(hWndEditMessage) };
-							SelectFont(hDCEditMessage, GetWindowFont(hWndEditMessage));
-							TEXTMETRIC tm{};
-							BOOL bRetGetTextMetrics{ GetTextMetrics(hDCEditMessage, &tm) };
-							assert(bRetGetTextMetrics);
-							ReleaseDC(hWndEditMessage, hDCEditMessage);
-							RECT rcEditMessage{}, rcEditMessageClient{};
-							GetWindowRect(hWndEditMessage, &rcEditMessage);
-							GetClientRect(hWndEditMessage, &rcEditMessageClient);
-							LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rcEditMessage.bottom - rcEditMessage.top) + (rcEditMessageClient.top - rcEditMessageClient.bottom)) + cyEditMessageTextMargin };
-
-							// Calculate the Splitter range
-							RECT rcMainClient{}, rcButtonOpen{}, rcSplitter{}, rcStatusBarFontInfo{};
-							GetClientRect(hWnd, &rcMainClient);
-							GetWindowRect(GetDlgItem(hWnd, static_cast<int>(ID::ButtonOpen)), &rcButtonOpen);
-							GetWindowRect(reinterpret_cast<LPSPLITTERSTRUCT>(lParam)->hdr.hwndFrom, &rcSplitter);
-							GetWindowRect(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), &rcStatusBarFontInfo);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rcStatusBarFontInfo);
-							ptSpliitterRange = { rcMainClient.top + (rcButtonOpen.bottom - rcButtonOpen.top) + cyListViewFontListMin, rcStatusBarFontInfo.top - (rcSplitter.bottom - rcSplitter.top) - cyEditMessageMin };
-							int i{};
-						}
-						break;
-						// Dragging Splitter
-					case SPLITTERNOTIFICATION::DRAGGING:
-						{
-							// Move Splitter
-							RECT rcSplitter{};
-							GetWindowRect(reinterpret_cast<LPSPLITTERSTRUCT>(lParam)->hdr.hwndFrom, &rcSplitter);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rcSplitter);
-							int yPosSplitter{ reinterpret_cast<LPSPLITTERSTRUCT>(lParam)->ptCursor.y - reinterpret_cast<LPSPLITTERSTRUCT>(lParam)->CursorOffset };
-							if (yPosSplitter < ptSpliitterRange.x)
-							{
-								yPosSplitter = ptSpliitterRange.x;
-							}
-							else if (yPosSplitter > ptSpliitterRange.y)
-							{
-								yPosSplitter = ptSpliitterRange.y;
-							}
-							MoveWindow(reinterpret_cast<LPSPLITTERSTRUCT>(lParam)->hdr.hwndFrom, rcSplitter.left, yPosSplitter, rcSplitter.right - rcSplitter.left, rcSplitter.bottom - rcSplitter.top, TRUE);
-
-							// Resize ListViewFontList
-							HWND hWndListViewFontList{ GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList)) };
-							RECT rcListViewFontList{};
-							GetWindowRect(hWndListViewFontList, &rcListViewFontList);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rcListViewFontList);
-							MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, rcListViewFontList.right - rcListViewFontList.left, yPosSplitter - rcListViewFontList.top, TRUE);
-
-							// Resize EditMessage
-							HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
-							RECT rcEditMessage{}, rcStatusBarFontInfo{};
-							GetWindowRect(hWndEditMessage, &rcEditMessage);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rcEditMessage);
-							GetWindowRect(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), &rcStatusBarFontInfo);
-							MapWindowRect(HWND_DESKTOP, hWnd, &rcStatusBarFontInfo);
-							MoveWindow(hWndEditMessage, rcEditMessage.left, yPosSplitter + (rcSplitter.bottom - rcSplitter.top), rcEditMessage.right - rcEditMessage.left, rcStatusBarFontInfo.top - rcSplitter.bottom, TRUE);
-						}
-						break;
-						// End dragging Splitter
-					case SPLITTERNOTIFICATION::DRAGEND:
-						{
-							// Redraw ListViewFontList and EditMessage
-							InvalidateRect(GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList)), NULL, FALSE);
-							InvalidateRect(GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)), NULL, FALSE);
-						}
-						break;
-					default:
-						break;
-					}
-				}
-				break;
 			default:
 				break;
 			}
@@ -2808,8 +2696,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 			if (reinterpret_cast<HWND>(wParam) == hWndListViewFontList)
 			{
-				POINT ptContextMenuListViewFontListAnchor{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-				if (ptContextMenuListViewFontListAnchor.x == -1 && ptContextMenuListViewFontListAnchor.y == -1)
+				POINT ptAnchorContextMenuListViewFontList{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+				if (ptAnchorContextMenuListViewFontList.x == -1 && ptAnchorContextMenuListViewFontList.y == -1)
 				{
 					int iSelectionMark{ ListView_GetSelectionMark(hWndListViewFontList) };
 					if (iSelectionMark == -1)
@@ -2817,13 +2705,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						RECT rcListViewFontListClient{};
 						GetClientRect(hWndListViewFontList, &rcListViewFontListClient);
 						MapWindowRect(hWndListViewFontList, HWND_DESKTOP, &rcListViewFontListClient);
-						ptContextMenuListViewFontListAnchor = { rcListViewFontListClient.left, rcListViewFontListClient.top };
+						ptAnchorContextMenuListViewFontList = { rcListViewFontListClient.left, rcListViewFontListClient.top };
 					}
 					else
 					{
 						ListView_EnsureVisible(hWndListViewFontList, iSelectionMark, FALSE);
-						ListView_GetItemPosition(hWndListViewFontList, iSelectionMark, &ptContextMenuListViewFontListAnchor);
-						ClientToScreen(hWndListViewFontList, &ptContextMenuListViewFontListAnchor);
+						ListView_GetItemPosition(hWndListViewFontList, iSelectionMark, &ptAnchorContextMenuListViewFontList);
+						ClientToScreen(hWndListViewFontList, &ptAnchorContextMenuListViewFontList);
 					}
 				}
 				UINT uFlags{};
@@ -2835,7 +2723,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				{
 					uFlags |= TPM_LEFTALIGN;
 				}
-				BOOL bRetTrackPopupMenu{ TrackPopupMenu(hMenuContextListViewFontList, uFlags | TPM_TOPALIGN | TPM_RIGHTBUTTON, ptContextMenuListViewFontListAnchor.x, ptContextMenuListViewFontListAnchor.y, 0, hWnd, NULL) };
+				BOOL bRetTrackPopupMenu{ TrackPopupMenu(hMenuContextListViewFontList, uFlags | TPM_TOPALIGN | TPM_RIGHTBUTTON, ptAnchorContextMenuListViewFontList.x, ptAnchorContextMenuListViewFontList.y, 0, hWnd, NULL) };
 				assert(bRetTrackPopupMenu);
 			}
 			else
@@ -2847,12 +2735,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 	case WM_CTLCOLORSTATIC:
 		{
 			// Change the background color of ButtonBroadcastWM_FONTCHANGE, StaticTimeout, ButtonMinimizeToTray and EditMessage to default window background color
+			// and change the line color of Splitter to grayed text color
 			// From https://social.msdn.microsoft.com/Forums/vstudio/en-US/7b6d1815-87e3-4f47-b5d5-fd4caa0e0a89/why-is-wmctlcolorstatic-sent-for-a-button-instead-of-wmctlcolorbtn?forum=vclanguage
 			// "WM_CTLCOLORSTATIC is sent by any control that displays text which would be displayed using the default dialog/window background color. 
 			// This includes check boxes, radio buttons, group boxes, static text, read-only or disabled edit controls, and disabled combo boxes (all styles)."
 			if ((reinterpret_cast<HWND>(lParam) == GetDlgItem(hWnd, static_cast<int>(ID::ButtonBroadcastWM_FONTCHANGE))) || (reinterpret_cast<HWND>(lParam) == GetDlgItem(hWnd, static_cast<int>(ID::StaticTimeout))) || (reinterpret_cast<HWND>(lParam) == GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) || reinterpret_cast<HWND>(lParam) == GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)))
 			{
 				ret = reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_WINDOW));
+			}
+			else if (reinterpret_cast<HWND>(lParam) == GetDlgItem(hWnd, static_cast<int>(ID::Splitter)))
+			{
+				SelectPen(reinterpret_cast<HDC>(wParam), hPenSplitter);
 			}
 			else
 			{
@@ -2861,7 +2754,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 		/*
-		   Sizing related messasges sequence:
+		   Sizing related messasge sequences:
 		   1. Drag window edge: WS_SIZING( SizingEdge = WMSZ_* ) -> WM_WINDOWPOSCHANGING -> WS_SIZED
 		   2. Maximimze/Restore: WM_WINDOWPOSCHANGING -> WS_SIZED
 		   3. Cornor/Border sticky: WM_WINDOWPOSCHANGING -> WS_SIZED, SizingEdge = 0
@@ -2873,6 +2766,163 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			MapWindowRect(HWND_DESKTOP, hWnd, &rcStatusBarFontInfoOld);
 
 			ret = DefWindowProc(hWnd, Message, wParam, lParam);
+		}
+		break;
+	case WM_WINDOWPOSCHANGED:
+		{
+			// Confine splitter to a specific range
+			/*
+
+			┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┳━━━┳━━━┓
+			┃FontLoaderEx                                                          ┃_  ┃ □ ┃ x ┃
+			┠────────┬────────┬────────┬────────┬──────────────────────────────────┸┬──┸───┸──┬┨
+			┃        │        │        │        │□ Broadcast WM_FONTCHANGE  Timeout:│5000     │┃
+			┃  Open  │  Close │  Load  │ Unload ├────────────────────────┐          └─────────┘┃
+			┃        │        │        │        │     Select Process     │  □ Minimize to tray ┃
+			┠────────┴────────┴────────┴────────┴────────────────────────┴──────┬──────────────╂────────
+			┃ Font Name                                                         │ State        ┃        ↑
+			┠───────────────────────────────────────────────────────────────────┼──────────────┨        │ cyListViewFontListMin
+			┃                                                                   ┆              ┃        ↓
+			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+			┃                                                                   ┆              ┃                    ↑
+			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨          ptSpliitterRange.top
+			┃                                                                   ┆              ┃
+			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+			┃                                                                   ┆              ┃
+			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨
+			┠───────────────────────────────────────────────────────────────────┴──────────────┨
+			┠──────────────────────────────────────────────────────────────────────────────┬───┨
+			┃ Temporarily load fonts to Windows or specific process                        │ ↑ ┃
+			┃                                                                              ├───┨
+			┃ How to load fonts to Windows:                                                │▓▓▓┃
+			┃ 1.Drag-drop font files onto the icon of this application.                    │▓▓▓┃
+			┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │▓▓▓┃
+			┃  view, then click "Load" button.                                             │▓▓▓┃
+			┃                                                                              ├───┨
+			┃ How to unload fonts from Windows:                                            │   ┃
+			┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃
+			┃ upper-right cornor.                                                          │   ┃
+			┃                                                                              │   ┃
+			┃ How to load fonts to process:                                                │   ┃
+			┃ 1.Click "Click to select process", select a process.                         │   ┃          ptSpliitterRange.bottom
+			┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │   ┃                    ↓
+			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼───╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+			┃ view, then click "Load" button.                                              │ ↓ ┃        } cyEditMessageMin
+			┠──────────────────────────────────────────────────────────────────────────────┴───┨────────
+			┃ 0 font(s) opened, 0 font(s) loaded.                                              ┃        } cyStatusBarFontInfo
+			┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛────────
+			*/
+
+			// Calculate the minimal height of ListViewFontList
+			HWND hWndListViewFontList{ GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList)) };
+			RECT rcListViewFontList{}, rcListViewFontListClient{}, rcHeaderListViewFontList{};
+			GetWindowRect(hWndListViewFontList, &rcListViewFontList);
+			GetClientRect(hWndListViewFontList, &rcListViewFontListClient);
+			GetWindowRect(ListView_GetHeader(hWndListViewFontList), &rcHeaderListViewFontList);
+			bool bIsInserted{ false };
+			if (ListView_GetItemCount(hWndListViewFontList) == 0)
+			{
+				bIsInserted = true;
+
+				LVITEM lvi{};
+				ListView_InsertItem(hWndListViewFontList, &lvi);
+			}
+			RECT rcListViewFontListItem{};
+			ListView_GetItemRect(hWndListViewFontList, 0, &rcListViewFontListItem, LVIR_BOUNDS);
+			if (bIsInserted)
+			{
+				ListView_DeleteAllItems(hWndListViewFontList);
+			}
+			LONG cyListViewFontListMin{ (rcListViewFontListItem.bottom - rcListViewFontListItem.top) + (rcHeaderListViewFontList.bottom - rcHeaderListViewFontList.top) + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
+
+			// Calculate the minimal height of EditMessage
+			HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
+			HDC hDCEditMessage{ GetDC(hWndEditMessage) };
+			SelectFont(hDCEditMessage, GetWindowFont(hWndEditMessage));
+			TEXTMETRIC tm{};
+			BOOL bRetGetTextMetrics{ GetTextMetrics(hDCEditMessage, &tm) };
+			assert(bRetGetTextMetrics);
+			ReleaseDC(hWndEditMessage, hDCEditMessage);
+			RECT rcEditMessage{}, rcEditMessageClient{};
+			GetWindowRect(hWndEditMessage, &rcEditMessage);
+			GetClientRect(hWndEditMessage, &rcEditMessageClient);
+			LONG cyEditMessageMin{ tm.tmHeight + tm.tmExternalLeading * 2 + ((rcEditMessage.bottom - rcEditMessage.top) + (rcEditMessageClient.top - rcEditMessageClient.bottom)) + cyEditMessageTextMargin };
+
+			// Calculate the Splitter range
+			RECT rcMainClient{}, rcButtonOpen{}, rcStatusBarFontInfo{};
+			GetClientRect(hWnd, &rcMainClient);
+			GetWindowRect(GetDlgItem(hWnd, static_cast<int>(ID::ButtonOpen)), &rcButtonOpen);
+			GetWindowRect(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), &rcStatusBarFontInfo);
+			MapWindowRect(HWND_DESKTOP, hWnd, &rcStatusBarFontInfo);
+			SendMessage(GetDlgItem(hWnd, static_cast<int>(ID::Splitter)), SPM_SETRANGE, MAKEWPARAM(rcMainClient.top + (rcButtonOpen.bottom - rcButtonOpen.top) + cyListViewFontListMin, rcMainClient.bottom - (rcStatusBarFontInfo.bottom - rcStatusBarFontInfo.top) - cyEditMessageMin), 0);
+
+			ret = DefWindowProc(hWnd, Message, wParam, lParam);
+
+#ifdef SHOWPOSINFO
+			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
+			std::wstringstream ssMessage{};
+			std::wstring strMessage{};
+			ssMessage << L"* Main revieved WM_WINDOWPOSCHANGED\r\n"
+				<< L"hwndInsertAfter: " << lpwp->hwndInsertAfter << L" "
+				<< L"hwnd: " << lpwp->hwnd << L" "
+				<< L"x: " << lpwp->x << L" "
+				<< L"y: " << lpwp->y << L" "
+				<< L"cx: " << lpwp->cx << L" "
+				<< L"cy: " << lpwp->cy << L" "
+				<< L"flags: ";
+			if (lpwp->flags & SWP_NOSIZE)
+			{
+				ssMessage << L"SWP_NOSIZE | ";
+			}
+			if (lpwp->flags & SWP_NOMOVE)
+			{
+				ssMessage << L"SWP_NOMOVE | ";
+			}
+			if (lpwp->flags & SWP_NOZORDER)
+			{
+				ssMessage << L"SWP_NOZORDER | ";
+			}
+			if (lpwp->flags & SWP_NOREDRAW)
+			{
+				ssMessage << L"SWP_NOREDRAW | ";
+			}
+			if (lpwp->flags & SWP_NOACTIVATE)
+			{
+				ssMessage << L"SWP_NOACTIVATE | ";
+			}
+			if (lpwp->flags & SWP_FRAMECHANGED)
+			{
+				ssMessage << L"SWP_FRAMECHANGED | ";
+			}
+			if (lpwp->flags & SWP_SHOWWINDOW)
+			{
+				ssMessage << L"SWP_SHOWWINDOW | ";
+			}
+			if (lpwp->flags & SWP_HIDEWINDOW)
+			{
+				ssMessage << L"SWP_HIDEWINDOW | ";
+			}
+			if (lpwp->flags & SWP_NOCOPYBITS)
+			{
+				ssMessage << L"SWP_NOCOPYBITS | ";
+			}
+			if (lpwp->flags & SWP_NOOWNERZORDER)
+			{
+				ssMessage << L"SWP_NOOWNERZORDER | ";
+			}
+			if (lpwp->flags & SWP_NOSENDCHANGING)
+			{
+				ssMessage << L"SWP_NOSENDCHANGING | ";
+			}
+			ssMessage << L"\r\n";
+			strMessage = ssMessage.str();
+			std::size_t pos{ strMessage.find_last_of(L'|') };
+			if (pos != std::wstring::npos)
+			{
+				strMessage.erase(strMessage.find_last_of(L'|') - 1, 3);
+			}
+			OutputDebugString(strMessage.c_str());
+#endif // SHOWPOSINFO
 		}
 		break;
 	case WM_SIZING:
@@ -2915,7 +2965,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃	┃ Font Name                                                         │ State        ┃                                                                               ┃
 									┃	┠───────────────────────────────────────────────────────────────────┼──────────────┨                                                                               ┃
 									┃	┃                                                                   ┆              ┃                                                                               ┃
-									┃   ┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                                                                               ┃
+									┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                                                                               ┃
 									┃	┃                                                                   ┆              ┃                                                                               ┃
 									┃	┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┨                                                                               ┃
 									┃	┃                                                                   ┆              ┃                                                                               ┃
@@ -2938,7 +2988,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃	┃ How to load fonts to process:                                                │   ┃                                                                               ┃
 									┃	┃ 1.Click "Click to select process", select a process.                         │   ┃                                                                               ┃
 									┃	┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨                                                                               ┃
-									┃   ┃ view, then click "Load" button.                                              │ ↓ ┃                                                                               ┃
+									┃	┃ view, then click "Load" button.                                              │ ↓ ┃                                                                               ┃
 									┃	┠──────────────────────────────────────────────────────────────────────────────┴───┨                                                                               ┃
 									┃	┃ 0 font(s) opened, 0 font(s) loaded.                                              ┃                                                                               ┃
 									┃	┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛                                                                               ┃
@@ -3012,7 +3062,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 										RECT rcProgressBarFont{};
 										SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
-										MoveWindow(hWndProgressBarFont, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, FALSE);
+										SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 									}
 
 									// Resize Splitter
@@ -3027,16 +3077,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									GetWindowRect(GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)), &rcEditMessage);
 									MapWindowRect(HWND_DESKTOP, hWnd, &rcEditMessage);
 
-									LONG ySplitterTopNew{ (((rcSplitter.top - rcButtonOpen.bottom) + (rcSplitter.bottom - rcButtonOpen.bottom)) * (rcStatusBarFontInfo.top - rcButtonOpen.bottom)) / ((rcStatusBarFontInfoOld.top - rcButtonOpen.bottom) * 2) - ((rcSplitter.bottom - rcSplitter.top) / 2) + rcButtonOpen.bottom };
-									MoveWindow(hWndSplitter, rcSplitter.left, ySplitterTopNew, LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, FALSE);
+									LONG yPosSplitterTopNew{ (((rcSplitter.top - rcButtonOpen.bottom) + (rcSplitter.bottom - rcButtonOpen.bottom)) * (rcStatusBarFontInfo.top - rcButtonOpen.bottom)) / ((rcStatusBarFontInfoOld.top - rcButtonOpen.bottom) * 2) - ((rcSplitter.bottom - rcSplitter.top) / 2) + rcButtonOpen.bottom };
+									FORWARD_WM_MOVE(hWndSplitter, 0, yPosSplitterTopNew, SendMessage);
 
 									// Resize ListViewFontList
 									HWND hWndListViewFontList{ GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList)) };
-									MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), ySplitterTopNew - rcButtonOpen.bottom, FALSE);
+									SetWindowPos(hWndListViewFontList, NULL, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), yPosSplitterTopNew - rcButtonOpen.bottom, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 
 									// Resize EditMessage
 									HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
-									MoveWindow(hWndEditMessage, rcEditMessage.left, ySplitterTopNew + (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), rcStatusBarFontInfo.top - (ySplitterTopNew + (rcSplitter.bottom - rcSplitter.top)), FALSE);
+									SetWindowPos(hWndEditMessage, NULL, rcEditMessage.left, yPosSplitterTopNew + (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), rcStatusBarFontInfo.top - (yPosSplitterTopNew + (rcSplitter.bottom - rcSplitter.top)), SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 								}
 								break;
 								// Resize ListViewFontList and keep the height of EditMessage as far as possible
@@ -3104,7 +3154,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 										RECT rcProgressBarFont{};
 										SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
-										MoveWindow(hWndProgressBarFont, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, FALSE);
+										SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 									}
 
 									// Calculate the minimal height of ListViewFontList
@@ -3144,33 +3194,33 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									{
 										bIsListViewFontListMinimized = true;
 
-										MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), cyListViewFontListMin, FALSE);
+										SetWindowPos(hWndListViewFontList, NULL, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), cyListViewFontListMin, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 									}
 									else
 									{
-										MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), rcStatusBarFontInfo.top - rcButtonOpen.bottom - (rcSplitter.bottom - rcSplitter.top) - (rcEditMessage.bottom - rcEditMessage.top), FALSE);
+										SetWindowPos(hWndListViewFontList, NULL, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), rcStatusBarFontInfo.top - rcButtonOpen.bottom - (rcSplitter.bottom - rcSplitter.top) - (rcEditMessage.bottom - rcEditMessage.top), SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 									}
 
 									// Resize Splitter
 									HWND hWndSplitter{ GetDlgItem(hWnd, static_cast<int>(ID::Splitter)) };
 									if (bIsListViewFontListMinimized)
 									{
-										MoveWindow(hWndSplitter, rcSplitter.left, rcButtonOpen.bottom + cyListViewFontListMin, LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, FALSE);
+										FORWARD_WM_MOVE(hWndSplitter, 0, rcButtonOpen.bottom + cyListViewFontListMin, SendMessage);
 									}
 									else
 									{
-										MoveWindow(hWndSplitter, rcSplitter.left, rcStatusBarFontInfo.top - (rcSplitter.bottom - rcSplitter.top) - (rcEditMessage.bottom - rcEditMessage.top), LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, FALSE);
+										FORWARD_WM_MOVE(hWndSplitter, 0, rcStatusBarFontInfo.top - (rcSplitter.bottom - rcSplitter.top) - (rcEditMessage.bottom - rcEditMessage.top), SendMessage);
 									}
 
 									// Resize EditMessage
 									HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
 									if (bIsListViewFontListMinimized)
 									{
-										MoveWindow(hWndEditMessage, rcEditMessage.left, rcButtonOpen.bottom + cyListViewFontListMin + (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), rcStatusBarFontInfo.top - rcButtonOpen.bottom - cyListViewFontListMin - (rcSplitter.bottom - rcSplitter.top), FALSE);
+										SetWindowPos(hWndEditMessage, NULL, rcEditMessage.left, rcButtonOpen.bottom + cyListViewFontListMin + (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), rcStatusBarFontInfo.top - rcButtonOpen.bottom - cyListViewFontListMin - (rcSplitter.bottom - rcSplitter.top), SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 									}
 									else
 									{
-										MoveWindow(hWndEditMessage, rcEditMessage.left, rcStatusBarFontInfo.top - (rcEditMessage.bottom - rcEditMessage.top), LOWORD(lParam), rcEditMessage.bottom - rcEditMessage.top, FALSE);
+										SetWindowPos(hWndEditMessage, NULL, rcEditMessage.left, rcStatusBarFontInfo.top - (rcEditMessage.bottom - rcEditMessage.top), LOWORD(lParam), rcEditMessage.bottom - rcEditMessage.top, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 									}
 								}
 								break;
@@ -3239,7 +3289,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 										RECT rcProgressBarFont{};
 										SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
-										MoveWindow(hWndProgressBarFont, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, FALSE);
+										SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 									}
 
 									// Calculate the minimal height of EditMessage
@@ -3262,11 +3312,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									{
 										bIsEditMessageMinimized = true;
 
-										MoveWindow(hWndEditMessage, rcEditMessage.left, rcStatusBarFontInfo.top - cyEditMessageMin, LOWORD(lParam), cyEditMessageMin, FALSE);
+										SetWindowPos(hWndEditMessage, NULL, rcEditMessage.left, rcStatusBarFontInfo.top - cyEditMessageMin, LOWORD(lParam), cyEditMessageMin, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 									}
 									else
 									{
-										MoveWindow(hWndEditMessage, rcEditMessage.left, rcEditMessage.top, LOWORD(lParam), rcStatusBarFontInfo.top - rcEditMessage.top, FALSE);
+										SetWindowPos(hWndEditMessage, NULL, rcEditMessage.left, rcEditMessage.top, LOWORD(lParam), rcStatusBarFontInfo.top - rcEditMessage.top, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 									}
 
 									// Resize Splitter
@@ -3276,11 +3326,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									MapWindowRect(HWND_DESKTOP, hWnd, &rcSplitter);
 									if (bIsEditMessageMinimized)
 									{
-										MoveWindow(hWndSplitter, rcSplitter.left, rcStatusBarFontInfo.top - cyEditMessageMin - (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, FALSE);
+										FORWARD_WM_MOVE(hWndSplitter, 0, rcStatusBarFontInfo.top - cyEditMessageMin - (rcSplitter.bottom - rcSplitter.top), SendMessage);
 									}
 									else
 									{
-										MoveWindow(hWndSplitter, rcSplitter.left, rcSplitter.top, LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, FALSE);
+										FORWARD_WM_MOVE(hWndSplitter, 0, rcSplitter.top, SendMessage);
 									}
 
 									// Resize ListViewFontList
@@ -3292,11 +3342,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									MapWindowRect(HWND_DESKTOP, hWnd, &rcListViewFontList);
 									if (bIsEditMessageMinimized)
 									{
-										MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), rcStatusBarFontInfo.top - cyEditMessageMin - (rcSplitter.bottom - rcSplitter.top) - rcButtonOpen.bottom, FALSE);
+										SetWindowPos(hWndListViewFontList, NULL, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), rcStatusBarFontInfo.top - cyEditMessageMin - (rcSplitter.bottom - rcSplitter.top) - rcButtonOpen.bottom, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 									}
 									else
 									{
-										MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), rcListViewFontList.bottom - rcListViewFontList.top, FALSE);
+										SetWindowPos(hWndListViewFontList, NULL, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), rcListViewFontList.bottom - rcListViewFontList.top, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 									}
 								}
 								break;
@@ -3358,7 +3408,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 										RECT rcProgressBarFont{};
 										SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
-										MoveWindow(hWndProgressBarFont, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, FALSE);
+										SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 									}
 
 									// Resize ListViewFontList
@@ -3366,21 +3416,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									RECT rcListViewFontList{};
 									GetWindowRect(hWndListViewFontList, &rcListViewFontList);
 									MapWindowRect(HWND_DESKTOP, hWnd, &rcListViewFontList);
-									MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), rcListViewFontList.bottom - rcListViewFontList.top, FALSE);
+									SetWindowPos(hWndListViewFontList, NULL, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), rcListViewFontList.bottom - rcListViewFontList.top, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 
 									// Resize Splitter
 									HWND hWndSplitter{ GetDlgItem(hWnd, static_cast<int>(ID::Splitter)) };
 									RECT rcSplitter{};
 									GetWindowRect(hWndSplitter, &rcSplitter);
 									MapWindowRect(HWND_DESKTOP, hWnd, &rcSplitter);
-									MoveWindow(hWndSplitter, rcSplitter.left, rcSplitter.top, LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, FALSE);
+									FORWARD_WM_MOVE(hWndSplitter, 0, rcSplitter.top, SendMessage);
 
 									// Resize EditMessage
 									HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
 									RECT rcEditMessage{};
 									GetWindowRect(hWndEditMessage, &rcEditMessage);
 									MapWindowRect(HWND_DESKTOP, hWnd, &rcEditMessage);
-									MoveWindow(hWndEditMessage, rcEditMessage.left, rcEditMessage.top, LOWORD(lParam), rcEditMessage.bottom - rcEditMessage.top, FALSE);
+									SetWindowPos(hWndEditMessage, NULL, rcEditMessage.left, rcEditMessage.top, LOWORD(lParam), rcEditMessage.bottom - rcEditMessage.top, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 								}
 								break;
 							default:
@@ -3498,7 +3548,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 								SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 2, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 								RECT rcProgressBarFont{};
 								SendMessage(hWndStatusBarFontInfo, SB_GETRECT, 1, reinterpret_cast<LPARAM>(&rcProgressBarFont));
-								MoveWindow(hWndProgressBarFont, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, FALSE);
+								SetWindowPos(hWndProgressBarFont, NULL, rcProgressBarFont.left, rcProgressBarFont.top, rcProgressBarFont.right - rcProgressBarFont.left, rcProgressBarFont.bottom - rcProgressBarFont.top, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 							}
 
 							// Resize Splitter
@@ -3513,16 +3563,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							GetWindowRect(GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)), &rcEditMessage);
 							MapWindowRect(HWND_DESKTOP, hWnd, &rcEditMessage);
 
-							LONG ySplitterTopNew{ (((rcSplitter.top - rcButtonOpen.bottom) + (rcSplitter.bottom - rcButtonOpen.bottom)) * (rcStatusBarFontInfo.top - rcButtonOpen.bottom)) / ((rcStatusBarFontInfoOld.top - rcButtonOpen.bottom) * 2) - ((rcSplitter.bottom - rcSplitter.top) / 2) + rcButtonOpen.bottom };
-							MoveWindow(hWndSplitter, rcSplitter.left, ySplitterTopNew, LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, FALSE);
+							LONG yPosSplitterTopNew{ (((rcSplitter.top - rcButtonOpen.bottom) + (rcSplitter.bottom - rcButtonOpen.bottom)) * (rcStatusBarFontInfo.top - rcButtonOpen.bottom)) / ((rcStatusBarFontInfoOld.top - rcButtonOpen.bottom) * 2) - ((rcSplitter.bottom - rcSplitter.top) / 2) + rcButtonOpen.bottom };
+							FORWARD_WM_MOVE(hWndSplitter, 0, yPosSplitterTopNew, SendMessage);
 
 							// Resize ListViewFontList
 							HWND hWndListViewFontList{ GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList)) };
-							MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), ySplitterTopNew - rcButtonOpen.bottom, FALSE);
+							SetWindowPos(hWndListViewFontList, NULL, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), yPosSplitterTopNew - rcButtonOpen.bottom, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 
 							// Resize EditMessage
 							HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
-							MoveWindow(hWndEditMessage, rcEditMessage.left, ySplitterTopNew + (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), rcStatusBarFontInfo.top - (ySplitterTopNew + (rcSplitter.bottom - rcSplitter.top)), FALSE);
+							SetWindowPos(hWndEditMessage, NULL, rcEditMessage.left, yPosSplitterTopNew + (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), rcStatusBarFontInfo.top - (yPosSplitterTopNew + (rcSplitter.bottom - rcSplitter.top)), SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 
 							PreviousShowCmd = SW_MAXIMIZE;
 						}
@@ -3683,53 +3733,53 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							MapWindowRect(HWND_DESKTOP, hWnd, &rcButtonOpen);
 							GetWindowRect(hWndSplitter, &rcSplitter);
 							MapWindowRect(HWND_DESKTOP, hWnd, &rcSplitter);
-							LONG ySplitterTopNew{ (((rcSplitter.top - rcButtonOpen.bottom) + (rcSplitter.bottom - rcButtonOpen.bottom)) * (rcStatusBarFontInfo.top - rcButtonOpen.bottom)) / ((rcStatusBarFontInfoOld.top - rcButtonOpen.bottom) * 2) - ((rcSplitter.bottom - rcSplitter.top) / 2) + rcButtonOpen.bottom };
+							LONG yPosSplitterTopNew{ (((rcSplitter.top - rcButtonOpen.bottom) + (rcSplitter.bottom - rcButtonOpen.bottom)) * (rcStatusBarFontInfo.top - rcButtonOpen.bottom)) / ((rcStatusBarFontInfoOld.top - rcButtonOpen.bottom) * 2) - ((rcSplitter.bottom - rcSplitter.top) / 2) + rcButtonOpen.bottom };
 
 							MapWindowRect(HWND_DESKTOP, hWnd, &rcListViewFontList);
 							MapWindowRect(HWND_DESKTOP, hWnd, &rcEditMessage);
-							LONG cyListViewFontListNew{ ySplitterTopNew - rcButtonOpen.bottom };
-							LONG cyEditMessageNew{ rcStatusBarFontInfo.top - ySplitterTopNew - (rcSplitter.bottom - rcSplitter.top) };
+							LONG cyListViewFontListNew{ yPosSplitterTopNew - rcButtonOpen.bottom };
+							LONG cyEditMessageNew{ rcStatusBarFontInfo.top - yPosSplitterTopNew - (rcSplitter.bottom - rcSplitter.top) };
 							// If cyListViewFontListNew < cyListViewFontListMin, keep the minimal height of ListViewFontList
 							if (cyListViewFontListNew < cyListViewFontListMin)
 							{
 								// Resize ListViewFontList
 								HWND hWndListViewFontList{ GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList)) };
-								MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), cyListViewFontListMin, FALSE);
+								SetWindowPos(hWndListViewFontList, NULL, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), cyListViewFontListMin, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 
 								// Resize Splitter
-								MoveWindow(hWndSplitter, rcSplitter.left, rcButtonOpen.bottom + cyListViewFontListMin, LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, FALSE);
+								FORWARD_WM_MOVE(hWndSplitter, 0, rcButtonOpen.bottom + cyListViewFontListMin, SendMessage);
 
 								// Resize EditMessage
 								HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
-								MoveWindow(hWndEditMessage, rcEditMessage.left, rcButtonOpen.bottom + cyListViewFontListMin + (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), rcStatusBarFontInfo.top - rcButtonOpen.bottom - cyListViewFontListMin - (rcSplitter.bottom - rcSplitter.top), FALSE);
+								SetWindowPos(hWndEditMessage, NULL, rcEditMessage.left, rcButtonOpen.bottom + cyListViewFontListMin + (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), rcStatusBarFontInfo.top - rcButtonOpen.bottom - cyListViewFontListMin - (rcSplitter.bottom - rcSplitter.top), SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 							}
 							// If cyEditMessageNew < cyEditMessageMin, keep the minimal height of EditMessage
 							else if (cyEditMessageNew < cyEditMessageMin)
 							{
 								// Resize EditMessage
 								HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
-								MoveWindow(hWndEditMessage, rcEditMessage.left, rcStatusBarFontInfo.top - cyEditMessageMin, LOWORD(lParam), cyEditMessageMin, FALSE);
+								SetWindowPos(hWndEditMessage, NULL, rcEditMessage.left, rcStatusBarFontInfo.top - cyEditMessageMin, LOWORD(lParam), cyEditMessageMin, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 
 								// Resize Splitter
-								MoveWindow(hWndSplitter, rcSplitter.left, rcStatusBarFontInfo.top - cyEditMessageMin - (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, FALSE);
+								FORWARD_WM_MOVE(hWndSplitter, 0, rcStatusBarFontInfo.top - cyEditMessageMin - (rcSplitter.bottom - rcSplitter.top), SendMessage);
 
 								// Resize ListViewFontList
 								HWND hWndListViewFontList{ GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList)) };
-								MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), rcStatusBarFontInfo.top - cyEditMessageMin - (rcSplitter.bottom - rcSplitter.top) - rcButtonOpen.bottom, FALSE);
+								SetWindowPos(hWndListViewFontList, NULL, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), rcStatusBarFontInfo.top - cyEditMessageMin - (rcSplitter.bottom - rcSplitter.top) - rcButtonOpen.bottom, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 							}
 							// Else resize as usual
 							else
 							{
 								// Resize Splitter
-								MoveWindow(hWndSplitter, rcSplitter.left, ySplitterTopNew, LOWORD(lParam), rcSplitter.bottom - rcSplitter.top, FALSE);
+								FORWARD_WM_MOVE(hWndSplitter, 0, yPosSplitterTopNew, SendMessage);
 
 								// Resize ListViewFontList
 								HWND hWndListViewFontList{ GetDlgItem(hWnd, static_cast<int>(ID::ListViewFontList)) };
-								MoveWindow(hWndListViewFontList, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), cyListViewFontListNew, FALSE);
+								SetWindowPos(hWndListViewFontList, NULL, rcListViewFontList.left, rcListViewFontList.top, LOWORD(lParam), cyListViewFontListNew, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 
 								// Resize EditMessage
 								HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
-								MoveWindow(hWndEditMessage, rcEditMessage.left, ySplitterTopNew + (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), cyEditMessageNew, FALSE);
+								SetWindowPos(hWndEditMessage, NULL, rcEditMessage.left, yPosSplitterTopNew + (rcSplitter.bottom - rcSplitter.top), LOWORD(lParam), cyEditMessageNew, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 							}
 
 							PreviousShowCmd = SW_RESTORE;
@@ -3773,19 +3823,130 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				break;
 			}
 
-			// Clear sizing edge
-			SizingEdge = 0;
-
-			// Redraw controls
-			InvalidateRect(hWnd, NULL, FALSE);
-
 #ifdef _DEBUG
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
 			ssMessage << L"* Main revieved WM_SIZE\r\n"
 				<< L"cxClient: " << LOWORD(lParam) << L" "
 				<< L"cyClient: " << HIWORD(lParam) << L" "
-				<< L"flag: ";
+				<< L"PreviousShowCmd: ";
+			switch (PreviousShowCmd)
+			{
+			case SW_HIDE:
+				{
+					ssMessage << L"SW_HIDE";
+				}
+				break;
+			case SW_SHOWNORMAL:
+				{
+					ssMessage << L"SW_SHOWNORMAL";
+				}
+				break;
+			case SW_SHOWMINIMIZED:
+				{
+					ssMessage << L"SW_SHOWMINIMIZED";
+				}
+				break;
+			case SW_SHOWMAXIMIZED:
+				{
+					ssMessage << L"SW_SHOWMAXIMIZED";
+				}
+				break;
+			case SW_SHOWNOACTIVATE:
+				{
+					ssMessage << L" SW_SHOWNOACTIVATE";
+				}
+				break;
+			case SW_SHOW:
+				{
+					ssMessage << L"SW_SHOW";
+				}
+				break;
+			case SW_MINIMIZE:
+				{
+					ssMessage << L"SW_MINIMIZE";
+				}
+				break;
+			case SW_SHOWMINNOACTIVE:
+				{
+					ssMessage << L"SW_SHOWMINNOACTIVE";
+				}
+				break;
+			case SW_SHOWNA:
+				{
+					ssMessage << L"SW_SHOWNA";
+				}
+				break;
+			case SW_RESTORE:
+				{
+					ssMessage << L"SW_RESTORE";
+				}
+				break;
+			case SW_SHOWDEFAULT:
+				{
+					ssMessage << L"SW_SHOWDEFAULT";
+				}
+				break;
+			case SW_FORCEMINIMIZE:
+				{
+					ssMessage << L"SW_FORCEMINIMIZE";
+				}
+				break;
+			default:
+				break;
+			}
+			ssMessage << L" SizingEdge: ";
+			switch (SizingEdge)
+			{
+			case 0:
+				{
+					ssMessage << L"None";
+				}
+				break;
+			case WMSZ_LEFT:
+				{
+					ssMessage << L"WMSZ_LEFT";
+				}
+				break;
+			case WMSZ_RIGHT:
+				{
+					ssMessage << L"WMSZ_RIGHT";
+				}
+				break;
+			case WMSZ_TOP:
+				{
+					ssMessage << L"WMSZ_TOP";
+				}
+				break;
+			case WMSZ_TOPLEFT:
+				{
+					ssMessage << L"WMSZ_TOPLEFT";
+				}
+				break;
+			case WMSZ_TOPRIGHT:
+				{
+					ssMessage << L"WMSZ_TOPRIGHT";
+				}
+				break;
+			case WMSZ_BOTTOM:
+				{
+					ssMessage << L"WMSZ_BOTTOM";
+				}
+				break;
+			case WMSZ_BOTTOMLEFT:
+				{
+					ssMessage << L"WMSZ_BOTTOMLEFT";
+				}
+				break;
+			case WMSZ_BOTTOMRIGHT:
+				{
+					ssMessage << L"WMSZ_BOTTOMRIGHT";
+				}
+				break;
+			default:
+				break;
+			}
+			ssMessage << L" flag: ";
 			switch (wParam)
 			{
 			case SIZE_RESTORED:
@@ -3820,75 +3981,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			strMessage = ssMessage.str();
 			OutputDebugString(strMessage.c_str());
 #endif
-		}
-		break;
-#ifdef _DEBUG
-	case WM_WINDOWPOSCHANGED:
-		{
-			ret = DefWindowProc(hWnd, Message, wParam, lParam);
 
-			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
-			std::wstringstream ssMessage{};
-			std::wstring strMessage{};
-			ssMessage << L"* Main revieved WM_WINDOWPOSCHANGED\r\n"
-				<< L"hwndInsertAfter: " << lpwp->hwndInsertAfter << L" "
-				<< L"hwnd: " << lpwp->hwnd << L" "
-				<< L"x: " << lpwp->x << L" "
-				<< L"y: " << lpwp->y << L" "
-				<< L"cx: " << lpwp->cx << L" "
-				<< L"cy: " << lpwp->cy << L" "
-				<< L"flags: ";
-			if (lpwp->flags & SWP_NOSIZE)
-			{
-				ssMessage << L"SWP_NOSIZE | ";
-			}
-			if (lpwp->flags & SWP_NOMOVE)
-			{
-				ssMessage << L"SWP_NOMOVE | ";
-			}
-			if (lpwp->flags & SWP_NOZORDER)
-			{
-				ssMessage << L"SWP_NOZORDER | ";
-			}
-			if (lpwp->flags & SWP_NOREDRAW)
-			{
-				ssMessage << L"SWP_NOREDRAW | ";
-			}
-			if (lpwp->flags & SWP_NOACTIVATE)
-			{
-				ssMessage << L"SWP_NOACTIVATE | ";
-			}
-			if (lpwp->flags & SWP_FRAMECHANGED)
-			{
-				ssMessage << L"SWP_FRAMECHANGED | ";
-			}
-			if (lpwp->flags & SWP_SHOWWINDOW)
-			{
-				ssMessage << L"SWP_SHOWWINDOW | ";
-			}
-			if (lpwp->flags & SWP_HIDEWINDOW)
-			{
-				ssMessage << L"SWP_HIDEWINDOW | ";
-			}
-			if (lpwp->flags & SWP_NOCOPYBITS)
-			{
-				ssMessage << L"SWP_NOCOPYBITS | ";
-			}
-			if (lpwp->flags & SWP_NOOWNERZORDER)
-			{
-				ssMessage << L"SWP_NOOWNERZORDER | ";
-			}
-			if (lpwp->flags & SWP_NOSENDCHANGING)
-			{
-				ssMessage << L"SWP_NOSENDCHANGING | ";
-			}
-			ssMessage << L"\r\n";
-			strMessage = ssMessage.str();
-			strMessage.erase(strMessage.find_last_of(L'|') - 1, 3);
-			OutputDebugString(strMessage.c_str());
+			// Clear sizing edge
+			SizingEdge = 0;
+
+			// Redraw controls
+			InvalidateRect(hWnd, NULL, FALSE);
 		}
 		break;
-#endif // _DEBUG
 	case WM_GETMINMAXINFO:
 		{
 			// Limit minimal window size
@@ -4073,7 +4173,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				CloseHandle(ProxyProcessInfo.hProcess);
 				ProxyProcessInfo.hProcess = NULL;
 
-				// Close HANDLE to target process and duplicated handles
+				// Close the handle to target process and duplicated handles
 				CloseHandle(TargetProcessInfo.hProcess);
 				TargetProcessInfo.hProcess = NULL;
 				CloseHandle(hProcessCurrentDuplicated);
@@ -4140,7 +4240,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				CloseHandle(hEventTerminateWatchThread);
 				CloseHandle(hThreadWatch);
 
-				// Close HANDLE to target process
+				// Close the handle to target process
 				CloseHandle(TargetProcessInfo.hProcess);
 				TargetProcessInfo.hProcess = NULL;
 			}
@@ -4158,6 +4258,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 	case WM_DESTROY:
 		{
 			DeleteFont(hFontMain);
+			DeletePen(hPenSplitter);
 
 			PostQuitMessage(0);
 		}
@@ -4327,7 +4428,7 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 
 			PostMessage(GetParent(hWndListViewFontList), static_cast<UINT>(USERMESSAGE::CHILDWINDOWPOSCHANGED), reinterpret_cast<WPARAM>(hWndListViewFontList), static_cast<LPARAM>(reinterpret_cast<LPWINDOWPOS>(lParam)->flags));
 
-#ifdef _DEBUG
+#ifdef SHOWPOSINFO
 			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
@@ -4385,9 +4486,13 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 			}
 			ssMessage << L"\r\n";
 			strMessage = ssMessage.str();
-			strMessage.erase(strMessage.find_last_of(L'|') - 1, 3);
+			std::size_t pos{ strMessage.find_last_of(L'|') };
+			if (pos != std::wstring::npos)
+			{
+				strMessage.erase(strMessage.find_last_of(L'|') - 1, 3);
+			}
 			OutputDebugString(strMessage.c_str());
-#endif // _DEBUG
+#endif // SHOWPOSINFO
 		}
 		break;
 	default:
@@ -4423,10 +4528,10 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 	case WM_CONTEXTMENU:
 		{
 			// Delete "Undo", "Cut", "Paste" and "Clear" from context menu
-			static HWND hWndOwner{};
-			static POINT ptCursor{};
-			hWndOwner = reinterpret_cast<HWND>(wParam);
-			ptCursor = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+			static HWND hWndContextMenuOwner{};
+			static POINT ptAnchorContextMenu{};
+			hWndContextMenuOwner = reinterpret_cast<HWND>(wParam);
+			ptAnchorContextMenu = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
 
 			HWINEVENTHOOK hWinEventHook{ SetWinEventHook(EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_MENUPOPUPSTART, NULL,
 				[](HWINEVENTHOOK hWinEventHook, DWORD Event, HWND hWnd, LONG idObject, LONG idChild, DWORD idEventThread, DWORD dwmsEventTime)
@@ -4434,19 +4539,19 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 					if (idObject == OBJID_CLIENT && idChild == CHILDID_SELF)
 					{
 						// Test whether context menu is triggered by mouse or by keyboard
-						if (ptCursor.x == -1 && ptCursor.y == -1)
+						if (ptAnchorContextMenu.x == -1 && ptAnchorContextMenu.y == -1)
 						{
-							Edit_ScrollCaret(hWndOwner);
-							LRESULT lRet{ SendMessage(hWndOwner, EM_POSFROMCHAR, Edit_GetCaretIndex(hWndOwner), NULL) };
-							ptCursor = { GET_X_LPARAM(lRet), GET_Y_LPARAM(lRet) };
-							ClientToScreen(hWndOwner, &ptCursor);
+							Edit_ScrollCaret(hWndContextMenuOwner);
+							LRESULT lRet{ SendMessage(hWndContextMenuOwner, EM_POSFROMCHAR, Edit_GetCaretIndex(hWndContextMenuOwner), NULL) };
+							ptAnchorContextMenu = { GET_X_LPARAM(lRet), GET_Y_LPARAM(lRet) };
+							ClientToScreen(hWndContextMenuOwner, &ptAnchorContextMenu);
 						}
 
 						// Test whether context menu pops up in the client area of EditMessage
 						RECT rcEditMessageClient{};
-						GetClientRect(hWndOwner, &rcEditMessageClient);
-						MapWindowRect(hWndOwner, HWND_DESKTOP, &rcEditMessageClient);
-						if (PtInRect(&rcEditMessageClient, ptCursor))
+						GetClientRect(hWndContextMenuOwner, &rcEditMessageClient);
+						MapWindowRect(hWndContextMenuOwner, HWND_DESKTOP, &rcEditMessageClient);
+						if (PtInRect(&rcEditMessageClient, ptAnchorContextMenu))
 						{
 							HMENU hMenuContextEditMessage{ reinterpret_cast<HMENU>(SendMessage(hWnd, MN_GETHMENU, 0, 0)) };
 							assert(hMenuContextEditMessage);
@@ -4462,10 +4567,10 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 							RECT rcContextMenuEditMessage{};
 							GetWindowRect(hWnd, &rcContextMenuEditMessage);
 							MONITORINFO mi{ sizeof(MONITORINFO) };
-							GetMonitorInfo(MonitorFromPoint(ptCursor, MONITOR_DEFAULTTONEAREST), &mi);
+							GetMonitorInfo(MonitorFromPoint(ptAnchorContextMenu, MONITOR_DEFAULTTONEAREST), &mi);
 							SIZE sizeContextMenuEditMessage{ rcContextMenuEditMessage.right - rcContextMenuEditMessage.left, rcContextMenuEditMessage.bottom - rcContextMenuEditMessage.top };
 							UINT uFlags{ TPM_WORKAREA };
-							if (ptCursor.y > mi.rcWork.bottom - sizeContextMenuEditMessage.cy)
+							if (ptAnchorContextMenu.y > mi.rcWork.bottom - sizeContextMenuEditMessage.cy)
 							{
 								uFlags |= TPM_BOTTOMALIGN;
 							}
@@ -4481,8 +4586,8 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 							{
 								uFlags |= TPM_LEFTALIGN;
 							}
-							CalculatePopupWindowPosition(&ptCursor, &sizeContextMenuEditMessage, uFlags, NULL, &rcContextMenuEditMessage);
-							MoveWindow(hWnd, rcContextMenuEditMessage.left, rcContextMenuEditMessage.top, sizeContextMenuEditMessage.cx, sizeContextMenuEditMessage.cy, FALSE);
+							CalculatePopupWindowPosition(&ptAnchorContextMenu, &sizeContextMenuEditMessage, uFlags, NULL, &rcContextMenuEditMessage);
+							SetWindowPos(hWnd, NULL, rcContextMenuEditMessage.left, rcContextMenuEditMessage.top, sizeContextMenuEditMessage.cx, sizeContextMenuEditMessage.cy, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 						}
 					}
 				},
@@ -4500,7 +4605,7 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 
 			PostMessage(GetParent(hWndEditMessage), static_cast<UINT>(USERMESSAGE::CHILDWINDOWPOSCHANGED), reinterpret_cast<WPARAM>(hWndEditMessage), static_cast<LPARAM>(reinterpret_cast<LPWINDOWPOS>(lParam)->flags));
 
-#ifdef _DEBUG
+#ifdef SHOWPOSINFO
 			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
@@ -4558,9 +4663,13 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 			}
 			ssMessage << L"\r\n";
 			strMessage = ssMessage.str();
-			strMessage.erase(strMessage.find_last_of(L'|') - 1, 3);
+			std::size_t pos{ strMessage.find_last_of(L'|') };
+			if (pos != std::wstring::npos)
+			{
+				strMessage.erase(strMessage.find_last_of(L'|') - 1, 3);
+			}
 			OutputDebugString(strMessage.c_str());
-#endif // _DEBUG
+#endif // SHOWPOSINFO
 		}
 		break;
 	default:
@@ -4573,7 +4682,92 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 	return ret;
 }
 
-#ifdef _DEBUG
+#ifdef SHOWPOSINFO
+LRESULT CALLBACK SplitterSubclassProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData)
+{
+	LRESULT ret{};
+
+	switch (Message)
+	{
+	case WM_WINDOWPOSCHANGED:
+		{
+			ret = DefSubclassProc(hWndSplitter, Message, wParam, lParam);
+
+			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
+			std::wstringstream ssMessage{};
+			std::wstring strMessage{};
+			ssMessage << L"* Splitter revieved WM_WINDOWPOSCHANGED\r\n"
+				<< L"hwndInsertAfter: " << lpwp->hwndInsertAfter << L" "
+				<< L"hwnd: " << lpwp->hwnd << L" "
+				<< L"x: " << lpwp->x << L" "
+				<< L"y: " << lpwp->y << L" "
+				<< L"cx: " << lpwp->cx << L" "
+				<< L"cy: " << lpwp->cy << L" "
+				<< L"flags: ";
+			if (lpwp->flags & SWP_NOSIZE)
+			{
+				ssMessage << L"SWP_NOSIZE | ";
+			}
+			if (lpwp->flags & SWP_NOMOVE)
+			{
+				ssMessage << L"SWP_NOMOVE | ";
+			}
+			if (lpwp->flags & SWP_NOZORDER)
+			{
+				ssMessage << L"SWP_NOZORDER | ";
+			}
+			if (lpwp->flags & SWP_NOREDRAW)
+			{
+				ssMessage << L"SWP_NOREDRAW | ";
+			}
+			if (lpwp->flags & SWP_NOACTIVATE)
+			{
+				ssMessage << L"SWP_NOACTIVATE | ";
+			}
+			if (lpwp->flags & SWP_FRAMECHANGED)
+			{
+				ssMessage << L"SWP_FRAMECHANGED | ";
+			}
+			if (lpwp->flags & SWP_SHOWWINDOW)
+			{
+				ssMessage << L"SWP_SHOWWINDOW | ";
+			}
+			if (lpwp->flags & SWP_HIDEWINDOW)
+			{
+				ssMessage << L"SWP_HIDEWINDOW | ";
+			}
+			if (lpwp->flags & SWP_NOCOPYBITS)
+			{
+				ssMessage << L"SWP_NOCOPYBITS | ";
+			}
+			if (lpwp->flags & SWP_NOOWNERZORDER)
+			{
+				ssMessage << L"SWP_NOOWNERZORDER | ";
+			}
+			if (lpwp->flags & SWP_NOSENDCHANGING)
+			{
+				ssMessage << L"SWP_NOSENDCHANGING | ";
+			}
+			ssMessage << L"\r\n";
+			strMessage = ssMessage.str();
+			std::size_t pos{ strMessage.find_last_of(L'|') };
+			if (pos != std::wstring::npos)
+			{
+				strMessage.erase(strMessage.find_last_of(L'|') - 1, 3);
+			}
+			OutputDebugString(strMessage.c_str());
+		}
+		break;
+	default:
+		{
+			ret = DefSubclassProc(hWndSplitter, Message, wParam, lParam);
+		}
+		break;
+	}
+
+	return ret;
+}
+
 LRESULT CALLBACK ProgressBarFontSubclassProc(HWND hWndProgressBarFont, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData)
 {
 	LRESULT ret{};
@@ -4582,8 +4776,6 @@ LRESULT CALLBACK ProgressBarFontSubclassProc(HWND hWndProgressBarFont, UINT Mess
 	{
 	case WM_WINDOWPOSCHANGED:
 		{
-
-
 			ret = DefSubclassProc(hWndProgressBarFont, Message, wParam, lParam);
 
 			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
@@ -4643,7 +4835,11 @@ LRESULT CALLBACK ProgressBarFontSubclassProc(HWND hWndProgressBarFont, UINT Mess
 			}
 			ssMessage << L"\r\n";
 			strMessage = ssMessage.str();
-			strMessage.erase(strMessage.find_last_of(L'|') - 1, 3);
+			std::size_t pos{ strMessage.find_last_of(L'|') };
+			if (pos != std::wstring::npos)
+			{
+				strMessage.erase(strMessage.find_last_of(L'|') - 1, 3);
+			}
 			OutputDebugString(strMessage.c_str());
 		}
 		break;
@@ -4656,7 +4852,7 @@ LRESULT CALLBACK ProgressBarFontSubclassProc(HWND hWndProgressBarFont, UINT Mess
 
 	return ret;
 }
-#endif // _DEBUG
+#endif // SHOWPOSINFO
 
 INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM lParam)
 {
@@ -4685,7 +4881,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM
 			RECT rcOwner{}, rcDialog{};
 			GetWindowRect(hWndOwner, &rcOwner);
 			GetWindowRect(hWndDialog, &rcDialog);
-			MoveWindow(hWndDialog, rcOwner.left + ((rcOwner.right - rcOwner.left) - (rcDialog.right - rcDialog.left)) / 2, rcOwner.top + ((rcOwner.bottom - rcOwner.top) - (rcDialog.bottom - rcDialog.top)) / 2, rcDialog.right - rcDialog.left, rcDialog.bottom - rcDialog.top, FALSE);
+			SetWindowPos(hWndDialog, NULL, rcOwner.left + ((rcOwner.right - rcOwner.left) - (rcDialog.right - rcDialog.left)) / 2, rcOwner.top + ((rcOwner.bottom - rcOwner.top) - (rcDialog.bottom - rcDialog.top)) / 2, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
 
 			// Initialize ListViewProcessList
 			HWND hWndListViewProcessList{ GetDlgItem(hWndDialog, IDC_LIST1) };
