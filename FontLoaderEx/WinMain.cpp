@@ -3,7 +3,7 @@
 #endif // UNICODE && _UNICODE
 
 #ifdef _DEBUG
-#define SHOWPOSINFO
+#define DBG_SHOWPOSINFO
 #endif // _DEBUG
 
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -200,7 +200,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 LRESULT CALLBACK EditTimeoutSubclassProc(HWND hWndEditTimeout, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
 LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
 LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
-#ifdef SHOWPOSINFO
+#ifdef DBG_SHOWPOSINFO
 LRESULT CALLBACK SplitterSubclassProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
 LRESULT CALLBACK ProgressBarFontSubclassProc(HWND hWndProgressBarFont, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
 #endif // SHOWPOSINFO
@@ -1058,7 +1058,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			SendMessage(hWndProgressBarFont, PBM_SETSTEP, 1, 0);
 			SendMessage(hWndProgressBarFont, PBM_SETSTATE, PBST_NORMAL, 0);
 
-#ifdef SHOWPOSINFO
+#ifdef DBG_SHOWPOSINFO
 			SetWindowSubclass(hWndProgressBarFont, ProgressBarFontSubclassProc, 0, 0);
 #endif // SHOWPOSINFO
 
@@ -1070,7 +1070,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			assert(hWndSplitter);
 			//HWND hWndSplitter{ NULL };
 
-#ifdef SHOWPOSINFO
+#ifdef DBG_SHOWPOSINFO
 			SetWindowSubclass(hWndSplitter, SplitterSubclassProc, 0, 0);
 #endif // SHOWPOSINFO
 
@@ -1102,8 +1102,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 			CHANGEFILTERSTRUCT cfs{ sizeof(CHANGEFILTERSTRUCT) };
 			ChangeWindowMessageFilterEx(hWndListViewFontList, WM_DROPFILES, MSGFLT_ALLOW, &cfs);
+			assert(cfs.ExtStatus == MSGFLTINFO_NONE);
 			ChangeWindowMessageFilterEx(hWndListViewFontList, WM_COPYDATA, MSGFLT_ALLOW, &cfs);
+			assert(cfs.ExtStatus == MSGFLTINFO_NONE);
 			ChangeWindowMessageFilterEx(hWndListViewFontList, 0x0049, MSGFLT_ALLOW, &cfs);	// 0x0049 == WM_COPYGLOBALDATA
+			assert(cfs.ExtStatus == MSGFLTINFO_NONE);
 
 			// Initialize EditMessage
 			HWND hWndEditMessage{ CreateWindow(WC_EDIT, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | WS_CLIPSIBLINGS | ES_READONLY | ES_LEFT | ES_MULTILINE | ES_NOHIDESEL, rcMainClient.left, rcSplitter.bottom, rcMainClient.right - rcMainClient.left, rcStatusBarFontInfo.top - rcSplitter.bottom, hWnd, reinterpret_cast<HMENU>(ID::EditMessage), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
@@ -1228,8 +1231,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											// Get the pointer to original ofn
 											lpofn = reinterpret_cast<LPOPENFILENAME>(lParam);
 
-											// Get HWND to open dialog
-											hWndOpenDialog = GetParent(hWndOpenDialogChild);
+											// Get the HWND to open dialog
+											hWndOpenDialog = GetAncestor(hWndOpenDialogChild, GA_PARENT);
 
 											// Change default font
 											SetWindowFont(GetDlgItem(hWndOpenDialog, chx1), hFontMain, TRUE);
@@ -2858,7 +2861,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 			ret = DefWindowProc(hWnd, Message, wParam, lParam);
 
-#ifdef SHOWPOSINFO
+#ifdef DBG_SHOWPOSINFO
 			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
@@ -4359,7 +4362,7 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 	case WM_DROPFILES:
 		{
 			// Process drag-drop and open fonts
-			HWND hWndParent{ GetParent(hWndListViewFontList) };
+			HWND hWndParent{ GetAncestor(hWndListViewFontList, GA_PARENT) };
 			HWND hWndEditMessage{ GetDlgItem(hWndParent, static_cast<int>(ID::EditMessage)) };
 
 			bool bIsFontListEmptyBefore{ FontList.empty() };
@@ -4375,7 +4378,7 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 					FontList.push_back(szFileName);
 
 					flcs.lpszFontName = szFileName;
-					SendMessage(GetParent(hWndListViewFontList), static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED), reinterpret_cast<LPARAM>(&flcs));
+					SendMessage(GetAncestor(hWndListViewFontList, GA_PARENT), static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED), reinterpret_cast<LPARAM>(&flcs));
 
 					flcs.iItem++;
 				}
@@ -4426,9 +4429,9 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 			// Post USERMESSAGE::CHILDWINDOWPOSCHANGED to parent window
 			ret = DefSubclassProc(hWndListViewFontList, Message, wParam, lParam);
 
-			PostMessage(GetParent(hWndListViewFontList), static_cast<UINT>(USERMESSAGE::CHILDWINDOWPOSCHANGED), reinterpret_cast<WPARAM>(hWndListViewFontList), static_cast<LPARAM>(reinterpret_cast<LPWINDOWPOS>(lParam)->flags));
+			PostMessage(GetAncestor(hWndListViewFontList, GA_PARENT), static_cast<UINT>(USERMESSAGE::CHILDWINDOWPOSCHANGED), reinterpret_cast<WPARAM>(hWndListViewFontList), static_cast<LPARAM>(reinterpret_cast<LPWINDOWPOS>(lParam)->flags));
 
-#ifdef SHOWPOSINFO
+#ifdef DBG_SHOWPOSINFO
 			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
@@ -4603,9 +4606,9 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 			// Post USERMESSAGE::CHILDWINDOWPOSCHANGED to parent window
 			ret = DefSubclassProc(hWndEditMessage, Message, wParam, lParam);
 
-			PostMessage(GetParent(hWndEditMessage), static_cast<UINT>(USERMESSAGE::CHILDWINDOWPOSCHANGED), reinterpret_cast<WPARAM>(hWndEditMessage), static_cast<LPARAM>(reinterpret_cast<LPWINDOWPOS>(lParam)->flags));
+			PostMessage(GetAncestor(hWndEditMessage, GA_PARENT), static_cast<UINT>(USERMESSAGE::CHILDWINDOWPOSCHANGED), reinterpret_cast<WPARAM>(hWndEditMessage), static_cast<LPARAM>(reinterpret_cast<LPWINDOWPOS>(lParam)->flags));
 
-#ifdef SHOWPOSINFO
+#ifdef DBG_SHOWPOSINFO
 			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
@@ -4682,7 +4685,7 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 	return ret;
 }
 
-#ifdef SHOWPOSINFO
+#ifdef DBG_SHOWPOSINFO
 LRESULT CALLBACK SplitterSubclassProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData)
 {
 	LRESULT ret{};

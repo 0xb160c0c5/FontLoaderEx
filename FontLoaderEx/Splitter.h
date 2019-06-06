@@ -11,13 +11,13 @@
 constexpr WCHAR UC_SPLITTER[]{ L"UserControl_Splitter" };
 
 // ===================Splitter styles===================
-constexpr DWORD SPS_HORZ = 0b1u;	// Horizontal splitter;
-constexpr DWORD SPS_VERT = 0b10u;	// Vertical splitter;
-constexpr DWORD SPS_PARENTWIDTH = 0B100u;	// Splitter is as wide as parent window's client, ignoring the x and cx parameter in CreateWindow()
-constexpr DWORD SPS_PARENTHEIGHT = 0b1000u;	// Splitter is as tall as parent window's client, ignoring the y and cy parameter in CreateWindow()
-constexpr DWORD SPS_AUTODRAG = 0b10000u;	// Automatically move the splitter when holding and moving left mouse button
-constexpr DWORD SPS_NOCAPTURE = 0b100000u;	// Do not capture the cursor while dragging
-constexpr DWORD SPS_NONOTIFY = 0b1000000u;	// Do not send WM_NOTIFY to parent window
+constexpr DWORD SPS_HORZ{ 0b1u };	// Horizontal splitter;
+constexpr DWORD SPS_VERT{ 0b10u };	// Vertical splitter;
+constexpr DWORD SPS_PARENTWIDTH{ 0b100u };	// Splitter is as wide as parent window's client, ignoring the x and cx parameter in CreateWindow()
+constexpr DWORD SPS_PARENTHEIGHT{ 0b1000u };	// Splitter is as tall as parent window's client, ignoring the y and cy parameter in CreateWindow()
+constexpr DWORD SPS_AUTODRAG{ 0b10000u };	// Automatically move the splitter when holding and moving left mouse button
+constexpr DWORD SPS_NOCAPTURE{ 0b100000u };	// Do not capture the cursor while dragging
+constexpr DWORD SPS_NONOTIFY{ 0b1000000u };	// Do not send WM_NOTIFY to parent window
 /*
 	Remarks:
 
@@ -27,7 +27,7 @@ constexpr DWORD SPS_NONOTIFY = 0b1000000u;	// Do not send WM_NOTIFY to parent wi
 */
 
 // ===================Splitter messages===================
-enum SPLITTERMESSAGE : UINT { SPM_ROTATE = WM_USER + 1, SPM_SETRANGE, SPM_GETRANGE, SPM_SETMARGIN, SPM_GETMARGIN, SPM_SETLINKEDCTL, SPM_GETLINKEDCTL };
+enum SPLITTERMESSAGE : UINT { SPM_ROTATE = WM_USER + 1, SPM_SETRANGE, SPM_GETRANGE, SPM_SETMARGIN, SPM_GETMARGIN, SPM_SETLINKEDCTL, SPM_GETLINKEDCTL, SPM_ADDLINKEDCTL, SPM_REMOVELINKEDCTL };
 enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 /*
 	SPM_ROTATE
@@ -120,7 +120,7 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 	Set the linked controls.
 
 	wParam:
-		Low word is the number of controls that links to the splitter.
+		Low word is the number of controls that is about to links to the splitter.
 		High word is a flag that determins which edge of the splitter the controls link to.
 			SLC_TOP		The top edge of the splitter is linked to the bottom edge of the controls
 			SLC_BOTTOM	The bottom edge of the splitter is linked to the top edge of the controls
@@ -128,7 +128,7 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 			SLC_RIGHT	The right edge of the splitter is linked to the left edge of the controls
 
 	lParam:
-		A pointer to an array that contains the HWND to linked controls.
+		A pointer to an array that contains the HWND controls.
 
 	Return value:
 		The number of controls that linked to the splitter, or 0 if failed.
@@ -153,11 +153,56 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 			SLC_RIGHT	The right edge of the splitter is linked to the left edge of the controls
 
 	lParam:
-		A pointer to an array that receives the HWND to linked controls.
+		A pointer to an array that receives the HWND to controls.
 		If lParam is NULL, the HWND to linked controls are not returned.
 
 	Return value:
 		The number of controls that linked to the splitter depending on SLC_*.
+*/
+
+/*
+	SPM_ADDLINKEDCTL
+
+	Add linked controls to the splitter.
+
+	wParam:
+		Low word is the number of controls that is about to add to the linked controls of the splitter.
+		High word is a flag that determins which edge of the splitter the controls link to.
+			SLC_TOP		The top edge of the splitter is linked to the bottom edge of the controls
+			SLC_BOTTOM	The bottom edge of the splitter is linked to the top edge of the controls
+			SLC_LEFT	The left edge of the splitter is linked to the right edge of the controls
+			SLC_RIGHT	The right edge of the splitter is linked to the left edge of the controls
+
+	lParam:
+		A pointer to an array that contains the HWND to controls that are about to add.
+
+	Return value:
+		The number of controls added that linked to the splitter, or 0 if failed.
+
+	Remarks:
+		When dragging the splitter, The edges that linked controls linked to the splitter are moved with the splitter.
+		The linked controls must be the sibling windows of the splitter.
+		SLC_TOP/SLC_BOTTOM is not compatible with a splitter that has SPS_VERT style, so does SLC_LEFT/SLC_RIGHT with a splitter that has SPS_HORZ style.
+*/
+
+/*
+	SPM_REMOVELINKEDCTL
+
+	Remove linked controls from the splitter.
+
+	wParam:
+		Low word is the number of controls that is about to remove from the linked controls of the splitter.
+		High word is a flag that determins which edge of the splitter the controls link to.
+			SLC_TOP		The top edge of the splitter is linked to the bottom edge of the controls
+			SLC_BOTTOM	The bottom edge of the splitter is linked to the top edge of the controls
+			SLC_LEFT	The left edge of the splitter is linked to the right edge of the controls
+			SLC_RIGHT	The right edge of the splitter is linked to the left edge of the controls
+
+	lParam:
+		A pointer to an array that receives the HWND to controls that are about to remove.
+
+	Return value:
+		The number of controls removed that linked to the splitter depending on SLC_*.
 */
 
 /*

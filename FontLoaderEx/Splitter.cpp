@@ -2,6 +2,7 @@
 #include <windowsx.h>
 #include <vector>
 #include <array>
+#include <algorithm>
 #include <cassert>
 #include "Splitter.h"
 
@@ -49,11 +50,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 		{
 			if (wParam)
 			{
-				HWND hWndSplitterParent{ GetParent(hWndSplitter) };
-				if (!hWndSplitterParent)
-				{
-					hWndSplitterParent = GetDesktopWindow();
-				}
+				HWND hWndSplitterParent{ GetAncestor(hWndSplitter, GA_PARENT) };
 				RECT rcSplitter{};
 				GetWindowRect(hWndSplitter, &rcSplitter);
 				MapWindowRect(HWND_DESKTOP, hWndSplitterParent, &rcSplitter);
@@ -65,7 +62,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 				{
 					ptSplitterRange = { LOWORD(wParam), HIWORD(wParam) - (rcSplitter.right - rcSplitter.left) };
 				}
-				if (ptSplitterRange.y > ptSplitterRange.x)
+				if (ptSplitterRange.y >= ptSplitterRange.x)
 				{
 					ret = static_cast<LRESULT>(TRUE);
 				}
@@ -150,15 +147,17 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 						{
 							for (WORD i = 0; i < LOWORD(wParam); i++)
 							{
-								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetParent(reinterpret_cast<HWND*>(lParam)[i]) == GetParent(hWndSplitter)))
+								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
 								{
 									LinkedControl[0].push_back(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
+							LinkedControl[0].erase(std::unique(LinkedControl[0].begin(), LinkedControl[0].end()), LinkedControl[0].end());
 						}
 						catch (...)
 						{
 							LinkedControl[0].clear();
+
 							ret = 0;
 							break;
 						}
@@ -180,15 +179,17 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 						{
 							for (WORD i = 0; i < LOWORD(wParam); i++)
 							{
-								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetParent(reinterpret_cast<HWND*>(lParam)[i]) == GetParent(hWndSplitter)))
+								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
 								{
 									LinkedControl[1].push_back(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
+							LinkedControl[1].erase(std::unique(LinkedControl[1].begin(), LinkedControl[1].end()), LinkedControl[1].end());
 						}
 						catch (...)
 						{
-							LinkedControl[0].clear();
+							LinkedControl[1].clear();
+
 							ret = 0;
 							break;
 						}
@@ -210,15 +211,17 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 						{
 							for (WORD i = 0; i < LOWORD(wParam); i++)
 							{
-								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetParent(reinterpret_cast<HWND*>(lParam)[i]) == GetParent(hWndSplitter)))
+								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
 								{
 									LinkedControl[0].push_back(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
+							LinkedControl[0].erase(std::unique(LinkedControl[0].begin(), LinkedControl[0].end()), LinkedControl[0].end());
 						}
 						catch (...)
 						{
 							LinkedControl[0].clear();
+
 							ret = 0;
 							break;
 						}
@@ -240,15 +243,17 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 						{
 							for (WORD i = 0; i < LOWORD(wParam); i++)
 							{
-								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetParent(reinterpret_cast<HWND*>(lParam)[i]) == GetParent(hWndSplitter)))
+								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
 								{
 									LinkedControl[1].push_back(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
+							LinkedControl[1].erase(std::unique(LinkedControl[1].begin(), LinkedControl[1].end()), LinkedControl[1].end());
 						}
 						catch (...)
 						{
-							LinkedControl[0].clear();
+							LinkedControl[1].clear();
+
 							ret = 0;
 							break;
 						}
@@ -361,6 +366,224 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 			}
 		}
 		break;
+	case SPM_ADDLINKEDCTL:
+		{
+			std::vector<HWND> LinkedControlTemp{};
+
+			switch (HIWORD(wParam))
+			{
+			case SLC_TOP:
+				{
+					if (dwSplitterStyle & SPS_HORZ)
+					{
+						try
+						{
+							for (WORD i = 0; i < LOWORD(wParam); i++)
+							{
+								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
+								{
+									LinkedControlTemp.push_back(reinterpret_cast<HWND*>(lParam)[i]);
+								}
+							}
+							LinkedControlTemp.erase(std::unique(LinkedControlTemp.begin(), LinkedControlTemp.end()), LinkedControlTemp.end());
+							LinkedControl[0].reserve(LinkedControl[0].size() + LinkedControlTemp.size());
+						}
+						catch (...)
+						{
+							ret = 0;
+							break;
+						}
+						LinkedControl[0].insert(LinkedControl[0].end(), LinkedControlTemp.begin(), LinkedControlTemp.end());
+
+						ret = static_cast<LRESULT>(LinkedControlTemp.size());
+					}
+					else
+					{
+						ret = 0;
+					}
+				}
+				break;
+			case SLC_BOTTOM:
+				{
+					if (dwSplitterStyle & SPS_HORZ)
+					{
+						try
+						{
+							for (WORD i = 0; i < LOWORD(wParam); i++)
+							{
+								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
+								{
+									LinkedControlTemp.push_back(reinterpret_cast<HWND*>(lParam)[i]);
+								}
+							}
+							LinkedControlTemp.erase(std::unique(LinkedControlTemp.begin(), LinkedControlTemp.end()), LinkedControlTemp.end());
+							LinkedControl[1].reserve(LinkedControl[1].size() + LinkedControlTemp.size());
+						}
+						catch (...)
+						{
+							ret = 0;
+							break;
+						}
+						LinkedControl[1].insert(LinkedControl[1].end(), LinkedControlTemp.begin(), LinkedControlTemp.end());
+
+						ret = static_cast<LRESULT>(LinkedControlTemp.size());
+					}
+					else
+					{
+						ret = 0;
+					}
+				}
+				break;
+			case SLC_LEFT:
+				{
+					if (dwSplitterStyle & SPS_VERT)
+					{
+						try
+						{
+							for (WORD i = 0; i < LOWORD(wParam); i++)
+							{
+								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
+								{
+									LinkedControlTemp.push_back(reinterpret_cast<HWND*>(lParam)[i]);
+								}
+							}
+							LinkedControlTemp.erase(std::unique(LinkedControlTemp.begin(), LinkedControlTemp.end()), LinkedControlTemp.end());
+							LinkedControl[0].reserve(LinkedControl[0].size() + LinkedControlTemp.size());
+						}
+						catch (...)
+						{
+							ret = 0;
+							break;
+						}
+						LinkedControl[0].insert(LinkedControl[0].end(), LinkedControlTemp.begin(), LinkedControlTemp.end());
+
+						ret = static_cast<LRESULT>(LinkedControlTemp.size());
+					}
+					else
+					{
+						ret = 0;
+					}
+				}
+				break;
+			case SLC_RIGHT:
+				{
+					if (dwSplitterStyle & SPS_VERT)
+					{
+						try
+						{
+							for (WORD i = 0; i < LOWORD(wParam); i++)
+							{
+								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
+								{
+									LinkedControlTemp.push_back(reinterpret_cast<HWND*>(lParam)[i]);
+								}
+							}
+							LinkedControlTemp.erase(std::unique(LinkedControlTemp.begin(), LinkedControlTemp.end()), LinkedControlTemp.end());
+							LinkedControl[1].reserve(LinkedControl[1].size() + LinkedControlTemp.size());
+						}
+						catch (...)
+						{
+							ret = 0;
+							break;
+						}
+						LinkedControl[1].insert(LinkedControl[1].end(), LinkedControlTemp.begin(), LinkedControlTemp.end());
+
+						ret = static_cast<LRESULT>(LinkedControlTemp.size());
+					}
+				}
+				break;
+			default:
+				{
+					ret = 0;
+				}
+				break;
+			}
+		}
+		break;
+	case SPM_REMOVELINKEDCTL:
+		{
+			switch (HIWORD(wParam))
+			{
+			case SLC_TOP:
+				{
+					if (dwSplitterStyle & SPS_HORZ)
+					{
+						std::size_t LinkedControlOriginalSize{ LinkedControl[0].size() };
+						for (WORD i = 0; i < LOWORD(wParam); i++)
+						{
+							LinkedControl[0].erase(std::find(LinkedControl[0].begin(), LinkedControl[0].end(), reinterpret_cast<HWND*>(lParam)[i]));
+						}
+
+						ret = static_cast<LRESULT>(LinkedControlOriginalSize - LinkedControl[0].size());
+					}
+					else
+					{
+						ret = 0;
+					}
+				}
+				break;
+			case SLC_BOTTOM:
+				{
+					if (dwSplitterStyle & SPS_HORZ)
+					{
+						std::size_t LinkedControlOriginalSize{ LinkedControl[1].size() };
+						for (WORD i = 0; i < LOWORD(wParam); i++)
+						{
+							LinkedControl[1].erase(std::find(LinkedControl[1].begin(), LinkedControl[1].end(), reinterpret_cast<HWND*>(lParam)[i]));
+						}
+
+						ret = static_cast<LRESULT>(LinkedControlOriginalSize - LinkedControl[1].size());
+					}
+					else
+					{
+						ret = 0;
+					}
+				}
+				break;
+			case SLC_LEFT:
+				{
+					if (dwSplitterStyle & SPS_VERT)
+					{
+						std::size_t LinkedControlOriginalSize{ LinkedControl[0].size() };
+						for (WORD i = 0; i < LOWORD(wParam); i++)
+						{
+							LinkedControl[0].erase(std::find(LinkedControl[0].begin(), LinkedControl[0].end(), reinterpret_cast<HWND*>(lParam)[i]));
+						}
+
+						ret = static_cast<LRESULT>(LinkedControlOriginalSize - LinkedControl[0].size());
+					}
+					else
+					{
+						ret = 0;
+					}
+				}
+				break;
+			case SLC_RIGHT:
+				{
+					if (dwSplitterStyle & SPS_VERT)
+					{
+						std::size_t LinkedControlOriginalSize{ LinkedControl[1].size() };
+						for (WORD i = 0; i < LOWORD(wParam); i++)
+						{
+							LinkedControl[1].erase(std::find(LinkedControl[1].begin(), LinkedControl[1].end(), reinterpret_cast<HWND*>(lParam)[i]));
+						}
+
+						ret = static_cast<LRESULT>(LinkedControlOriginalSize - LinkedControl[1].size());
+					}
+					else
+					{
+						ret = 0;
+					}
+				}
+				break;
+			default:
+				{
+					ret = 0;
+				}
+				break;
+			}
+		}
+		break;
 	case WM_CREATE:
 		{
 			// Get splitter styles and ID
@@ -404,11 +627,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 			HDC hDCSplitter{ BeginPaint(hWndSplitter, &ps) };
 
 			// Send WM_CTLCOLORSTATIC to parent window
-			HWND hWndSplitterParent{ GetParent(hWndSplitter) };
-			if (!hWndSplitterParent)
-			{
-				hWndSplitterParent = GetDesktopWindow();
-			}
+			HWND hWndSplitterParent{ GetAncestor(hWndSplitter, GA_PARENT) };
 			HBRUSH hBrSplitterBackground{ FORWARD_WM_CTLCOLORSTATIC(hWndSplitterParent, hDCSplitter, hWndSplitter, SendMessage) };
 
 			// Draw the background
@@ -445,11 +664,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 
 			if (!(dwSplitterStyle & SPS_NONOTIFY))
 			{
-				HWND hWndSplitterParent{ GetParent(hWndSplitter) };
-				if (!hWndSplitterParent)
-				{
-					hWndSplitterParent = GetDesktopWindow();
-				}
+				HWND hWndSplitterParent{ GetAncestor(hWndSplitter, GA_PARENT) };
 				RECT rcSplitter{}, rcSplitterClient{};
 				GetWindowRect(hWndSplitter, &rcSplitter);
 				GetClientRect(hWndSplitter, &rcSplitterClient);
@@ -467,11 +682,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 			// If left button is being hold, send WM_NOTIFY with SPLITTERNOTIFICATION::DRAGGING to parent window
 			if ((wParam == MK_LBUTTON))
 			{
-				HWND hWndSplitterParent{ GetParent(hWndSplitter) };
-				if (!hWndSplitterParent)
-				{
-					hWndSplitterParent = GetDesktopWindow();
-				}
+				HWND hWndSplitterParent{ GetAncestor(hWndSplitter, GA_PARENT) };
 				POINT ptCursor{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) }, ptSplitter{}, ptCursorOffsetNew{ ptCursorOffset };
 				MapWindowPoints(hWndSplitter, hWndSplitterParent, &ptCursor, 1);
 				ptSplitter = { ptCursor.x - ptCursorOffsetNew.x, ptCursor.y - ptCursorOffsetNew.y };
@@ -528,11 +739,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 
 			if (!(dwSplitterStyle & SPS_NONOTIFY))
 			{
-				HWND hWndSplitterParent{ GetParent(hWndSplitter) };
-				if (!hWndSplitterParent)
-				{
-					hWndSplitterParent = GetDesktopWindow();
-				}
+				HWND hWndSplitterParent{ GetAncestor(hWndSplitter, GA_PARENT) };
 				POINT ptCursor{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
 				MapWindowPoints(hWndSplitter, hWndSplitterParent, &ptCursor, 1);
 				NMSPLITTER nms{ { hWndSplitter, static_cast<UINT_PTR>(idSplitter), static_cast<UINT>(SPN_DRAGEND) }, ptCursor, ptCursorOffset };
@@ -565,11 +772,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 		break;
 	case WM_MOVE:
 		{
-			HWND hWndSplitterParent{ GetParent(hWndSplitter) };
-			if (!hWndSplitterParent)
-			{
-				hWndSplitterParent = GetDesktopWindow();
-			}
+			HWND hWndSplitterParent{ GetAncestor(hWndSplitter, GA_PARENT) };
 			RECT rcSplitter{}, rcSplitterParentClient{};
 			GetWindowRect(hWndSplitter, &rcSplitter);
 			GetClientRect(hWndSplitterParent, &rcSplitterParentClient);
@@ -630,11 +833,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 		break;
 	case WM_SIZE:
 		{
-			HWND hWndSplitterParent{ GetParent(hWndSplitter) };
-			if (!hWndSplitterParent)
-			{
-				hWndSplitterParent = GetDesktopWindow();
-			}
+			HWND hWndSplitterParent{ GetAncestor(hWndSplitter, GA_PARENT) };
 			RECT rcSplitter{}, rcSplitterParentClient{};
 			GetWindowRect(hWndSplitter, &rcSplitter);
 			MapWindowRect(HWND_DESKTOP, hWndSplitterParent, &rcSplitter);
