@@ -3,7 +3,7 @@
 #endif // UNICODE && _UNICODE
 
 #ifdef _DEBUG
-#define DBG_SHOWPOSINFO
+#define DBGPRINTWNDPOSINFO
 #endif // _DEBUG
 
 #pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -200,7 +200,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 LRESULT CALLBACK EditTimeoutSubclassProc(HWND hWndEditTimeout, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
 LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
 LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
-#ifdef DBG_SHOWPOSINFO
+#ifdef DBGPRINTWNDPOSINFO
 LRESULT CALLBACK SplitterSubclassProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
 LRESULT CALLBACK ProgressBarFontSubclassProc(HWND hWndProgressBarFont, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
 #endif // SHOWPOSINFO
@@ -563,6 +563,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			Edit_ReplaceSel(hWndEditMessage, L"\r\n");
 			switch (static_cast<TERMINATION>(wParam))
 			{
+				// If target process terminates, just print message
+			case TERMINATION::DIRECT:
+				{
+					ssMessage << L"Target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L") terminated.\r\n\r\n";
+					strMessage = ssMessage.str();
+					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
+					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+					Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+				}
+				break;
 				// If proxy process terminates, just print message
 			case TERMINATION::PROXY:
 				{
@@ -573,7 +583,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
 				}
 				break;
-				// If target process termiantes, print messages and terminate proxy process
+				// If target process termiantes and proxy process is launched, print messages and terminate proxy process
 			case TERMINATION::TARGET:
 				{
 					ssMessage << L"Target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L") terminated.\r\n\r\n";
@@ -639,7 +649,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			if (lParam)
 			{
 				WaitForSingleObject(hThreadWatch, INFINITE);
-				WaitForSingleObject(reinterpret_cast<HANDLE>(reinterpret_cast<UINT_PTR>(hThreadCloseWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonCloseWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonLoadWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonUnloadWorkerThreadProc)), INFINITE);
+				WaitForSingleObject(ULongToHandle(HandleToULong(hThreadCloseWorkerThreadProc) | HandleToULong(hThreadButtonCloseWorkerThreadProc) | HandleToULong(hThreadButtonLoadWorkerThreadProc) | HandleToULong(hThreadButtonUnloadWorkerThreadProc)), INFINITE);
 				CloseHandle(hThreadWatch);
 			}
 			else
@@ -795,7 +805,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				break;
 			default:
 				{
-					assert(0 && "invalid fontlist change event");
+					assert(0 && "invalid font list change event");
 				}
 				break;
 			}
@@ -1058,7 +1068,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			SendMessage(hWndProgressBarFont, PBM_SETSTEP, 1, 0);
 			SendMessage(hWndProgressBarFont, PBM_SETSTATE, PBST_NORMAL, 0);
 
-#ifdef DBG_SHOWPOSINFO
+#ifdef DBGPRINTWNDPOSINFO
 			SetWindowSubclass(hWndProgressBarFont, ProgressBarFontSubclassProc, 0, 0);
 #endif // SHOWPOSINFO
 
@@ -1070,7 +1080,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			assert(hWndSplitter);
 			//HWND hWndSplitter{ NULL };
 
-#ifdef DBG_SHOWPOSINFO
+#ifdef DBGPRINTWNDPOSINFO
 			SetWindowSubclass(hWndSplitter, SplitterSubclassProc, 0, 0);
 #endif // SHOWPOSINFO
 
@@ -2861,7 +2871,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 			ret = DefWindowProc(hWnd, Message, wParam, lParam);
 
-#ifdef DBG_SHOWPOSINFO
+#ifdef DBGPRINTWNDPOSINFO
 			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
@@ -4431,7 +4441,7 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 
 			PostMessage(GetAncestor(hWndListViewFontList, GA_PARENT), static_cast<UINT>(USERMESSAGE::CHILDWINDOWPOSCHANGED), reinterpret_cast<WPARAM>(hWndListViewFontList), static_cast<LPARAM>(reinterpret_cast<LPWINDOWPOS>(lParam)->flags));
 
-#ifdef DBG_SHOWPOSINFO
+#ifdef DBGPRINTWNDPOSINFO
 			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
@@ -4608,7 +4618,7 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 
 			PostMessage(GetAncestor(hWndEditMessage, GA_PARENT), static_cast<UINT>(USERMESSAGE::CHILDWINDOWPOSCHANGED), reinterpret_cast<WPARAM>(hWndEditMessage), static_cast<LPARAM>(reinterpret_cast<LPWINDOWPOS>(lParam)->flags));
 
-#ifdef DBG_SHOWPOSINFO
+#ifdef DBGPRINTWNDPOSINFO
 			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
@@ -4685,7 +4695,7 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 	return ret;
 }
 
-#ifdef DBG_SHOWPOSINFO
+#ifdef DBGPRINTWNDPOSINFO
 LRESULT CALLBACK SplitterSubclassProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData)
 {
 	LRESULT ret{};

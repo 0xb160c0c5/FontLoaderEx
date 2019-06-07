@@ -303,7 +303,7 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 	// Singal worker thread and wait for worker thread to ready to exit
 	// Because only one worker thread runs at a time, so use bitwise-or to get the handle to running worker thread
 	bool bIsWorkerThreadRunning{ false };
-	switch (WaitForSingleObject(reinterpret_cast<HANDLE>(reinterpret_cast<UINT_PTR>(hThreadCloseWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonCloseWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonLoadWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonUnloadWorkerThreadProc)), 0))
+	switch (WaitForSingleObject(ULongToHandle(HandleToULong(hThreadCloseWorkerThreadProc) | HandleToULong(hThreadButtonCloseWorkerThreadProc) | HandleToULong(hThreadButtonLoadWorkerThreadProc) | HandleToULong(hThreadButtonUnloadWorkerThreadProc)), 0))
 	{
 	case WAIT_TIMEOUT:
 		{
@@ -316,7 +316,7 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 		break;
 	}
 
-	SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATING), static_cast<WPARAM>(TERMINATION::TARGET), static_cast<LPARAM>(bIsWorkerThreadRunning));
+	SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATING), static_cast<WPARAM>(TERMINATION::DIRECT), static_cast<LPARAM>(bIsWorkerThreadRunning));
 
 	// Clear FontList
 	FontResource::RegisterAddRemoveFontProc(NullAddFontProc, NullRemoveFontProc);
@@ -370,7 +370,7 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	// Singal worker thread and wait for worker thread to ready to exit
 	// Because only one worker thread runs at a time, so use bitwise-or to get the handle to running worker thread
 	bool bIsWorkerThreadRunning{ false };
-	switch (WaitForSingleObject(reinterpret_cast<HANDLE>(reinterpret_cast<UINT_PTR>(hThreadCloseWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonCloseWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonLoadWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonUnloadWorkerThreadProc)), 0))
+	switch (WaitForSingleObject(ULongToHandle(HandleToULong(hThreadCloseWorkerThreadProc) | HandleToULong(hThreadButtonCloseWorkerThreadProc) | HandleToULong(hThreadButtonLoadWorkerThreadProc) | HandleToULong(hThreadButtonUnloadWorkerThreadProc)), 0))
 	{
 	case WAIT_TIMEOUT:
 		{
@@ -395,6 +395,7 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	// Terminate message thread
 	SendMessage(hWndMessage, WM_CLOSE, 0, 0);
 	WaitForSingleObject(hThreadMessage, INFINITE);
+	CloseHandle(hThreadMessage);
 
 	// Close HANDLE to proxy process and target process, duplicated handles and synchronization objects
 	CloseHandle(TargetProcessInfo.hProcess);
@@ -447,13 +448,13 @@ unsigned int __stdcall MessageThreadProc(void* lpParameter)
 				uiRet = static_cast<unsigned int>(GetLastError());
 
 				DestroyWindow(hWndMessage);
-				BOOL bRetUnregisterClass{ UnregisterClass(L"FontLoaderExMessage", (HINSTANCE)GetModuleHandle(NULL)) };
+				BOOL bRetUnregisterClass{ UnregisterClass(L"FontLoaderExMessage", static_cast<HINSTANCE>(GetModuleHandle(NULL))) };
 				assert(bRetUnregisterClass);
 			}
 			break;
 		case 0:
 			{
-				BOOL bRetUnregisterClass{ UnregisterClass(L"FontLoaderExMessage", (HINSTANCE)GetModuleHandle(NULL)) };
+				BOOL bRetUnregisterClass{ UnregisterClass(L"FontLoaderExMessage", static_cast<HINSTANCE>(GetModuleHandle(NULL))) };
 				assert(bRetUnregisterClass);
 
 				uiRet = static_cast<unsigned int>(Message.wParam);
@@ -489,7 +490,7 @@ LRESULT CALLBACK MessageWndProc(HWND hWndMessage, UINT Message, WPARAM wParam, L
 					SetEvent(hEventProxyProcessDebugPrivilegeEnablingFinished);
 				}
 				break;
-				// receive HWND to proxy process
+				// Receive HWND to proxy process
 			case COPYDATA::PROXYPROCESSHWNDSENT:
 				{
 					hWndProxy = *static_cast<HWND*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);

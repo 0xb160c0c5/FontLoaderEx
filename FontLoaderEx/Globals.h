@@ -19,7 +19,7 @@ struct FONTLISTCHANGEDSTRUCT
 	LPCWSTR lpszFontName;
 };
 
-enum class TERMINATION : DWORD { PROXY = 1, TARGET };
+enum class TERMINATION : DWORD { DIRECT = 1 , PROXY, TARGET };
 
 extern void DragDropWorkerThreadProc(void* lpParameter);
 extern unsigned int __stdcall CloseWorkerThreadProc(void* lpParameter);
