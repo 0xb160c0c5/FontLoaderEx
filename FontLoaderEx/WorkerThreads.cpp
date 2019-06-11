@@ -395,7 +395,6 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	// Terminate message thread
 	SendMessage(hWndMessage, WM_CLOSE, 0, 0);
 	WaitForSingleObject(hThreadMessage, INFINITE);
-	CloseHandle(hThreadMessage);
 
 	// Close HANDLE to proxy process and target process, duplicated handles and synchronization objects
 	CloseHandle(TargetProcessInfo.hProcess);
@@ -407,7 +406,10 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	CloseHandle(hEventProxyAddFontFinished);
 	CloseHandle(hEventProxyRemoveFontFinished);
 
-	PostMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATED), 0, static_cast<LPARAM>(bIsWorkerThreadRunning));
+	DWORD dwExitCodeMessageThread{};
+	GetExitCodeThread(hThreadMessage, &dwExitCodeMessageThread);
+	PostMessage(hWndMain, static_cast<UINT>(USERMESSAGE::WATCHTHREADTERMINATED), static_cast<WPARAM>(dwExitCodeMessageThread), static_cast<LPARAM>(bIsWorkerThreadRunning));
+	CloseHandle(hThreadMessage);
 
 	return 0;
 }

@@ -136,6 +136,7 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 	Remarks:
 		When dragging the splitter, The edges that linked controls linked to the splitter are moved with the splitter.
 		The linked controls must be the sibling windows of the splitter.
+		Deplicate HWND is only added once.
 		SLC_TOP/SLC_BOTTOM is not compatible with a splitter that has SPS_VERT style, so does SLC_LEFT/SLC_RIGHT with a splitter that has SPS_HORZ style.
 */
 
@@ -182,6 +183,7 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 	Remarks:
 		When dragging the splitter, The edges that linked controls linked to the splitter are moved with the splitter.
 		The linked controls must be the sibling windows of the splitter.
+		Deplicate HWND is only added once.
 		SLC_TOP/SLC_BOTTOM is not compatible with a splitter that has SPS_VERT style, so does SLC_LEFT/SLC_RIGHT with a splitter that has SPS_HORZ style.
 */
 

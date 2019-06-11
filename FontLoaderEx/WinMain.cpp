@@ -615,9 +615,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 		// Watch thread terminated notofication
+		// wParam = The exit code of message thread
 		// lParam = Whether worker thread is still running : bool
 	case USERMESSAGE::WATCHTHREADTERMINATED:
 		{
+			// Check whether message thread exited normally
+			if (wParam)
+			{
+				HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
+
+				std::wstringstream ssMessage{};
+				std::wstring strMessage{};
+				int cchMessageLength{};
+
+				ssMessage << L"Message thread exited abnormally with code " << wParam << L".\r\n\r\n";
+				strMessage = ssMessage.str();
+				Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
+				Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+			}
+
 			// Update StatusBarFontInfo
 			SendMessage(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(L"0 font(s) opened, 0 font(s) loaded."));
 
@@ -1303,12 +1319,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										WCHAR lpszPath[MAX_PATH]{};
 										PathCombine(lpszPath, ofn.lpstrFile, lpszFileName);
 										lpszFileName += std::wcslen(lpszFileName) + 1;
-										FontList.push_back(lpszPath);
+										bool bIsFontDuplicate{ false };
+										for (const auto& i : FontList)
+										{
+											if (i.GetFontName() == lpszPath)
+											{
+												bIsFontDuplicate = true;
 
-										flcs.lpszFontName = lpszPath;
-										SendMessage(hWnd, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED), reinterpret_cast<LPARAM>(&flcs));
+												break;
+											}
+										}
+										if (!bIsFontDuplicate)
+										{
+											FontList.push_back(lpszPath);
+											flcs.lpszFontName = lpszPath;
+											SendMessage(hWnd, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED), reinterpret_cast<LPARAM>(&flcs));
 
-										flcs.iItem++;
+											flcs.iItem++;
+										}
 									} while (*lpszFileName);
 								}
 								else
@@ -1695,11 +1723,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									// Terminate message thread
 									PostMessage(hWndMessage, WM_CLOSE, 0, 0);
 									WaitForSingleObject(hThreadMessage, INFINITE);
-									DWORD dwMessageThreadExitCode{};
-									GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
-									if (dwMessageThreadExitCode)
+									DWORD dwExitCodeMessageThread{};
+									GetExitCodeThread(hThreadMessage, &dwExitCodeMessageThread);
+									if (dwExitCodeMessageThread)
 									{
-										ssMessage << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".\r\n\r\n";
+										ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L".\r\n\r\n";
 										strMessage = ssMessage.str();
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 										Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
@@ -1938,11 +1966,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										// Terminate message thread
 										PostMessage(hWndMessage, WM_CLOSE, 0, 0);
 										WaitForSingleObject(hThreadMessage, INFINITE);
-										DWORD dwMessageThreadExitCode{};
-										GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
-										if (dwMessageThreadExitCode)
+										DWORD dwExitCodeMessageThread{};
+										GetExitCodeThread(hThreadMessage, &dwExitCodeMessageThread);
+										if (dwExitCodeMessageThread)
 										{
-											ssMessage << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".\r\n\r\n";
+											ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L".\r\n\r\n";
 											strMessage = ssMessage.str();
 											Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 											Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
@@ -2000,11 +2028,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											// Terminate message thread
 											PostMessage(hWndMessage, WM_CLOSE, 0, 0);
 											WaitForSingleObject(hThreadMessage, INFINITE);
-											DWORD dwMessageThreadExitCode{};
-											GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
-											if (dwMessageThreadExitCode)
+											DWORD dwExitCodeMessageThread{};
+											GetExitCodeThread(hThreadMessage, &dwExitCodeMessageThread);
+											if (dwExitCodeMessageThread)
 											{
-												ssMessage << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".\r\n\r\n";
+												ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L".\r\n\r\n";
 												strMessage = ssMessage.str();
 												Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 												Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
@@ -2132,11 +2160,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											// Terminate message thread
 											PostMessage(hWndMessage, WM_CLOSE, 0, 0);
 											WaitForSingleObject(hThreadMessage, INFINITE);
-											DWORD dwMessageThreadExitCode{};
-											GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
-											if (dwMessageThreadExitCode)
+											DWORD dwExitCodeMessageThread{};
+											GetExitCodeThread(hThreadMessage, &dwExitCodeMessageThread);
+											if (dwExitCodeMessageThread)
 											{
-												ssMessage << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".\r\n\r\n";
+												ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L".\r\n\r\n";
 												strMessage = ssMessage.str();
 												Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 												Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
@@ -2373,11 +2401,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									// Terminate message thread
 									PostMessage(hWndMessage, WM_CLOSE, 0, 0);
 									WaitForSingleObject(hThreadMessage, INFINITE);
-									DWORD dwMessageThreadExitCode{};
-									GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
-									if (dwMessageThreadExitCode)
+									DWORD dwExitCodeMessageThread{};
+									GetExitCodeThread(hThreadMessage, &dwExitCodeMessageThread);
+									if (dwExitCodeMessageThread)
 									{
-										ssMessage << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".\r\n\r\n";
+										ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L".\r\n\r\n";
 										strMessage = ssMessage.str();
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 										Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
@@ -4168,11 +4196,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				// Terminate message thread
 				PostMessage(hWndMessage, WM_CLOSE, 0, 0);
 				WaitForSingleObject(hThreadMessage, INFINITE);
-				DWORD dwMessageThreadExitCode{};
-				GetExitCodeThread(hThreadMessage, &dwMessageThreadExitCode);
-				if (dwMessageThreadExitCode)
+				DWORD dwExitCodeMessageThread{};
+				GetExitCodeThread(hThreadMessage, &dwExitCodeMessageThread);
+				if (dwExitCodeMessageThread)
 				{
-					ssMessage << L"Message thread exited abnormally with code " << dwMessageThreadExitCode << L".\r\n\r\n";
+					ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L".\r\n\r\n";
 					strMessage = ssMessage.str();
 					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 					Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
@@ -4385,12 +4413,25 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 				DragQueryFile(reinterpret_cast<HDROP>(wParam), i, szFileName, MAX_PATH);
 				if (PathMatchSpec(szFileName, L"*.ttf") || PathMatchSpec(szFileName, L"*.ttc") || PathMatchSpec(szFileName, L"*.otf"))
 				{
-					FontList.push_back(szFileName);
+					bool bIsFontDuplicate{ false };
+					for (const auto& j : FontList)
+					{
+						if (j.GetFontName() == szFileName)
+						{
+							bIsFontDuplicate = true;
 
-					flcs.lpszFontName = szFileName;
-					SendMessage(GetAncestor(hWndListViewFontList, GA_PARENT), static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED), reinterpret_cast<LPARAM>(&flcs));
+							break;
+						}
+					}
+					if (!bIsFontDuplicate)
+					{
+						FontList.push_back(szFileName);
 
-					flcs.iItem++;
+						flcs.lpszFontName = szFileName;
+						SendMessage(GetAncestor(hWndListViewFontList, GA_PARENT), static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED), reinterpret_cast<LPARAM>(&flcs));
+
+						flcs.iItem++;
+					}
 				}
 			}
 			int cchMessageLength{ Edit_GetTextLength(hWndEditMessage) };
