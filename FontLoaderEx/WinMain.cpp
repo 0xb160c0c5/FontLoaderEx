@@ -611,7 +611,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			}
 
 			// Revert the caption of ButtonSelectProcess to default
-			Button_SetText(GetDlgItem(hWnd, static_cast<int>(ID::ButtonSelectProcess)), L"Click to select process");
+			Button_SetText(GetDlgItem(hWnd, static_cast<int>(ID::ButtonSelectProcess)), L"Select process");
 		}
 		break;
 		// Watch thread terminated notofication
@@ -982,7 +982,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			┃ upper-right cornor.                                                          │   ┃
 			┃                                                                              │   ┃
 			┃ How to load fonts to process:                                                │   ┃
-			┃ 1.Click "Click to select process", select a process.                         │   ┃
+			┃ 1.Click "Select process", select a process.                         │   ┃
 			┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨
 			┃ view, then click "Load" button.                                              │ ↓ ┃
 			┠──────────────────────────────────────────────────────────────────────────────┴───┨
@@ -1150,7 +1150,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				R"(Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.)""\r\n"
 				"\r\n"
 				R"(How to load fonts to process:)""\r\n"
-				R"(1.Click "Click to select process", select a process.)""\r\n"
+				R"(1.Click "Select process", select a process.)""\r\n"
 				R"(2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.)""\r\n"
 				"\r\n"
 				R"(How to unload fonts from process:)""\r\n"
@@ -2845,7 +2845,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			┃ upper-right cornor.                                                          │   ┃
 			┃                                                                              │   ┃
 			┃ How to load fonts to process:                                                │   ┃
-			┃ 1.Click "Click to select process", select a process.                         │   ┃          ptSpliitterRange.bottom
+			┃ 1.Click "Select process", select a process.                         │   ┃          ptSpliitterRange.bottom
 			┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │   ┃                    ↓
 			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼───╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
 			┃ view, then click "Load" button.                                              │ ↓ ┃        } cyEditMessageMin
@@ -3027,7 +3027,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃	┃ upper-right cornor.                                                          │   ┃                                                                               ┃
 									┃	┃                                                                              │   ┃                                                                               ┃
 									┃	┃ How to load fonts to process:                                                │   ┃                                                                               ┃
-									┃	┃ 1.Click "Click to select process", select a process.                         │   ┃                                                                               ┃
+									┃	┃ 1.Click "Select process", select a process.                         │   ┃                                                                               ┃
 									┃	┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨                                                                               ┃
 									┃	┃ view, then click "Load" button.                                              │ ↓ ┃                                                                               ┃
 									┃	┠──────────────────────────────────────────────────────────────────────────────┴───┨                                                                               ┃
@@ -3170,7 +3170,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃ upper-right cornor.                                                          │   ┃      ┃ upper-right cornor.                                                          │   ┃
 									┃                                                                              │   ┃      ┃                                                                              │   ┃
 									┃ How to load fonts to process:                                                │   ┃      ┃ How to load fonts to process:                                                │   ┃
-									┃ 1.Click "Click to select process", select a process.                         │   ┃      ┃ 1.Click "Click to select process", select a process.                         │   ┃
+									┃ 1.Click "Select process", select a process.                         │   ┃      ┃ 1.Click "Select process", select a process.                         │   ┃
 									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨
 									┃ view, then click "Load" button.                                              │ ↓ ┃      ┃ view, then click "Load" button.                                              │ ↓ ┃
 									┠──────────────────────────────────────────────────────────────────────────────┴───┨      ┠──────────────────────────────────────────────────────────────────────────────┴───┨
@@ -3302,7 +3302,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃ upper-right cornor.                                                          │   ┃      ┃ upper-right cornor.                                                          │   ┃
 									┃                                                                              │   ┃      ┃                                                                              │   ┃
 									┃ How to load fonts to process:                                                │   ┃      ┃ How to load fonts to process:                                                │   ┃
-									┃ 1.Click "Click to select process", select a process.                         │   ┃      ┃ 1.Click "Click to select process", select a process.                         │   ┃
+									┃ 1.Click "Select process", select a process.                         │   ┃      ┃ 1.Click "Select process", select a process.                         │   ┃
 									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │   ┃
 									┃ view, then click "Load" button.                                              │ ↓ ┃      ┃ view, then click "Load" button.                                              │   ┃
 									┠──────────────────────────────────────────────────────────────────────────────┴───┨      ┃ How to unload fonts from process:                                            │   ┃
@@ -3426,8 +3426,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor. │   ┃
 									┃ upper-right cornor.                                                          │   ┃      ┃                                                                                            │   ┃
 									┃                                                                              │   ┃      ┃ How to load fonts to process:                                                              │   ┃
-									┃ How to load fonts to process:                                                │   ┃      ┃ 1.Click "Click to select process", select a process.                                       │   ┃
-									┃ 1.Click "Click to select process", select a process.                         │   ┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then     │   ┃
+									┃ How to load fonts to process:                                                │   ┃      ┃ 1.Click "Select process", select a process.                                       │   ┃
+									┃ 1.Click "Select process", select a process.                         │   ┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then     │   ┃
 									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨      ┃  click "Load" button.                                                                      ├───┨
 									┃ view, then click "Load" button.                                              │ ↓ ┃      ┃                                                                                            │ ↓ ┃
 									┠──────────────────────────────────────────────────────────────────────────────┴───┨      ┠────────────────────────────────────────────────────────────────────────────────────────────┴───┨
@@ -3516,7 +3516,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							┃ upper-right cornor.                                                          │   ┃
 							┃                                                                              │   ┃
 							┃ How to load fonts to process:                                                │   ┃
-							┃ 1.Click "Click to select process", select a process.                         │   ┃
+							┃ 1.Click "Select process", select a process.                         │   ┃
 							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨
 							┃ view, then click "Load" button.                                              │ ↓ ┃
 							┠──────────────────────────────────────────────────────────────────────────────┴───┨
@@ -3555,7 +3555,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.                                │▓▓▓┃
 							┃                                                                                                                           │▓▓▓┃
 							┃ How to load fonts to process:                                                                                             ├───┨
-							┃ 1.Click "Click to select process", select a process.                                                                      │   ┃
+							┃ 1.Click "Select process", select a process.                                                                      │   ┃
 							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.               │   ┃
 							┃                                                                                                                           │   ┃
 							┃ How to unload fonts from process:	                                                                                        │   ┃
@@ -3670,7 +3670,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.                                │▓▓▓┃
 							┃                                                                                                                           │▓▓▓┃
 							┃ How to load fonts to process:                                                                                             ├───┨
-							┃ 1.Click "Click to select process", select a process.                                                                      │   ┃
+							┃ 1.Click "Select process", select a process.                                                                      │   ┃
 							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.               │   ┃
 							┃                                                                                                                           │   ┃
 							┃ How to unload fonts from process:	                                                                                        │   ┃
@@ -3717,7 +3717,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							┃ upper-right cornor.                                                          │   ┃
 							┃                                                                              │   ┃
 							┃ How to load fonts to process:                                                │   ┃
-							┃ 1.Click "Click to select process", select a process.                         │   ┃
+							┃ 1.Click "Select process", select a process.                         │   ┃
 							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨
 							┃ view, then click "Load" button.                                              │ ↓ ┃
 							┠──────────────────────────────────────────────────────────────────────────────┴───┨
