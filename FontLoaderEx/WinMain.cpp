@@ -340,7 +340,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				else
 				{
 					// Else, prompt user whether inisit to exit
-					switch (MessageBoxCentered(hWnd, L"Some fonts are not successfully unloaded.\r\n\r\nDo you still want to exit?", szAppName, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1 | MB_APPLMODAL))
+					switch (MessageBoxCentered(hWnd, L"Some fonts are not successfully unloaded\r\n\r\nDo you still want to exit?", szAppName, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1 | MB_APPLMODAL))
 					{
 					case IDYES:
 						{
@@ -416,7 +416,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					FORWARD_WM_FONTCHANGE(HWND_BROADCAST, PostMessage);
 					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-					Edit_ReplaceSel(hWndEditMessage, L"WM_FONTCHANGE broadcasted to all top windows.\r\n\r\n");
+					Edit_ReplaceSel(hWndEditMessage, L"WM_FONTCHANGE broadcasted to all top windows\r\n\r\n");
 				}
 			}
 		}
@@ -489,7 +489,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					FORWARD_WM_FONTCHANGE(HWND_BROADCAST, PostMessage);
 					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-					Edit_ReplaceSel(hWndEditMessage, L"WM_FONTCHANGE broadcasted to all top windows.\r\n\r\n");
+					Edit_ReplaceSel(hWndEditMessage, L"WM_FONTCHANGE broadcasted to all top windows\r\n\r\n");
 				}
 			}
 
@@ -566,7 +566,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				// If target process terminates, just print message
 			case TERMINATION::DIRECT:
 				{
-					ssMessage << L"Target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L") terminated.\r\n\r\n";
+					ssMessage << L"Target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L") terminated\r\n\r\n";
 					strMessage = ssMessage.str();
 					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -576,7 +576,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				// If proxy process terminates, just print message
 			case TERMINATION::PROXY:
 				{
-					ssMessage << ProxyProcessInfo.strProcessName << L"(" << ProxyProcessInfo.dwProcessID << L") terminated.\r\n\r\n";
+					ssMessage << ProxyProcessInfo.strProcessName << L"(" << ProxyProcessInfo.dwProcessID << L") terminated\r\n\r\n";
 					strMessage = ssMessage.str();
 					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -586,7 +586,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				// If target process termiantes and proxy process is launched, print messages and terminate proxy process
 			case TERMINATION::TARGET:
 				{
-					ssMessage << L"Target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L") terminated.\r\n\r\n";
+					ssMessage << L"Target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L") terminated\r\n\r\n";
 					strMessage = ssMessage.str();
 					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -596,7 +596,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					COPYDATASTRUCT cds{ static_cast<ULONG_PTR>(COPYDATA::TERMINATE), 0, NULL };
 					FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
 					WaitForSingleObject(ProxyProcessInfo.hProcess, INFINITE);
-					ssMessage << ProxyProcessInfo.strProcessName << L"(" << ProxyProcessInfo.dwProcessID << L") successfully terminated.\r\n\r\n";
+					ssMessage << ProxyProcessInfo.strProcessName << L"(" << ProxyProcessInfo.dwProcessID << L") successfully terminated\r\n\r\n";
 					strMessage = ssMessage.str();
 					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -628,7 +628,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				std::wstring strMessage{};
 				int cchMessageLength{};
 
-				ssMessage << L"Message thread exited abnormally with code " << wParam << L".\r\n\r\n";
+				ssMessage << L"Message thread exited abnormally with code " << wParam << L"\r\n\r\n";
 				strMessage = ssMessage.str();
 				Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 				Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
@@ -982,7 +982,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			┃ upper-right cornor.                                                          │   ┃
 			┃                                                                              │   ┃
 			┃ How to load fonts to process:                                                │   ┃
-			┃ 1.Click "Select process", select a process.                         │   ┃
+			┃ 1.Click "Select process", select a process.                                  │   ┃
 			┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨
 			┃ view, then click "Load" button.                                              │ ↓ ┃
 			┠──────────────────────────────────────────────────────────────────────────────┴───┨
@@ -1657,7 +1657,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							{
 								if (!EnableDebugPrivilege())
 								{
-									ssMessage << L"Failed to enable " << SE_DEBUG_NAME << L" for " << szAppName << L".\r\n\r\n";
+									ssMessage << L"Failed to enable " << SE_DEBUG_NAME << L" for " << szAppName << L"\r\n\r\n";
 									strMessage = ssMessage.str();
 									cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -1690,7 +1690,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									{
 									case PROXYDLLPULL::SUCCESSFUL:
 										{
-											ssMessage << szInjectionDllNameByProxy << L" successfully unloaded from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
+											ssMessage << szInjectionDllNameByProxy << L" successfully unloaded from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L")\r\n\r\n";
 											strMessage = ssMessage.str();
 											cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 											Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -1700,7 +1700,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										goto continue_B9A25A68;
 									case PROXYDLLPULL::FAILED:
 										{
-											ssMessage << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
+											ssMessage << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L")\r\n\r\n";
 											strMessage = ssMessage.str();
 											cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 											Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -1727,7 +1727,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									GetExitCodeThread(hThreadMessage, &dwExitCodeMessageThread);
 									if (dwExitCodeMessageThread)
 									{
-										ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L".\r\n\r\n";
+										ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L"\r\n\r\n";
 										strMessage = ssMessage.str();
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 										Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
@@ -1739,7 +1739,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									COPYDATASTRUCT cds2{ static_cast<ULONG_PTR>(COPYDATA::TERMINATE), 0, NULL };
 									FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
 									WaitForSingleObject(ProxyProcessInfo.hProcess, INFINITE);
-									ssMessage << ProxyProcessInfo.strProcessName << L"(" << ProxyProcessInfo.dwProcessID << L") successfully terminated.\r\n\r\n";
+									ssMessage << ProxyProcessInfo.strProcessName << L"(" << ProxyProcessInfo.dwProcessID << L") successfully terminated\r\n\r\n";
 									strMessage = ssMessage.str();
 									cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -1761,7 +1761,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									// Unload FontLoaderExInjectionDll(64).dll from target process
 									if (PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 									{
-										ssMessage << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
+										ssMessage << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L")\r\n\r\n";
 										strMessage = ssMessage.str();
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -1770,7 +1770,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									}
 									else
 									{
-										ssMessage << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
+										ssMessage << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L")\r\n\r\n";
 										strMessage = ssMessage.str();
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -1794,7 +1794,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 								SelectedProcessInfo.hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, SelectedProcessInfo.dwProcessID);
 								if (!SelectedProcessInfo.hProcess)
 								{
-									ssMessage << L"Failed to open process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L").\r\n\r\n";
+									ssMessage << L"Failed to open process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")\r\n\r\n";
 									strMessage = ssMessage.str();
 									cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -1892,7 +1892,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									case WAIT_OBJECT_0:
 										{
 											Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-											Edit_ReplaceSel(hWndEditMessage, L"Failed to create message-only window.\r\n\r\n");
+											Edit_ReplaceSel(hWndEditMessage, L"Failed to create message-only window\r\n\r\n");
 
 											WaitForSingleObject(hThreadMessage, INFINITE);
 											CloseHandle(hThreadMessage);
@@ -1956,7 +1956,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										CloseHandle(hProcessCurrentDuplicated);
 										CloseHandle(hProcessTargetDuplicated);
 
-										ssMessage << L"Failed to launch " << szProxyAppName << L"." << L"\r\n\r\n";
+										ssMessage << L"Failed to launch " << szProxyAppName << L"\r\n\r\n";
 										strMessage = ssMessage.str();
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -1970,7 +1970,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										GetExitCodeThread(hThreadMessage, &dwExitCodeMessageThread);
 										if (dwExitCodeMessageThread)
 										{
-											ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L".\r\n\r\n";
+											ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L"\r\n\r\n";
 											strMessage = ssMessage.str();
 											Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 											Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
@@ -2002,7 +2002,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										goto continue_90567013;
 									case PROXYPROCESSDEBUGPRIVILEGEENABLING::FAILED:
 										{
-											ssMessage << L"Failed to enable " << SE_DEBUG_NAME << L" for " << szProxyAppName << L".";
+											ssMessage << L"Failed to enable " << SE_DEBUG_NAME << L" for " << szProxyAppName;
 											strMessage = ssMessage.str();
 											MessageBoxCentered(NULL, strMessage.c_str(), szAppName, MB_ICONERROR);
 											Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2014,7 +2014,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
 											WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
 
-											ssMessage << szProxyAppName << L"(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
+											ssMessage << szProxyAppName << L"(" << piProxyProcess.dwProcessId << L") successfully terminated\r\n\r\n";
 											strMessage = ssMessage.str();
 											cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 											Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2032,7 +2032,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											GetExitCodeThread(hThreadMessage, &dwExitCodeMessageThread);
 											if (dwExitCodeMessageThread)
 											{
-												ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L".\r\n\r\n";
+												ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L"\r\n\r\n";
 												strMessage = ssMessage.str();
 												Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 												Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
@@ -2064,7 +2064,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hEventMessageThreadReady);
 									CloseHandle(hEventParentProcessRunning);
 
-									ssMessage << szProxyAppName << L"(" << piProxyProcess.dwProcessId << L") succesfully launched.\r\n\r\n";
+									ssMessage << szProxyAppName << L"(" << piProxyProcess.dwProcessId << L") succesfully launched\r\n\r\n";
 									strMessage = ssMessage.str();
 									cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2082,7 +2082,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									{
 									case PROXYDLLINJECTION::SUCCESSFUL:
 										{
-											ssMessage << szInjectionDllNameByProxy << L" successfully injected into target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L").\r\n\r\n";
+											ssMessage << szInjectionDllNameByProxy << L" successfully injected into target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")\r\n\r\n";
 											strMessage = ssMessage.str();
 											cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 											Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2116,22 +2116,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										break;
 									case PROXYDLLINJECTION::FAILED:
 										{
-											ssMessage << L"Failed to inject " << szInjectionDllNameByProxy << L" into target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L").\r\n\r\n";
+											ssMessage << L"Failed to inject " << szInjectionDllNameByProxy << L" into target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")\r\n\r\n";
 										}
 										goto continue_DBEA36FE;
 									case PROXYDLLINJECTION::FAILEDTOENUMERATEMODULES:
 										{
-											ssMessage << L"Failed to enumerate modules in target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L").\r\n\r\n";
+											ssMessage << L"Failed to enumerate modules in target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")\r\n\r\n";
 										}
 										goto continue_DBEA36FE;
 									case PROXYDLLINJECTION::GDI32NOTLOADED:
 										{
-											ssMessage << L"gdi32.dll not loaded by target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L").\r\n\r\n";
+											ssMessage << L"gdi32.dll not loaded by target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")\r\n\r\n";
 										}
 										goto continue_DBEA36FE;
 									case PROXYDLLINJECTION::MODULENOTFOUND:
 										{
-											ssMessage << L"Failed to enumerate modules in target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L").\r\n\r\n";
+											ssMessage << L"Failed to enumerate modules in target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")\r\n\r\n";
 										}
 										goto continue_DBEA36FE;
 									continue_DBEA36FE:
@@ -2147,7 +2147,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds, SendMessage);
 											WaitForSingleObject(piProxyProcess.hProcess, INFINITE);
 
-											ssMessage << szProxyAppName << L"(" << piProxyProcess.dwProcessId << L") successfully terminated.\r\n\r\n";
+											ssMessage << szProxyAppName << L"(" << piProxyProcess.dwProcessId << L") successfully terminated\r\n\r\n";
 											strMessage = ssMessage.str();
 											cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 											Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2164,7 +2164,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											GetExitCodeThread(hThreadMessage, &dwExitCodeMessageThread);
 											if (dwExitCodeMessageThread)
 											{
-												ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L".\r\n\r\n";
+												ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L"\r\n\r\n";
 												strMessage = ssMessage.str();
 												Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 												Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
@@ -2198,7 +2198,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										CloseHandle(SelectedProcessInfo.hProcess);
 										CloseHandle(hModuleSnapshot);
 
-										ssMessage << L"Failed to enumerate modules in target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L").\r\n\r\n";
+										ssMessage << L"Failed to enumerate modules in target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")\r\n\r\n";
 										strMessage = ssMessage.str();
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2219,7 +2219,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										CloseHandle(SelectedProcessInfo.hProcess);
 										CloseHandle(hModuleSnapshot);
 
-										ssMessage << L"gdi32.dll not loaded by target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L").\r\n\r\n";
+										ssMessage << L"gdi32.dll not loaded by target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")\r\n\r\n";
 										strMessage = ssMessage.str();
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2234,7 +2234,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
 
-										ssMessage << L"Failed to inject " << szInjectionDllName << L" into target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L").\r\n\r\n";
+										ssMessage << L"Failed to inject " << szInjectionDllName << L" into target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")\r\n\r\n";
 										strMessage = ssMessage.str();
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2242,7 +2242,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 										break;
 									}
-									ssMessage << szInjectionDllName << L" successfully injected into target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L").\r\n\r\n";
+									ssMessage << szInjectionDllName << L" successfully injected into target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")\r\n\r\n";
 									strMessage = ssMessage.str();
 									cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2259,7 +2259,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										CloseHandle(SelectedProcessInfo.hProcess);
 										CloseHandle(hModuleSnapshot2);
 
-										ssMessage << L"Failed to enumerate modules in target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L").\r\n\r\n";
+										ssMessage << L"Failed to enumerate modules in target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")\r\n\r\n";
 										strMessage = ssMessage.str();
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2281,7 +2281,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										CloseHandle(SelectedProcessInfo.hProcess);
 										CloseHandle(hModuleSnapshot2);
 
-										ssMessage << szInjectionDllName << " not found in target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L").\r\n\r\n";
+										ssMessage << szInjectionDllName << " not found in target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")\r\n\r\n";
 										strMessage = ssMessage.str();
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2332,21 +2332,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									if (usTargetProcessMachineArchitecture == IMAGE_FILE_MACHINE_ARM)
 									{
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-										Edit_ReplaceSel(hWndEditMessage, L"Process of ARM architecture not supported.\r\n\r\n");
+										Edit_ReplaceSel(hWndEditMessage, L"Process of ARM architecture not supported\r\n\r\n");
 
 										break;
 									}
 									if (usTargetProcessMachineArchitecture == IMAGE_FILE_MACHINE_ARM64)
 									{
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-										Edit_ReplaceSel(hWndEditMessage, L"Process of AArch64 architecture not supported.\r\n\r\n");
+										Edit_ReplaceSel(hWndEditMessage, L"Process of AArch64 architecture not supported\r\n\r\n");
 
 										break;
 									}
 									else
 									{
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
-										Edit_ReplaceSel(hWndEditMessage, L"Target process architecture unknown.\r\n\r\n");
+										Edit_ReplaceSel(hWndEditMessage, L"Target process architecture unknown\r\n\r\n");
 									}
 								}
 							}
@@ -2365,7 +2365,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									{
 									case PROXYDLLPULL::SUCCESSFUL:
 										{
-											ssMessage << szInjectionDllNameByProxy << L" successfully unloaded from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
+											ssMessage << szInjectionDllNameByProxy << L" successfully unloaded from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L")\r\n\r\n";
 											strMessage = ssMessage.str();
 											cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 											Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2375,7 +2375,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										goto continue_0F70B465;
 									case PROXYDLLPULL::FAILED:
 										{
-											ssMessage << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
+											ssMessage << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L")\r\n\r\n";
 											strMessage = ssMessage.str();
 											cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 											Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2405,7 +2405,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									GetExitCodeThread(hThreadMessage, &dwExitCodeMessageThread);
 									if (dwExitCodeMessageThread)
 									{
-										ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L".\r\n\r\n";
+										ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L"\r\n\r\n";
 										strMessage = ssMessage.str();
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 										Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
@@ -2418,7 +2418,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									FORWARD_WM_COPYDATA(hWndProxy, hWnd, &cds2, SendMessage);
 									WaitForSingleObject(ProxyProcessInfo.hProcess, INFINITE);
 
-									ssMessage << ProxyProcessInfo.strProcessName << L"(" << ProxyProcessInfo.dwProcessID << L") successfully terminated.\r\n\r\n";
+									ssMessage << ProxyProcessInfo.strProcessName << L"(" << ProxyProcessInfo.dwProcessID << L") successfully terminated\r\n\r\n";
 									strMessage = ssMessage.str();
 									cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2451,7 +2451,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									// Unload FontLoaderExInjectionDll(64).dll from target process
 									if (PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 									{
-										ssMessage << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
+										ssMessage << szInjectionDllName << L" successfully unloaded from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L")\r\n\r\n";
 										strMessage = ssMessage.str();
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2459,7 +2459,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									}
 									else
 									{
-										ssMessage << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
+										ssMessage << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L")\r\n\r\n";
 										strMessage = ssMessage.str();
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2845,7 +2845,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			┃ upper-right cornor.                                                          │   ┃
 			┃                                                                              │   ┃
 			┃ How to load fonts to process:                                                │   ┃
-			┃ 1.Click "Select process", select a process.                         │   ┃          ptSpliitterRange.bottom
+			┃ 1.Click "Select process", select a process.                                  │   ┃          ptSpliitterRange.bottom
 			┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │   ┃                    ↓
 			┠┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼───╂┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
 			┃ view, then click "Load" button.                                              │ ↓ ┃        } cyEditMessageMin
@@ -3027,7 +3027,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃	┃ upper-right cornor.                                                          │   ┃                                                                               ┃
 									┃	┃                                                                              │   ┃                                                                               ┃
 									┃	┃ How to load fonts to process:                                                │   ┃                                                                               ┃
-									┃	┃ 1.Click "Select process", select a process.                         │   ┃                                                                               ┃
+									┃	┃ 1.Click "Select process", select a process.                                  │   ┃                                                                               ┃
 									┃	┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨                                                                               ┃
 									┃	┃ view, then click "Load" button.                                              │ ↓ ┃                                                                               ┃
 									┃	┠──────────────────────────────────────────────────────────────────────────────┴───┨                                                                               ┃
@@ -3170,7 +3170,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃ upper-right cornor.                                                          │   ┃      ┃ upper-right cornor.                                                          │   ┃
 									┃                                                                              │   ┃      ┃                                                                              │   ┃
 									┃ How to load fonts to process:                                                │   ┃      ┃ How to load fonts to process:                                                │   ┃
-									┃ 1.Click "Select process", select a process.                         │   ┃      ┃ 1.Click "Select process", select a process.                         │   ┃
+									┃ 1.Click "Select process", select a process.                                  │   ┃      ┃ 1.Click "Select process", select a process.                                  │   ┃
 									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨
 									┃ view, then click "Load" button.                                              │ ↓ ┃      ┃ view, then click "Load" button.                                              │ ↓ ┃
 									┠──────────────────────────────────────────────────────────────────────────────┴───┨      ┠──────────────────────────────────────────────────────────────────────────────┴───┨
@@ -3302,7 +3302,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃ upper-right cornor.                                                          │   ┃      ┃ upper-right cornor.                                                          │   ┃
 									┃                                                                              │   ┃      ┃                                                                              │   ┃
 									┃ How to load fonts to process:                                                │   ┃      ┃ How to load fonts to process:                                                │   ┃
-									┃ 1.Click "Select process", select a process.                         │   ┃      ┃ 1.Click "Select process", select a process.                         │   ┃
+									┃ 1.Click "Select process", select a process.                                  │   ┃      ┃ 1.Click "Select process", select a process.                                  │   ┃
 									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  │   ┃
 									┃ view, then click "Load" button.                                              │ ↓ ┃      ┃ view, then click "Load" button.                                              │   ┃
 									┠──────────────────────────────────────────────────────────────────────────────┴───┨      ┃ How to unload fonts from process:                                            │   ┃
@@ -3426,8 +3426,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor. │   ┃
 									┃ upper-right cornor.                                                          │   ┃      ┃                                                                                            │   ┃
 									┃                                                                              │   ┃      ┃ How to load fonts to process:                                                              │   ┃
-									┃ How to load fonts to process:                                                │   ┃      ┃ 1.Click "Select process", select a process.                                       │   ┃
-									┃ 1.Click "Select process", select a process.                         │   ┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then     │   ┃
+									┃ How to load fonts to process:                                                │   ┃      ┃ 1.Click "Select process", select a process.                                                │   ┃
+									┃ 1.Click "Select process", select a process.                                  │   ┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then     │   ┃
 									┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨      ┃  click "Load" button.                                                                      ├───┨
 									┃ view, then click "Load" button.                                              │ ↓ ┃      ┃                                                                                            │ ↓ ┃
 									┠──────────────────────────────────────────────────────────────────────────────┴───┨      ┠────────────────────────────────────────────────────────────────────────────────────────────┴───┨
@@ -3516,7 +3516,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							┃ upper-right cornor.                                                          │   ┃
 							┃                                                                              │   ┃
 							┃ How to load fonts to process:                                                │   ┃
-							┃ 1.Click "Select process", select a process.                         │   ┃
+							┃ 1.Click "Select process", select a process.                                  │   ┃
 							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨
 							┃ view, then click "Load" button.                                              │ ↓ ┃
 							┠──────────────────────────────────────────────────────────────────────────────┴───┨
@@ -3555,7 +3555,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.                                │▓▓▓┃
 							┃                                                                                                                           │▓▓▓┃
 							┃ How to load fonts to process:                                                                                             ├───┨
-							┃ 1.Click "Select process", select a process.                                                                      │   ┃
+							┃ 1.Click "Select process", select a process.                                                                               │   ┃
 							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.               │   ┃
 							┃                                                                                                                           │   ┃
 							┃ How to unload fonts from process:	                                                                                        │   ┃
@@ -3670,7 +3670,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.                                │▓▓▓┃
 							┃                                                                                                                           │▓▓▓┃
 							┃ How to load fonts to process:                                                                                             ├───┨
-							┃ 1.Click "Select process", select a process.                                                                      │   ┃
+							┃ 1.Click "Select process", select a process.                                                                               │   ┃
 							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.               │   ┃
 							┃                                                                                                                           │   ┃
 							┃ How to unload fonts from process:	                                                                                        │   ┃
@@ -3717,7 +3717,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							┃ upper-right cornor.                                                          │   ┃
 							┃                                                                              │   ┃
 							┃ How to load fonts to process:                                                │   ┃
-							┃ 1.Click "Select process", select a process.                         │   ┃
+							┃ 1.Click "Select process", select a process.                                  │   ┃
 							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list  ├───┨
 							┃ view, then click "Load" button.                                              │ ↓ ┃
 							┠──────────────────────────────────────────────────────────────────────────────┴───┨
@@ -4129,7 +4129,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				case PROXYDLLPULL::FAILED:
 					{
 						// Print message
-						ssMessage << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
+						ssMessage << L"Failed to unload " << szInjectionDllNameByProxy << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L")\r\n\r\n";
 						strMessage = ssMessage.str();
 						cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 						Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -4200,7 +4200,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				GetExitCodeThread(hThreadMessage, &dwExitCodeMessageThread);
 				if (dwExitCodeMessageThread)
 				{
-					ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L".\r\n\r\n";
+					ssMessage << L"Message thread exited abnormally with code " << dwExitCodeMessageThread << L"\r\n\r\n";
 					strMessage = ssMessage.str();
 					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 					Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
@@ -4227,7 +4227,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				if (!PullModule(TargetProcessInfo.hProcess, szInjectionDllName, dwTimeout))
 				{
 					// Print message
-					ssMessage << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L").\r\n\r\n";
+					ssMessage << L"Failed to unload " << szInjectionDllName << L" from target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L")\r\n\r\n";
 					strMessage = ssMessage.str();
 					cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 					Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -4616,6 +4616,8 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 							DeleteMenu(hMenuContextEditMessage, WM_PASTE, MF_BYCOMMAND);	// Paste
 							DeleteMenu(hMenuContextEditMessage, WM_CLEAR, MF_BYCOMMAND);	// Clear
 							DeleteMenu(hMenuContextEditMessage, 0, MF_BYPOSITION);			// Seperator
+							InsertMenu(hMenuContextEditMessage, 0, MF_BYPOSITION | MF_SEPARATOR, 0, NULL);
+							InsertMenu(hMenuContextEditMessage, 0, MF_BYPOSITION | MF_STRING, WM_USER + 100, L"&Clear log");
 
 							// Adjust context menu position
 							RECT rcContextMenuEditMessage{};
@@ -4641,7 +4643,7 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 								uFlags |= TPM_LEFTALIGN;
 							}
 							CalculatePopupWindowPosition(&ptAnchorContextMenu, &sizeContextMenuEditMessage, uFlags, NULL, &rcContextMenuEditMessage);
-							SetWindowPos(hWnd, NULL, rcContextMenuEditMessage.left, rcContextMenuEditMessage.top, sizeContextMenuEditMessage.cx, sizeContextMenuEditMessage.cy, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
+							SetWindowPos(hWnd, NULL, rcContextMenuEditMessage.left, rcContextMenuEditMessage.top, rcContextMenuEditMessage.right - rcContextMenuEditMessage.left, rcContextMenuEditMessage.bottom - rcContextMenuEditMessage.top, SWP_NOZORDER | SWP_NOREDRAW | SWP_NOACTIVATE);
 						}
 					}
 				},
@@ -4724,6 +4726,41 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 			}
 			OutputDebugString(strMessage.c_str());
 #endif // SHOWPOSINFO
+		}
+		break;
+		// "Clear log" custom message
+	case WM_USER + 100:
+		{
+			Edit_SetText(hWndEditMessage,
+				LR"(Temporarily load fonts to Windows or specific process.)""\r\n"
+				"\r\n"
+				R"(How to load fonts to Windows:)""\r\n"
+				R"(1.Drag-drop font files onto the icon of this application.)""\r\n"
+				R"(2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.)""\r\n"
+				"\r\n"
+				R"(How to unload fonts from Windows:)""\r\n"
+				R"(Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.)""\r\n"
+				"\r\n"
+				R"(How to load fonts to process:)""\r\n"
+				R"(1.Click "Select process", select a process.)""\r\n"
+				R"(2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.)""\r\n"
+				"\r\n"
+				R"(How to unload fonts from process:)""\r\n"
+				R"(Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor or terminate selected process.)""\r\n"
+				"\r\n"
+				R"(UI description:)""\r\n"
+				R"("Open": Add fonts to the list view.)""\r\n"
+				R"("Close": Remove selected fonts from Windows or target process and the list view.)""\r\n"
+				R"("Load": Add selected fonts to Windows or target process.)""\r\n"
+				R"("Unload": Remove selected fonts from Windows or target process.)""\r\n"
+				R"("Broadcast WM_FONTCHANGE": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.)""\r\n"
+				R"("Select process": Select a process to only load fonts to selected process.)""\r\n"
+				R"("Timeout": The time in milliseconds FontLoaderEx waits before reporting failure while injecting dll into target process via proxy process, the default value is 5000. Type 0, 4294967295 or clear content to wait infinitely.)""\r\n"
+				R"("Minimize to tray": If checked, click the minimize or close button in the upper-right cornor will minimize the window to system tray.)""\r\n"
+				R"("Font Name": Names of the fonts added to the list view.)""\r\n"
+				R"("State": State of the font. There are five states, "Not loaded", "Loaded", "Load failed", "Unloaded" and "Unload failed".)""\r\n"
+				"\r\n"
+			);
 		}
 		break;
 	default:
