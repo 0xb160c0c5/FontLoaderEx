@@ -18,7 +18,6 @@ ATOM InitSplitter()
 LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LPARAM lParam)
 {
 	LRESULT ret{};
-
 	static DWORD dwSplitterStyle{};
 	static WORD idSplitter{};
 	static POINT ptSplitterRange{};
@@ -152,6 +151,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 									LinkedControl[0].push_back(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
+							std::sort(LinkedControl[0].begin(), LinkedControl[0].end());
 							LinkedControl[0].erase(std::unique(LinkedControl[0].begin(), LinkedControl[0].end()), LinkedControl[0].end());
 						}
 						catch (...)
@@ -184,6 +184,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 									LinkedControl[1].push_back(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
+							std::sort(LinkedControl[1].begin(), LinkedControl[1].end());
 							LinkedControl[1].erase(std::unique(LinkedControl[1].begin(), LinkedControl[1].end()), LinkedControl[1].end());
 						}
 						catch (...)
@@ -216,6 +217,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 									LinkedControl[0].push_back(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
+							std::sort(LinkedControl[0].begin(), LinkedControl[0].end());
 							LinkedControl[0].erase(std::unique(LinkedControl[0].begin(), LinkedControl[0].end()), LinkedControl[0].end());
 						}
 						catch (...)
@@ -248,6 +250,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 									LinkedControl[1].push_back(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
+							std::sort(LinkedControl[1].begin(), LinkedControl[1].end());
 							LinkedControl[1].erase(std::unique(LinkedControl[1].begin(), LinkedControl[1].end()), LinkedControl[1].end());
 						}
 						catch (...)
@@ -385,6 +388,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 									LinkedControlTemp.push_back(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
+							std::sort(LinkedControlTemp.begin(), LinkedControlTemp.end());
 							LinkedControlTemp.erase(std::unique(LinkedControlTemp.begin(), LinkedControlTemp.end()), LinkedControlTemp.end());
 							LinkedControl[0].reserve(LinkedControl[0].size() + LinkedControlTemp.size());
 						}
@@ -416,6 +420,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 									LinkedControlTemp.push_back(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
+							std::sort(LinkedControlTemp.begin(), LinkedControlTemp.end());
 							LinkedControlTemp.erase(std::unique(LinkedControlTemp.begin(), LinkedControlTemp.end()), LinkedControlTemp.end());
 							LinkedControl[1].reserve(LinkedControl[1].size() + LinkedControlTemp.size());
 						}
@@ -447,6 +452,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 									LinkedControlTemp.push_back(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
+							std::sort(LinkedControlTemp.begin(), LinkedControlTemp.end());
 							LinkedControlTemp.erase(std::unique(LinkedControlTemp.begin(), LinkedControlTemp.end()), LinkedControlTemp.end());
 							LinkedControl[0].reserve(LinkedControl[0].size() + LinkedControlTemp.size());
 						}
@@ -478,6 +484,7 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 									LinkedControlTemp.push_back(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
+							std::sort(LinkedControlTemp.begin(), LinkedControlTemp.end());
 							LinkedControlTemp.erase(std::unique(LinkedControlTemp.begin(), LinkedControlTemp.end()), LinkedControlTemp.end());
 							LinkedControl[1].reserve(LinkedControl[1].size() + LinkedControlTemp.size());
 						}
