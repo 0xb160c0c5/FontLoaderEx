@@ -6,7 +6,7 @@
 #define DBGPRINTWNDPOSINFO
 #endif // _DEBUG
 
-#pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+#pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #pragma comment(lib, "ComCtl32.lib")
 #pragma comment(lib, "Shlwapi.lib")
 
@@ -4956,6 +4956,8 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM
 	static bool bOrderByProcessAscending{ true };
 	static bool bOrderByPIDAscending{ true };
 
+	static HMENU hMenuContextListViewProcessList{};
+
 	switch (Message)
 	{
 	case WM_INITDIALOG:
@@ -5020,6 +5022,9 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM
 			ListView_SetColumnWidth(hWndListViewProcessList, 0, (rcListViewProcessListClient.right - rcListViewProcessListClient.left) * 4 / 5);
 			ListView_SetColumnWidth(hWndListViewProcessList, 1, (rcListViewProcessListClient.right - rcListViewProcessListClient.left) * 1 / 5);
 
+			//Get HMENU to context menu
+			hMenuContextListViewProcessList = GetSubMenu(LoadMenu(GetModuleHandle(NULL), MAKEINTRESOURCE(IDR_CONTEXTMENU1)), 2);
+
 			ret = static_cast<INT_PTR>(TRUE);
 		}
 		break;
@@ -5027,6 +5032,62 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM
 		{
 			switch (LOWORD(wParam))
 			{
+				// Refresh process list
+			case ID_DIALOGBOXMENU_REFRESH:
+				{
+					HWND hWndListViewProcessList{ GetDlgItem(hWndDialog, IDC_LIST1) };
+					HWND hWndHeaderListViewProcessList{ ListView_GetHeader(hWndListViewProcessList) };
+
+					// Clear process list
+					ListView_DeleteAllItems(hWndListViewProcessList);
+					ProcessList.clear();
+
+					// Refill process list
+					PROCESSENTRY32 pe32{ sizeof(PROCESSENTRY32) };
+					HANDLE hProcessSnapshot{ CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+					LVITEM lvi{ LVIF_TEXT, 0 };
+					if (Process32First(hProcessSnapshot, &pe32))
+					{
+						do
+						{
+							lvi.iSubItem = 0;
+							lvi.pszText = pe32.szExeFile;
+							ListView_InsertItem(hWndListViewProcessList, &lvi);
+							lvi.iSubItem = 1;
+							std::wstring str{ std::to_wstring(pe32.th32ProcessID) };
+							lvi.pszText = const_cast<LPWSTR>(str.c_str());
+							ListView_SetItem(hWndListViewProcessList, &lvi);
+							lvi.iItem++;
+
+							ProcessList.push_back({ NULL, pe32.szExeFile, pe32.th32ProcessID });
+						} while (Process32Next(hProcessSnapshot, &pe32));
+					}
+
+					// Remove the arrow in the header
+					HDITEM hdi{ HDI_FORMAT };
+
+					Header_GetItem(hWndHeaderListViewProcessList, 0, &hdi);
+					hdi.fmt = hdi.fmt & (~(HDF_SORTDOWN | HDF_SORTUP));
+					Header_SetItem(hWndHeaderListViewProcessList, 0, &hdi);
+					Header_GetItem(hWndHeaderListViewProcessList, 1, &hdi);
+					hdi.fmt = hdi.fmt & (~(HDF_SORTDOWN | HDF_SORTUP));
+					Header_SetItem(hWndHeaderListViewProcessList, 1, &hdi);
+
+					bOrderByProcessAscending = true;
+					bOrderByPIDAscending = true;
+
+					ret = static_cast<INT_PTR>(TRUE);
+				}
+				break;
+				// Select process
+			case ID_DIALOGBOXMENU_SELECT:
+				{
+					// Simulate clicking "OK" button
+					SendMessage(GetDlgItem(hWndDialog, IDOK), BM_CLICK, 0, 0);
+
+					ret = static_cast<INT_PTR>(TRUE);
+				}
+				break;
 				// Return selected process
 			case IDOK:
 				{
@@ -5180,6 +5241,51 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM
 				break;
 			default:
 				break;
+			}
+		}
+		break;
+	case WM_CONTEXTMENU:
+		{
+			// Show context menu in ListViewFontList
+			HWND hWndListViewProcessList{ GetDlgItem(hWndDialog, IDC_LIST1) };
+
+			if (reinterpret_cast<HWND>(wParam) == hWndListViewProcessList)
+			{
+				POINT ptAnchorContextMenuListViewProcessList{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+				if (ptAnchorContextMenuListViewProcessList.x == -1 && ptAnchorContextMenuListViewProcessList.y == -1)
+				{
+					int iSelectionMark{ ListView_GetSelectionMark(hWndListViewProcessList) };
+					if (iSelectionMark == -1)
+					{
+						RECT rcListViewFontListClient{};
+						GetClientRect(hWndListViewProcessList, &rcListViewFontListClient);
+						MapWindowRect(hWndListViewProcessList, HWND_DESKTOP, &rcListViewFontListClient);
+						ptAnchorContextMenuListViewProcessList = { rcListViewFontListClient.left, rcListViewFontListClient.top };
+					}
+					else
+					{
+						ListView_EnsureVisible(hWndListViewProcessList, iSelectionMark, FALSE);
+						ListView_GetItemPosition(hWndListViewProcessList, iSelectionMark, &ptAnchorContextMenuListViewProcessList);
+						ClientToScreen(hWndListViewProcessList, &ptAnchorContextMenuListViewProcessList);
+					}
+				}
+				UINT uFlags{};
+				if (GetSystemMetrics(SM_MENUDROPALIGNMENT))
+				{
+					uFlags |= TPM_RIGHTALIGN;
+				}
+				else
+				{
+					uFlags |= TPM_LEFTALIGN;
+				}
+				BOOL bRetTrackPopupMenu{ TrackPopupMenu(hMenuContextListViewProcessList, uFlags | TPM_TOPALIGN | TPM_RIGHTBUTTON, ptAnchorContextMenuListViewProcessList.x, ptAnchorContextMenuListViewProcessList.y, 0, hWndDialog, NULL) };
+				assert(bRetTrackPopupMenu);
+
+				ret = static_cast<INT_PTR>(TRUE);
+			}
+			else
+			{
+				ret = static_cast<INT_PTR>(FALSE);
 			}
 		}
 		break;

@@ -9,16 +9,18 @@
 #define ID_MENU_UNLOAD                  40002
 #define ID_MENU_CLOSE                   40003
 #define ID_MENU_SELECTALL               40004
-#define ID_TRAYMENU_SHOWWINDOW          40011
-#define ID_TRAYMENU_EXIT                40012
+#define ID_TRAYMENU_SHOWWINDOW          40005
+#define ID_TRAYMENU_EXIT                40006
+#define ID_DIALOGBOXMENU_REFRESH        40007
+#define ID_DIALOGBOXMENU_SELECT         40008
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        107
-#define _APS_NEXT_COMMAND_VALUE         40014
-#define _APS_NEXT_CONTROL_VALUE         1005
+#define _APS_NEXT_RESOURCE_VALUE        103
+#define _APS_NEXT_COMMAND_VALUE         40009
+#define _APS_NEXT_CONTROL_VALUE         1002
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

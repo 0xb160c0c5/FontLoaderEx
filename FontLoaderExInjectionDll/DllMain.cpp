@@ -1,4 +1,8 @@
-﻿#include <Windows.h>
+﻿#if !defined(UNICODE) || !defined(_UNICODE)
+#error Unicode character set required
+#endif // UNICODE && _UNICODE
+
+#include <Windows.h>
 
 #define EXPORT_FUNCTION comment(linker, "/EXPORT:" __FUNCTION__ "=" __FUNCDNAME__)	// Export function and avoid name mangling with __stdcall
 
