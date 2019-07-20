@@ -248,6 +248,7 @@ bool InjectModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout);
 bool PullModule(HANDLE hProcess, LPCWSTR szModuleName, DWORD dwTimeout);
 
 enum class ID : WORD { ButtonOpen = 0x20, ButtonClose, ButtonLoad, ButtonUnload, ButtonBroadcastWM_FONTCHANGE, StaticTimeout, EditTimeout, ButtonSelectProcess, ButtonMinimizeToTray, ListViewFontList, Splitter, EditMessage, StatusBarFontInfo, ProgressBarFont };
+enum class MENUITEMID : UINT { SC_RESETSIZE = 0xA000 };
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 {
@@ -1092,7 +1093,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			RECT rcStatusBarFontInfo{};
 			GetWindowRect(hWndStatusBarFontInfo, &rcStatusBarFontInfo);
 			MapWindowRect(HWND_DESKTOP, hWnd, &rcStatusBarFontInfo);
-			HWND hWndSplitter{ CreateWindow(UC_SPLITTER, NULL, WS_CHILD | WS_VISIBLE | SPS_HORZ | SPS_PARENTWIDTH | SPS_AUTODRAG | SPS_NONOTIFY, rcMainClient.left, rcButtonOpen.bottom + ((rcMainClient.bottom - rcMainClient.top) - (rcButtonOpen.bottom - rcButtonOpen.top) - (rcStatusBarFontInfo.bottom - rcStatusBarFontInfo.top)) / 2 - 2, 0, 5, hWnd, reinterpret_cast<HMENU>(ID::Splitter), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
+			HWND hWndSplitter{ CreateWindow(UC_SPLITTER, NULL, WS_CHILD | WS_VISIBLE | SPS_HORZ | SPS_PARENTWIDTH | SPS_AUTODRAG | SPS_NONOTIFY, rcMainClient.left, (rcButtonOpen.bottom + rcStatusBarFontInfo.top) / 2 - 2, 0, 5, hWnd, reinterpret_cast<HMENU>(ID::Splitter), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
 			assert(hWndSplitter);
 			//HWND hWndSplitter{ NULL };
 
@@ -1112,7 +1113,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			MapWindowRect(HWND_DESKTOP, hWnd, &rcSplitter);
 			HWND hWndListViewFontList{ CreateWindow(WC_LISTVIEW, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP | WS_CLIPSIBLINGS | LVS_REPORT | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER, rcMainClient.left, rcButtonOpen.bottom, rcMainClient.right - rcMainClient.left, rcSplitter.top - rcButtonOpen.bottom, hWnd, reinterpret_cast<HMENU>(ID::ListViewFontList), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
 			assert(hWndListViewFontList);
-			ListView_SetExtendedListViewStyle(hWndListViewFontList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+			ListView_SetExtendedListViewStyle(hWndListViewFontList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_INFOTIP | LVS_EX_LABELTIP);
 			SetWindowFont(hWndListViewFontList, hFontMain, TRUE);
 
 			RECT rcListViewFontListClient{};
@@ -1181,6 +1182,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			GetClientRect(hWndEditMessage, &rcEditMessageClient);
 			Edit_GetRect(hWndEditMessage, &rcEditMessageFormatting);
 			cyEditMessageTextMargin = (rcEditMessageClient.bottom - rcEditMessageClient.top) - (rcEditMessageFormatting.bottom - rcEditMessageFormatting.top);
+
+			// Add "Reset window size" to system menu
+			HMENU hMenuSystem{ GetSystemMenu(hWnd, FALSE) };
+			InsertMenu(hMenuSystem, 5, MF_BYPOSITION | MF_SEPARATOR, 0, NULL);
+			InsertMenu(hMenuSystem, 6, MF_BYPOSITION | MF_STRING, static_cast<UINT_PTR>(MENUITEMID::SC_RESETSIZE), L"&Reset window size");
 
 			ret = 0;
 		}
@@ -2203,6 +2209,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
 										Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
+
 										break;
 									}
 									do
@@ -2588,6 +2595,39 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 		break;
 	case WM_SYSCOMMAND:
 		{
+			switch (static_cast<MENUITEMID>(wParam & 0xFFF0))
+			{
+			case MENUITEMID::SC_RESETSIZE:
+				{
+					// Reset window size and control position
+					WINDOWPLACEMENT wp{ sizeof(WINDOWPLACEMENT) };
+					GetWindowPlacement(hWnd, &wp);
+					if ((wp.showCmd == SW_MAXIMIZE) || (wp.showCmd == SW_SHOWMAXIMIZED))
+					{
+						wp.showCmd = SW_RESTORE;
+					}
+					SetWindowPlacement(hWnd, &wp);
+					RECT rcMainWindow{};
+					GetWindowRect(hWnd, &rcMainWindow);
+					MONITORINFO mi{ sizeof(MONITORINFO) };
+					GetMonitorInfo(MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST), &mi);
+					POINT ptMainWindow{ rcMainWindow.left, rcMainWindow.top };
+					SIZE sizeMainWindow{ 700, 700 };
+					CalculatePopupWindowPosition(&ptMainWindow, &sizeMainWindow, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_WORKAREA, NULL, &rcMainWindow);
+					SetWindowPos(hWnd, NULL, rcMainWindow.left, rcMainWindow.top, rcMainWindow.right - rcMainWindow.left, rcMainWindow.bottom - rcMainWindow.top, SWP_NOZORDER | SWP_NOACTIVATE);
+
+					HWND hWndSplitter{ GetDlgItem(hWnd, static_cast<int>(ID::Splitter)) };
+					RECT rcButtonOpen{}, rcStatusBarFontInfo{}, rcSplitter{};
+					GetWindowRect(GetDlgItem(hWnd, static_cast<int>(ID::ButtonOpen)), &rcButtonOpen);
+					GetWindowRect(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), &rcStatusBarFontInfo);
+					GetWindowRect(hWndSplitter, &rcSplitter);
+					MapWindowRect(HWND_DESKTOP, hWnd, &rcButtonOpen);
+					MapWindowRect(HWND_DESKTOP, hWnd, &rcStatusBarFontInfo);
+					FORWARD_WM_MOVE(hWndSplitter, 0, ((rcStatusBarFontInfo.top + rcButtonOpen.bottom) - (rcSplitter.bottom - rcSplitter.top)) / 2, SendMessage);
+				}
+				break;
+			}
+
 			switch (wParam & 0xFFF0)
 			{
 			case SC_MINIMIZE:
@@ -4411,26 +4451,70 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 			{
 				WCHAR szFileName[MAX_PATH]{};
 				DragQueryFile(reinterpret_cast<HDROP>(wParam), i, szFileName, MAX_PATH);
-				if (PathMatchSpec(szFileName, L"*.ttf") || PathMatchSpec(szFileName, L"*.ttc") || PathMatchSpec(szFileName, L"*.otf"))
+				if (PathIsDirectory(szFileName))
 				{
-					bool bIsFontDuplicate{ false };
-					for (const auto& j : FontList)
+					WCHAR szFontFileName[MAX_PATH]{};
+					if (PathCombine(szFontFileName, szFileName, L"*"))
 					{
-						if (j.GetFontName() == szFileName)
+						WIN32_FIND_DATA w32fd{};
+						HANDLE hFindFile{ FindFirstFile(szFontFileName, &w32fd) };
+						if (hFindFile)
 						{
-							bIsFontDuplicate = true;
+							do
+							{
+								if (PathMatchSpec(w32fd.cFileName, L"*.ttf") || PathMatchSpec(w32fd.cFileName, L"*.ttc") || PathMatchSpec(w32fd.cFileName, L"*.otf"))
+								{
+									PathCombine(szFontFileName, szFileName, w32fd.cFileName);
 
-							break;
+									bool bIsFontDuplicate{ false };
+									for (const auto& j : FontList)
+									{
+										if (j.GetFontName() == szFontFileName)
+										{
+											bIsFontDuplicate = true;
+
+											break;
+										}
+									}
+									if (!bIsFontDuplicate)
+									{
+										FontList.push_back(szFontFileName);
+
+										flcs.lpszFontName = szFontFileName;
+										SendMessage(GetAncestor(hWndListViewFontList, GA_PARENT), static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED), reinterpret_cast<LPARAM>(&flcs));
+
+										flcs.iItem++;
+									}
+								}
+							} while (FindNextFile(hFindFile, &w32fd));
+
+							FindClose(hFindFile);
 						}
 					}
-					if (!bIsFontDuplicate)
+				}
+				else
+				{
+					if (PathMatchSpec(szFileName, L"*.ttf") || PathMatchSpec(szFileName, L"*.ttc") || PathMatchSpec(szFileName, L"*.otf"))
 					{
-						FontList.push_back(szFileName);
+						bool bIsFontDuplicate{ false };
+						for (const auto& j : FontList)
+						{
+							if (j.GetFontName() == szFileName)
+							{
+								bIsFontDuplicate = true;
 
-						flcs.lpszFontName = szFileName;
-						SendMessage(GetAncestor(hWndListViewFontList, GA_PARENT), static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED), reinterpret_cast<LPARAM>(&flcs));
+								break;
+							}
+						}
+						if (!bIsFontDuplicate)
+						{
+							FontList.push_back(szFileName);
 
-						flcs.iItem++;
+							flcs.lpszFontName = szFileName;
+							SendMessage(GetAncestor(hWndListViewFontList, GA_PARENT), static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED), reinterpret_cast<LPARAM>(&flcs));
+
+							flcs.iItem++;
+						}
 					}
 				}
 			}
@@ -4617,7 +4701,7 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 							DeleteMenu(hMenuContextEditMessage, WM_CLEAR, MF_BYCOMMAND);	// Clear
 							DeleteMenu(hMenuContextEditMessage, 0, MF_BYPOSITION);			// Seperator
 							InsertMenu(hMenuContextEditMessage, 0, MF_BYPOSITION | MF_SEPARATOR, 0, NULL);
-							InsertMenu(hMenuContextEditMessage, 0, MF_BYPOSITION | MF_STRING, WM_USER + 100, L"&Clear log");
+							InsertMenu(hMenuContextEditMessage, 0, MF_BYPOSITION | MF_STRING, WM_USER + 100, L"C&lear log");
 
 							// Adjust context menu position
 							RECT rcContextMenuEditMessage{};
@@ -5246,7 +5330,7 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM
 		break;
 	case WM_CONTEXTMENU:
 		{
-			// Show context menu in ListViewFontList
+			// Show context menu in ListViewProcessList
 			HWND hWndListViewProcessList{ GetDlgItem(hWndDialog, IDC_LIST1) };
 
 			if (reinterpret_cast<HWND>(wParam) == hWndListViewProcessList)
