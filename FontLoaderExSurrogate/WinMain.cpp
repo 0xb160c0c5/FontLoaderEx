@@ -14,7 +14,7 @@
 #include <sstream>
 #include <cassert>
 
-constexpr WCHAR szAppName[]{ L"FontLoaderExProxy" };
+constexpr WCHAR szAppName[]{ L"FontLoaderExSurrogate" };
 constexpr WCHAR szParentAppName[]{ L"FontLoaderEx" };
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam);

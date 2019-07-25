@@ -1868,7 +1868,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 #endif // _WIN64
 								}
 
-								// If process architectures are different(one is WOW64 and another isn't), launch FontLoaderExProxy.exe to inject dll
+								// If process architectures are different(one is WOW64 and another isn't), launch FontLoaderExSurrogate.exe to inject dll
 								if (((usCurrentProcessMachineArchitecture == IMAGE_FILE_MACHINE_I386) && (usTargetProcessMachineArchitecture == IMAGE_FILE_MACHINE_AMD64)) || ((usCurrentProcessMachineArchitecture == IMAGE_FILE_MACHINE_AMD64) && (usTargetProcessMachineArchitecture == IMAGE_FILE_MACHINE_I386)))
 								{
 									// Create synchronization objects
@@ -1929,7 +1929,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 								continue_721EFBC1:
 
 									// Launch proxy process, send HANDLE to current process and target process, HWND to message window, HANDLE to synchronization objects and timeout as arguments to proxy process
-									constexpr WCHAR szProxyAppName[]{ L"FontLoaderExProxy.exe" };
+									constexpr WCHAR szProxyAppName[]{ L"FontLoaderExSurrogate.exe" };
 
 									BOOL bRetDuplicateHandle1{ DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(), &hProcessCurrentDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS) };
 									assert(bRetDuplicateHandle1);
