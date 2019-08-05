@@ -8,8 +8,8 @@
 FontResource::AddFontProc FontResource::AddFontProc_{};
 FontResource::RemoveFontProc FontResource::RemoveFontProc_{};
 
-ADDFONT ProxyAddFontResult{};
-REMOVEFONT ProxyRemoveFontResult{};
+ADDFONT SurrogateAddFontResult{};
+REMOVEFONT SurrogateRemoveFontResult{};
 
 #ifdef _DEBUG
 bool GlobalAddFontProc(const wchar_t* lpszFontName)
@@ -63,15 +63,15 @@ bool RemoteRemoveFontProc(const wchar_t* lpszFontName)
 	}
 }
 
-bool ProxyAddFontProc(const wchar_t* lpszFontName)
+bool SurrogateAddFontProc(const wchar_t* lpszFontName)
 {
 	bool bRet{};
 
 	COPYDATASTRUCT cds{ static_cast<ULONG_PTR>(COPYDATA::ADDFONT), static_cast<DWORD>((std::wcslen(lpszFontName) + 1) * sizeof(wchar_t)), const_cast<wchar_t*>(lpszFontName) };
-	FORWARD_WM_COPYDATA(hWndProxy, hWndMain, &cds, SendMessage);
-	WaitForSingleObject(hEventProxyAddFontFinished, INFINITE);
-	ResetEvent(hEventProxyAddFontFinished);
-	switch (ProxyAddFontResult)
+	FORWARD_WM_COPYDATA(hWndSurrogate, hWndMain, &cds, SendMessage);
+	WaitForSingleObject(hEventSurrogateAddFontFinished, INFINITE);
+	ResetEvent(hEventSurrogateAddFontFinished);
+	switch (SurrogateAddFontResult)
 	{
 	case ADDFONT::SUCCESSFUL:
 		{
@@ -85,7 +85,7 @@ bool ProxyAddFontProc(const wchar_t* lpszFontName)
 		break;
 	default:
 		{
-			assert(0 && "invalid ProxyAddFontResult");
+			assert(0 && "invalid SurrogateAddFontResult");
 		}
 		break;
 	}
@@ -93,15 +93,15 @@ bool ProxyAddFontProc(const wchar_t* lpszFontName)
 	return bRet;
 }
 
-bool ProxyRemoveFontProc(const wchar_t* lpszFontName)
+bool SurrogateRemoveFontProc(const wchar_t* lpszFontName)
 {
 	bool bRet{};
 
 	COPYDATASTRUCT cds{ static_cast<ULONG_PTR>(COPYDATA::REMOVEFONT), static_cast<DWORD>((std::wcslen(lpszFontName) + 1) * sizeof(wchar_t)), const_cast<wchar_t*>(lpszFontName) };
-	FORWARD_WM_COPYDATA(hWndProxy, hWndMain, &cds, SendMessage);
-	WaitForSingleObject(hEventProxyRemoveFontFinished, INFINITE);
-	ResetEvent(hEventProxyRemoveFontFinished);
-	switch (ProxyRemoveFontResult)
+	FORWARD_WM_COPYDATA(hWndSurrogate, hWndMain, &cds, SendMessage);
+	WaitForSingleObject(hEventSurrogateRemoveFontFinished, INFINITE);
+	ResetEvent(hEventSurrogateRemoveFontFinished);
+	switch (SurrogateRemoveFontResult)
 	{
 	case REMOVEFONT::SUCCESSFUL:
 		{
@@ -115,7 +115,7 @@ bool ProxyRemoveFontProc(const wchar_t* lpszFontName)
 		break;
 	default:
 		{
-			assert(0 && "invalid ProxyRemoveFontResult");
+			assert(0 && "invalid SurrogateRemoveFontResult");
 		}
 		break;
 	}

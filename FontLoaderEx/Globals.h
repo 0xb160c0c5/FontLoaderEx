@@ -19,7 +19,7 @@ struct FONTLISTCHANGEDSTRUCT
 	LPCWSTR lpszFontName;
 };
 
-enum class TERMINATION : DWORD { DIRECT = 1 , PROXY, TARGET };
+enum class TERMINATION : DWORD { DIRECT = 1 , SURROGATE, TARGET };
 
 extern void DragDropWorkerThreadProc(void* lpParameter);
 extern unsigned int __stdcall CloseWorkerThreadProc(void* lpParameter);
@@ -27,7 +27,7 @@ extern unsigned int __stdcall ButtonCloseWorkerThreadProc(void* lpParameter);
 extern unsigned int __stdcall ButtonLoadWorkerThreadProc(void* lpParameter);
 extern unsigned int __stdcall ButtonUnloadWorkerThreadProc(void* lpParameter);
 extern unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter);
-extern unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter);
+extern unsigned int __stdcall SurrogateAndTargetProcessWatchThreadProc(void* lpParameter);
 extern unsigned int __stdcall MessageThreadProc(void* lpParameter);
 
 extern HANDLE hThreadCloseWorkerThreadProc;
@@ -50,8 +50,8 @@ extern ProcessInfo TargetProcessInfo;
 extern void* lpRemoteAddFontProcAddr;
 extern void* lpRemoteRemoveFontProcAddr;
 
-extern ProcessInfo ProxyProcessInfo;
-extern HWND hWndProxy;
+extern ProcessInfo SurrogateProcessInfo;
+extern HWND hWndSurrogate;
 extern HWND hWndMessage;
 
 extern HANDLE hProcessCurrentDuplicated;
@@ -61,33 +61,33 @@ extern HANDLE hEventParentProcessRunning;
 extern HANDLE hEventMessageThreadNotReady;
 extern HANDLE hEventMessageThreadReady;
 extern HANDLE hEventTerminateWatchThread;
-extern HANDLE hEventProxyProcessReady;
-extern HANDLE hEventProxyProcessDebugPrivilegeEnablingFinished;
-extern HANDLE hEventProxyProcessHWNDRevieved;
-extern HANDLE hEventProxyDllInjectionFinished;
-extern HANDLE hEventProxyDllPullingFinished;
-extern HANDLE hEventProxyAddFontFinished;
-extern HANDLE hEventProxyRemoveFontFinished;
+extern HANDLE hEventSurrogateProcessReady;
+extern HANDLE hEventSurrogateProcessDebugPrivilegeEnablingFinished;
+extern HANDLE hEventSurrogateProcessHWNDRevieved;
+extern HANDLE hEventSurrogateDllInjectionFinished;
+extern HANDLE hEventSurrogateDllPullingFinished;
+extern HANDLE hEventSurrogateAddFontFinished;
+extern HANDLE hEventSurrogateRemoveFontFinished;
 
-enum class COPYDATA : ULONG_PTR { PROXYPROCESSHWNDSENT = 1, PROXYPROCESSDEBUGPRIVILEGEENABLINGFINISHED, INJECTDLL, DLLINJECTIONFINISHED, PULLDLL, DLLPULLINGFINISHED, ADDFONT, ADDFONTFINISHED, REMOVEFONT, REMOVEFONTFINISHED, TERMINATE };
-enum class PROXYPROCESSDEBUGPRIVILEGEENABLING : UINT { SUCCESSFUL = 1, FAILED };
-enum class PROXYDLLINJECTION : UINT { SUCCESSFUL = 1, FAILED, FAILEDTOENUMERATEMODULES, GDI32NOTLOADED, MODULENOTFOUND };
-enum class PROXYDLLPULL : UINT { SUCCESSFUL = 1, FAILED };
+enum class COPYDATA : ULONG_PTR { SURROGATEPROCESSHWNDSENT = 1, SURROGATEPROCESSDEBUGPRIVILEGEENABLINGFINISHED, INJECTDLL, DLLINJECTIONFINISHED, PULLDLL, DLLPULLINGFINISHED, ADDFONT, ADDFONTFINISHED, REMOVEFONT, REMOVEFONTFINISHED, TERMINATE };
+enum class SURROGATEPROCESSDEBUGPRIVILEGEENABLING : UINT { SUCCESSFUL = 1, FAILED };
+enum class SURROGATEDLLINJECTION : UINT { SUCCESSFUL = 1, FAILED, FAILEDTOENUMERATEMODULES, GDI32NOTLOADED, MODULENOTFOUND };
+enum class SURROGATEDLLPULL : UINT { SUCCESSFUL = 1, FAILED };
 enum class ADDFONT : UINT { SUCCESSFUL = 1, FAILED };
 enum class REMOVEFONT : UINT { SUCCESSFUL = 1, FAILED };
 
-extern PROXYPROCESSDEBUGPRIVILEGEENABLING ProxyDebugPrivilegeEnablingResult;
-extern PROXYDLLINJECTION ProxyDllInjectionResult;
-extern PROXYDLLPULL ProxyDllPullingResult;
-extern ADDFONT ProxyAddFontResult;
-extern REMOVEFONT ProxyRemoveFontResult;
+extern SURROGATEPROCESSDEBUGPRIVILEGEENABLING SurrogateDebugPrivilegeEnablingResult;
+extern SURROGATEDLLINJECTION SurrogateDllInjectionResult;
+extern SURROGATEDLLPULL SurrogateDllPullingResult;
+extern ADDFONT SurrogateAddFontResult;
+extern REMOVEFONT SurrogateRemoveFontResult;
 
 extern bool GlobalAddFontProc(const wchar_t* lpszFontName);
 extern bool GlobalRemoveFontProc(const wchar_t* lpszFontName);
 extern bool RemoteAddFontProc(const wchar_t* lpszFontName);
 extern bool RemoteRemoveFontProc(const wchar_t* lpszFontName);
-extern bool ProxyAddFontProc(const wchar_t* lpszFontName);
-extern bool ProxyRemoveFontProc(const wchar_t* lpszFontName);
+extern bool SurrogateAddFontProc(const wchar_t* lpszFontName);
+extern bool SurrogateRemoveFontProc(const wchar_t* lpszFontName);
 extern bool NullAddFontProc(const wchar_t* lpszFontName);
 extern bool NullRemoveFontProc(const wchar_t* lpszFontName);
 

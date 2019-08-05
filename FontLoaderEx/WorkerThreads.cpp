@@ -325,7 +325,7 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 	// Register global AddFont() and RemoveFont() procedures
 	FontResource::RegisterAddRemoveFontProc(GlobalAddFontProc, GlobalRemoveFontProc);
 
-	// Close HANDLE to proxy process and target process, duplicated handles and synchronization objects
+	// Close HANDLE to surrogate process and target process, duplicated handles and synchronization objects
 	CloseHandle(TargetProcessInfo.hProcess);
 	TargetProcessInfo.hProcess = NULL;
 	CloseHandle(hProcessCurrentDuplicated);
@@ -336,18 +336,18 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 	return 0;
 }
 
-// Proxy process and target process watch thread
-unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
+// Surrogate process and target process watch thread
+unsigned int __stdcall SurrogateAndTargetProcessWatchThreadProc(void* lpParameter)
 {
-	// Wait for proxy process or target process or termination event
+	// Wait for surrogate process or target process or termination event
 	TERMINATION t{};
 
-	HANDLE handles[]{ ProxyProcessInfo.hProcess, TargetProcessInfo.hProcess, hEventTerminateWatchThread };
+	HANDLE handles[]{ SurrogateProcessInfo.hProcess, TargetProcessInfo.hProcess, hEventTerminateWatchThread };
 	switch (WaitForMultipleObjects(3, handles, FALSE, INFINITE))
 	{
 	case WAIT_OBJECT_0:
 		{
-			t = TERMINATION::PROXY;
+			t = TERMINATION::SURROGATE;
 		}
 		break;
 	case WAIT_OBJECT_0 + 1:
@@ -396,15 +396,15 @@ unsigned int __stdcall ProxyAndTargetProcessWatchThreadProc(void* lpParameter)
 	SendMessage(hWndMessage, WM_CLOSE, 0, 0);
 	WaitForSingleObject(hThreadMessage, INFINITE);
 
-	// Close HANDLE to proxy process and target process, duplicated handles and synchronization objects
+	// Close HANDLE to surrogate process and target process, duplicated handles and synchronization objects
 	CloseHandle(TargetProcessInfo.hProcess);
 	TargetProcessInfo.hProcess = NULL;
 	CloseHandle(hProcessCurrentDuplicated);
 	CloseHandle(hProcessTargetDuplicated);
-	CloseHandle(ProxyProcessInfo.hProcess);
-	ProxyProcessInfo.hProcess = NULL;
-	CloseHandle(hEventProxyAddFontFinished);
-	CloseHandle(hEventProxyRemoveFontFinished);
+	CloseHandle(SurrogateProcessInfo.hProcess);
+	SurrogateProcessInfo.hProcess = NULL;
+	CloseHandle(hEventSurrogateAddFontFinished);
+	CloseHandle(hEventSurrogateRemoveFontFinished);
 
 	DWORD dwExitCodeMessageThread{};
 	GetExitCodeThread(hThreadMessage, &dwExitCodeMessageThread);
@@ -485,46 +485,46 @@ LRESULT CALLBACK MessageWndProc(HWND hWndMessage, UINT Message, WPARAM wParam, L
 		{
 			switch (static_cast<COPYDATA>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->dwData))
 			{
-				// Get proxy SeDebugPrivilege enabling result
-			case COPYDATA::PROXYPROCESSDEBUGPRIVILEGEENABLINGFINISHED:
+				// Get surrogate SeDebugPrivilege enabling result
+			case COPYDATA::SURROGATEPROCESSDEBUGPRIVILEGEENABLINGFINISHED:
 				{
-					ProxyDebugPrivilegeEnablingResult = *static_cast<PROXYPROCESSDEBUGPRIVILEGEENABLING*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
-					SetEvent(hEventProxyProcessDebugPrivilegeEnablingFinished);
+					SurrogateDebugPrivilegeEnablingResult = *static_cast<SURROGATEPROCESSDEBUGPRIVILEGEENABLING*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
+					SetEvent(hEventSurrogateProcessDebugPrivilegeEnablingFinished);
 				}
 				break;
-				// Receive HWND to proxy process
-			case COPYDATA::PROXYPROCESSHWNDSENT:
+				// Receive HWND to surrogate process
+			case COPYDATA::SURROGATEPROCESSHWNDSENT:
 				{
-					hWndProxy = *static_cast<HWND*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
-					SetEvent(hEventProxyProcessHWNDRevieved);
+					hWndSurrogate = *static_cast<HWND*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
+					SetEvent(hEventSurrogateProcessHWNDRevieved);
 				}
 				break;
-				// Get proxy dll injection result
+				// Get surrogate dll injection result
 			case COPYDATA::DLLINJECTIONFINISHED:
 				{
-					ProxyDllInjectionResult = *static_cast<PROXYDLLINJECTION*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
-					SetEvent(hEventProxyDllInjectionFinished);
+					SurrogateDllInjectionResult = *static_cast<SURROGATEDLLINJECTION*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
+					SetEvent(hEventSurrogateDllInjectionFinished);
 				}
 				break;
-				// Get proxy dll pull result
+				// Get surrogate dll pull result
 			case COPYDATA::DLLPULLINGFINISHED:
 				{
-					ProxyDllPullingResult = *static_cast<PROXYDLLPULL*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
-					SetEvent(hEventProxyDllPullingFinished);
+					SurrogateDllPullingResult = *static_cast<SURROGATEDLLPULL*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
+					SetEvent(hEventSurrogateDllPullingFinished);
 				}
 				break;
 				// Get add font result
 			case COPYDATA::ADDFONTFINISHED:
 				{
-					ProxyAddFontResult = *static_cast<ADDFONT*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
-					SetEvent(hEventProxyAddFontFinished);
+					SurrogateAddFontResult = *static_cast<ADDFONT*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
+					SetEvent(hEventSurrogateAddFontFinished);
 				}
 				break;
 				// Get remove font result
 			case COPYDATA::REMOVEFONTFINISHED:
 				{
-					ProxyRemoveFontResult = *static_cast<REMOVEFONT*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
-					SetEvent(hEventProxyRemoveFontFinished);
+					SurrogateRemoveFontResult = *static_cast<REMOVEFONT*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
+					SetEvent(hEventSurrogateRemoveFontFinished);
 				}
 				break;
 			default:
