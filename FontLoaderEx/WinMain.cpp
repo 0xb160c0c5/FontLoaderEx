@@ -18,6 +18,7 @@
 #include <process.h>
 #include <sddl.h>
 #include <versionhelpers.h>
+#include <aclapi.h>
 #include <cwchar>
 #include <cwctype>
 #include <string>
@@ -61,60 +62,230 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	}
 
 	// Prevent multiple instances of FontLoaderEx in the same session
-	Scope scope{ Scope::Session };
-	std::wstring strMutexName{ GetUniqueName(L"FontLoaderEx-656A8394-5AB8-4061-8882-2FE2E7940C2E", scope) };
-	HANDLE hMutexSingleton{ CreateMutex(NULL, FALSE, strMutexName.c_str()) };
-	if (!hMutexSingleton)
+	// Create a security descritor that allow Everyone to access
+	WCHAR lpszTrusteeNameEveryone[]{ L"EVERYONE" };
+	EXPLICIT_ACCESS ea{ MUTEX_ALL_ACCESS, SET_ACCESS, NO_INHERITANCE, { NULL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_NAME, TRUSTEE_IS_WELL_KNOWN_GROUP, lpszTrusteeNameEveryone } };
+	PACL pacl{};
+	DWORD dwRetSetEntriesInAcl{ SetEntriesInAcl(1, &ea, NULL, &pacl) };
+	assert(dwRetSetEntriesInAcl == ERROR_SUCCESS);
+	SECURITY_DESCRIPTOR sd{};
+	BOOL bRetInitializeSecurityDescriptor{ InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION) };
+	assert(bRetInitializeSecurityDescriptor);
+	BOOL bRetSetSecurityDescriptorDacl{ SetSecurityDescriptorDacl(&sd, TRUE, pacl, FALSE) };
+	assert(bRetSetSecurityDescriptorDacl);
+	SECURITY_ATTRIBUTES saMutex{ sizeof(SECURITY_ATTRIBUTES), &sd, FALSE };
+
+	// Create and wait for a mutex to prevent race condition
+	HANDLE hMutex{ CreateMutex(&saMutex, FALSE, LR"(Global\FontLoaderEx-656A8394-5AB8-4061-8882-2FE2E7940C2E)") };
+	HANDLE hMutexSingleton[5]{};
+	if (!hMutex)
 	{
-		MessageBox(NULL, L"Failed to create singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+		MessageBox(NULL, L"Failed to create singleton mutex.", szCurrentProcessName, MB_ICONWARNING);
 
 		return -1;
 	}
 	else
 	{
-		if (GetLastError() == ERROR_ALREADY_EXISTS || GetLastError() == ERROR_ACCESS_DENIED)
+		WaitForSingleObject(hMutex, INFINITE);
+
+		// Create unique strings by scope
+		// On the same machine
+		std::wstringstream ssTemp{};
+		std::wstring strMutexName[5]{};
+
+		ssTemp << LR"(Global\FontLoaderEx-884271DC-B0E4-4BA8-8AA5-C3C217B9E85D)";
+		strMutexName[0] = ssTemp.str();
+
+		// By the same user
+		ssTemp << L"--";
+
+		HANDLE hTokenProcess{};
+		DWORD dwLength{};
+		OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hTokenProcess);
+		GetTokenInformation(hTokenProcess, TokenUser, NULL, 0, &dwLength);
+		std::unique_ptr<BYTE[]> lpBuffer{ new BYTE[dwLength]{} };
+		GetTokenInformation(hTokenProcess, TokenUser, lpBuffer.get(), dwLength, &dwLength);
+		LPWSTR lpszSID{};
+		ConvertSidToStringSid((reinterpret_cast<PTOKEN_USER>(lpBuffer.get()))->User.Sid, &lpszSID);
+		ssTemp << lpszSID;
+		LocalFree(lpszSID);
+		CloseHandle(hTokenProcess);
+		strMutexName[1] = ssTemp.str();
+
+		// In the same session
+		ssTemp << L"--";
+
+		DWORD dwSessionID{};
+		ProcessIdToSessionId(GetCurrentProcessId(), &dwSessionID);
+		ssTemp << dwSessionID;
+		strMutexName[2] = ssTemp.str();
+
+		// In the same window station
+		ssTemp << L"--";
+
+		DWORD dwLength2{};
+		HWINSTA hWinStaProcess{ GetProcessWindowStation() };
+		GetUserObjectInformation(hWinStaProcess, UOI_NAME, NULL, 0, &dwLength2);
+		std::unique_ptr<BYTE[]> lpBuffer2{ new BYTE[dwLength2]{} };
+		GetUserObjectInformation(hWinStaProcess, UOI_NAME, lpBuffer2.get(), dwLength2, &dwLength2);
+		ssTemp << reinterpret_cast<LPWSTR>(lpBuffer2.get());
+		strMutexName[3] = ssTemp.str();
+
+		// On the same desktop
+		ssTemp << L"--";
+
+		DWORD dwLength3{};
+		HDESK hDeskThread{ GetThreadDesktop(GetCurrentThreadId()) };
+		GetUserObjectInformation(hDeskThread, UOI_NAME, NULL, 0, &dwLength3);
+		std::unique_ptr<BYTE[]> lpBuffer3{ new BYTE[dwLength3]{} };
+		GetUserObjectInformation(hDeskThread, UOI_NAME, lpBuffer3.get(), dwLength3, &dwLength3);
+		ssTemp << reinterpret_cast<LPWSTR>(lpBuffer3.get());
+		strMutexName[4] = ssTemp.str();
+
+		// Create singleton mutexes
+		std::wstring strMessage2{};
+		bool bIsSingletonMutexCreationSuccessed{ true };
+
+		do
+		{
+			hMutexSingleton[4] = CreateMutex(&saMutex, FALSE, strMutexName[4].c_str());
+			if (!hMutexSingleton[4])
+			{
+				MessageBox(NULL, L"Failed to create singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+
+				ReleaseMutex(hMutex);
+				CloseHandle(hMutex);
+
+				return -1;
+			}
+			else
+			{
+				if (GetLastError() == ERROR_ALREADY_EXISTS)
+				{
+					strMessage2 = L"on the same desktop.";
+					bIsSingletonMutexCreationSuccessed = false;
+
+					break;
+				}
+			}
+
+			hMutexSingleton[3] = CreateMutex(&saMutex, FALSE, strMutexName[3].c_str());
+			if (!hMutexSingleton[3])
+			{
+				MessageBox(NULL, L"Failed to create singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+
+				CloseHandle(hMutexSingleton[4]);
+				ReleaseMutex(hMutex);
+				CloseHandle(hMutex);
+
+				return -1;
+			}
+			else
+			{
+				if (GetLastError() == ERROR_ALREADY_EXISTS)
+				{
+					strMessage2 = L"in the same window station.";
+					bIsSingletonMutexCreationSuccessed = false;
+
+					break;
+				}
+			}
+
+			hMutexSingleton[2] = CreateMutex(&saMutex, FALSE, strMutexName[2].c_str());
+			if (!hMutexSingleton[2])
+			{
+				MessageBox(NULL, L"Failed to create singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+
+				CloseHandle(hMutexSingleton[4]);
+				CloseHandle(hMutexSingleton[3]);
+				ReleaseMutex(hMutex);
+				CloseHandle(hMutex);
+
+				return -1;
+			}
+			else
+			{
+				if (GetLastError() == ERROR_ALREADY_EXISTS)
+				{
+					strMessage2 = L"in the same session.";
+					bIsSingletonMutexCreationSuccessed = false;
+
+					break;
+				}
+			}
+
+			hMutexSingleton[1] = CreateMutex(&saMutex, FALSE, strMutexName[1].c_str());
+			if (!hMutexSingleton[1])
+			{
+				MessageBox(NULL, L"Failed to create singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+
+				CloseHandle(hMutexSingleton[4]);
+				CloseHandle(hMutexSingleton[3]);
+				CloseHandle(hMutexSingleton[2]);
+				ReleaseMutex(hMutex);
+				CloseHandle(hMutex);
+
+				return -1;
+			}
+			else
+			{
+				if (GetLastError() == ERROR_ALREADY_EXISTS)
+				{
+					strMessage2 = L"by the same user.";
+					bIsSingletonMutexCreationSuccessed = false;
+
+					break;
+				}
+			}
+
+			hMutexSingleton[0] = CreateMutex(&saMutex, FALSE, strMutexName[0].c_str());
+			if (!hMutexSingleton[0])
+			{
+				MessageBox(NULL, L"Failed to create singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+
+				CloseHandle(hMutexSingleton[4]);
+				CloseHandle(hMutexSingleton[3]);
+				CloseHandle(hMutexSingleton[2]);
+				CloseHandle(hMutexSingleton[1]);
+				ReleaseMutex(hMutex);
+				CloseHandle(hMutex);
+
+				return -1;
+			}
+			else
+			{
+				if (GetLastError() == ERROR_ALREADY_EXISTS)
+				{
+					strMessage2 = L"on the same machine.";
+					bIsSingletonMutexCreationSuccessed = false;
+
+					break;
+				}
+			}
+		} while (false);
+
+		if (!bIsSingletonMutexCreationSuccessed)
 		{
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
-			ssMessage << L"An instance of " << szCurrentProcessName << L" is already running ";
-			switch (scope)
-			{
-			case Scope::Machine:
-				{
-					ssMessage << L"on the same machine.";
-				}
-				break;
-			case Scope::User:
-				{
-					ssMessage << L"by the same user.";
-				}
-				break;
-			case Scope::Session:
-				{
-					ssMessage << L"in the same session.";
-				}
-				break;
-			case Scope::WindowStation:
-				{
-					ssMessage << L"in the same window station.";
-				}
-				break;
-			case Scope::Desktop:
-				{
-					ssMessage << L"on the same desktop.";
-				}
-				break;
-			default:
-				{
-					assert(0 && "invalid scope");
-				}
-				break;
-			}
+			ssMessage << L"An instance of " << szCurrentProcessName << L" is already running " << strMessage2;
 			strMessage = ssMessage.str();
 			MessageBox(NULL, strMessage.c_str(), szCurrentProcessName, MB_ICONWARNING);
 
-			return 0;
+			for (size_t i = 0; i < 4; i++)
+			{
+				CloseHandle(hMutexSingleton[i]);
+			}
+			ReleaseMutex(hMutex);
+			CloseHandle(hMutex);
+
+			return -1;
 		}
+
+		CloseHandle(hMutexSingleton[4]);
+		CloseHandle(hMutexSingleton[3]);
+
+		ReleaseMutex(hMutex);
 	}
 
 	// Register global AddFont() and RemoveFont() procedure
@@ -170,15 +341,11 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		{
 		case -1:
 			{
-				CloseHandle(hMutexSingleton);
-
 				iRet = static_cast<int>(GetLastError());
 			}
 			break;
 		case 0:
 			{
-				CloseHandle(hMutexSingleton);
-
 				iRet = static_cast<int>(Message.wParam);
 			}
 			break;
@@ -193,6 +360,12 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 			break;
 		}
 	} while (bRet);
+
+	for (size_t i = 0; i < 5; i++)
+	{
+		CloseHandle(hMutexSingleton[i]);
+	}
+	CloseHandle(hMutex);
 
 	return iRet;
 }
@@ -1929,7 +2102,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 								continue_721EFBC1:
 
 									// Launch surrogate process, send HANDLE to current process and target process, HWND to message window, HANDLE to synchronization objects and timeout as arguments to surrogate process
-									constexpr WCHAR szCurrentProcessName[]{ L"FontLoaderExSurrogate.exe" };
+									constexpr WCHAR szSurrogateProcessName[]{ L"FontLoaderExSurrogate.exe" };
 
 									BOOL bRetDuplicateHandle1{ DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), GetCurrentProcess(), &hProcessCurrentDuplicated, 0, TRUE, DUPLICATE_SAME_ACCESS) };
 									assert(bRetDuplicateHandle1);
@@ -1951,7 +2124,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 #ifdef _WIN64
 									ssSurrogatePath << LR"(..\Debug\)" << szSurrogateProcessName;
 #else
-									ssSurrogatePath << LR"(..\x64\Debug\)" << szCurrentProcessName;
+									ssSurrogatePath << LR"(..\x64\Debug\)" << szSurrogateProcessName;
 #endif // _WIN64
 #else
 									ssSurrogatePath << szCurrentProcessName;
@@ -1962,7 +2135,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										CloseHandle(hProcessCurrentDuplicated);
 										CloseHandle(hProcessTargetDuplicated);
 
-										ssMessage << L"Failed to launch " << szCurrentProcessName << L"\r\n\r\n";
+										ssMessage << L"Failed to launch " << szSurrogateProcessName << L"\r\n\r\n";
 										strMessage = ssMessage.str();
 										cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 										Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -5649,96 +5822,4 @@ bool CallRemoteProc(HANDLE hProcess, void* lpRemoteProcAddr, void* lpParameter, 
 	} while (false);
 
 	return bRet;
-}
-
-std::wstring GetUniqueName(LPCWSTR lpszString, Scope scope)
-{
-	assert((scope == Scope::Machine) || (scope == Scope::User) || (scope == Scope::Session) || (scope == Scope::WindowStation) || (scope == Scope::Desktop));
-
-	// Create an unique string by scope
-	std::wstringstream ssRet{};
-
-	// On the same computer
-	if (scope == Scope::Machine)
-	{
-		ssRet << LR"(Global\)" << lpszString;
-	}
-	else
-	{
-		do
-		{
-			// By the same user
-			ssRet << LR"(Local\)" << lpszString << L"--";
-
-			HANDLE hTokenProcess{};
-			DWORD dwLength{};
-			OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hTokenProcess);
-			GetTokenInformation(hTokenProcess, TokenUser, NULL, 0, &dwLength);
-			std::unique_ptr<BYTE[]> lpBuffer{ new BYTE[dwLength]{} };
-			GetTokenInformation(hTokenProcess, TokenUser, lpBuffer.get(), dwLength, &dwLength);
-			LPWSTR lpszSID{};
-			ConvertSidToStringSid(((PTOKEN_USER)lpBuffer.get())->User.Sid, &lpszSID);
-			ssRet << lpszSID;
-			LocalFree(lpszSID);
-
-			if (scope == Scope::User)
-			{
-				CloseHandle(hTokenProcess);
-
-				break;
-			}
-
-			// In the same session
-			ssRet << L"--";
-
-			DWORD dwSessionID{};
-			ProcessIdToSessionId(GetCurrentProcessId(), &dwSessionID);
-			ssRet << dwSessionID;
-
-			if (scope == Scope::Session)
-			{
-				CloseHandle(hTokenProcess);
-
-				break;
-			}
-
-			// In the same window station
-			ssRet << L"--";
-
-			DWORD dwLength2{};
-			HWINSTA hWinStaProcess{ GetProcessWindowStation() };
-			GetUserObjectInformation(hWinStaProcess, UOI_NAME, NULL, 0, &dwLength2);
-			std::unique_ptr<BYTE[]> lpBuffer2{ new BYTE[dwLength2]{} };
-			GetUserObjectInformation(hWinStaProcess, UOI_NAME, lpBuffer2.get(), dwLength2, &dwLength2);
-			ssRet << reinterpret_cast<LPWSTR>(lpBuffer2.get());
-
-			if (scope == Scope::WindowStation)
-			{
-				CloseHandle(hTokenProcess);
-
-				break;
-			}
-
-			// On the same desktop
-			ssRet << L"--";
-
-			DWORD dwLength3{};
-			HDESK hDeskProcess{ GetThreadDesktop(GetCurrentThreadId()) };
-			GetUserObjectInformation(hDeskProcess, UOI_NAME, NULL, 0, &dwLength3);
-			std::unique_ptr<BYTE[]> lpBuffer3{ new BYTE[dwLength3] };
-			GetUserObjectInformation(hDeskProcess, UOI_NAME, lpBuffer3.get(), dwLength3, &dwLength3);
-			ssRet << reinterpret_cast<LPWSTR>(lpBuffer3.get());
-
-			if (scope == Scope::Desktop)
-			{
-				CloseHandle(hTokenProcess);
-
-				break;
-			}
-
-			CloseHandle(hTokenProcess);
-		} while (false);
-	}
-
-	return ssRet.str();
 }

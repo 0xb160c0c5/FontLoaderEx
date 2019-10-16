@@ -643,14 +643,14 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 			// Send WM_CTLCOLORSTATIC to parent window
 			HWND hWndSplitterParent{ GetAncestor(hWndSplitter, GA_PARENT) };
 			HBRUSH hBrSplitterBackground{ FORWARD_WM_CTLCOLORSTATIC(hWndSplitterParent, hDCSplitter, hWndSplitter, SendMessage) };
-
-			// Draw the background
-			RECT rcSplitterClient{};
-			GetClientRect(hWndSplitter, &rcSplitterClient);
 			if (!hBrSplitterBackground)
 			{
 				hBrSplitterBackground = GetSysColorBrush(COLOR_3DFACE);
 			}
+
+			// Draw the background
+			RECT rcSplitterClient{};
+			GetClientRect(hWndSplitter, &rcSplitterClient);
 			FillRect(hDCSplitter, &rcSplitterClient, hBrSplitterBackground);
 
 			// Draw a line in the middle

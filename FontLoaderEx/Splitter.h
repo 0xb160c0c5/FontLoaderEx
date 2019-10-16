@@ -64,7 +64,7 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 
 	Remarks:
 
-	The movable range must be larger than the hright/width of splitter or this message will return zero and has no effect.
+	The movable range must be larger than the height/width of splitter or this message will return zero and has no effect.
 */
 
 /*
@@ -121,7 +121,7 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 
 	wParam:
 		Low word is the number of controls that is about to links to the splitter.
-		High word is a flag that determins which edge of the splitter the controls link to.
+		High word is a flag that determines which edge of the splitter the controls link to.
 			SLC_TOP		The top edge of the splitter is linked to the bottom edge of the controls
 			SLC_BOTTOM	The bottom edge of the splitter is linked to the top edge of the controls
 			SLC_LEFT	The left edge of the splitter is linked to the right edge of the controls
@@ -134,9 +134,9 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 		The number of controls that linked to the splitter, or 0 if failed.
 
 	Remarks:
-		When dragging the splitter, The edges that linked controls linked to the splitter are moved with the splitter.
+		When dragging the splitter, the edges that linked controls linked to the splitter are moved with the splitter.
 		The linked controls must be the sibling windows of the splitter.
-		Deplicate HWND is only added once.
+		Duplicated HWND is only added once.
 		SLC_TOP/SLC_BOTTOM is not compatible with a splitter that has SPS_VERT style, so does SLC_LEFT/SLC_RIGHT with a splitter that has SPS_HORZ style.
 */
 
@@ -147,7 +147,7 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 
 	wParam:
 		Low word is not used.
-		High word is a flag that determins which edge of the splitter the controls link to.
+		High word is a flag that determines which edge of the splitter the controls link to.
 			SLC_TOP		The top edge of the splitter is linked to the bottom edge of the controls
 			SLC_BOTTOM	The bottom edge of the splitter is linked to the top edge of the controls
 			SLC_LEFT	The left edge of the splitter is linked to the right edge of the controls
@@ -168,7 +168,7 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 
 	wParam:
 		Low word is the number of controls that is about to add to the linked controls of the splitter.
-		High word is a flag that determins which edge of the splitter the controls link to.
+		High word is a flag that determines which edge of the splitter the controls link to.
 			SLC_TOP		The top edge of the splitter is linked to the bottom edge of the controls
 			SLC_BOTTOM	The bottom edge of the splitter is linked to the top edge of the controls
 			SLC_LEFT	The left edge of the splitter is linked to the right edge of the controls
@@ -183,7 +183,7 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 	Remarks:
 		When dragging the splitter, The edges that linked controls linked to the splitter are moved with the splitter.
 		The linked controls must be the sibling windows of the splitter.
-		Deplicate HWND is only added once.
+		Duplicated HWND is only added once.
 		SLC_TOP/SLC_BOTTOM is not compatible with a splitter that has SPS_VERT style, so does SLC_LEFT/SLC_RIGHT with a splitter that has SPS_HORZ style.
 */
 
@@ -194,7 +194,7 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 
 	wParam:
 		Low word is the number of controls that is about to remove from the linked controls of the splitter.
-		High word is a flag that determins which edge of the splitter the controls link to.
+		High word is a flag that determines which edge of the splitter the controls link to.
 			SLC_TOP		The top edge of the splitter is linked to the bottom edge of the controls
 			SLC_BOTTOM	The bottom edge of the splitter is linked to the top edge of the controls
 			SLC_LEFT	The left edge of the splitter is linked to the right edge of the controls
@@ -208,10 +208,10 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 */
 
 /*
-	The splitter also accept WM_MOVE and WM_SIZE.
+	The splitter also accepts WM_MOVE and WM_SIZE.
 
 	Sending the splitter an WM_MOVE will move it, and send an WM_SIZE will resize it,
-	ignorning the x/y in WM_MOVE and cx/cy in WM_SIZE depending on SPS_PARENTWIDTH or SPS_PARENTHEIGHT.
+	ignoring the x/y in WM_MOVE and cx/cy in WM_SIZE depending on SPS_PARENTWIDTH or SPS_PARENTHEIGHT.
 */
 
 // ===================Splitter notifications===================
@@ -221,7 +221,7 @@ enum SPLITTERNOTIFICATION : UINT { SPN_DRAGBEGIN = 1, SPN_DRAGGING, SPN_DRAGEND 
 
 	DRAGGING is sent when left mouse button is being hold and cursor is moving.
 	If the splitter has SPS_NOCAPTURE style, it is only sent when the cursor is in the client area of the splitter.
-	If the splitter has SPS_AUTODRAG style, This notification is sent after the splitter is moved.
+	If the splitter has SPS_AUTODRAG style, this notification is sent after the splitter is moved.
 
 	DARGEND is sent when left mouse button is released.
 	If SPS_NOCAPTURE style is specified, it is only sent when the cursor is in the client area of the splitter.
@@ -232,9 +232,9 @@ enum SPLITTERNOTIFICATION : UINT { SPN_DRAGBEGIN = 1, SPN_DRAGGING, SPN_DRAGEND 
 */
 
 /*
-	The splitter also send WM_CTLCORLORSTATIC to parent window.
+	The splitter also sends WM_CTLCORLORSTATIC to parent window.
 	User can use this message to change the background color and line style of the splitter.
-	The caller must take resposibility to manage the lifecycle of GDI objects.
+	The caller must take responsibility to manage the lifecycle of GDI objects.
 */
 
 // ===================Splitter structure===================
