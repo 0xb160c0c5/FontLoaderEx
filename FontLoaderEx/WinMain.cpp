@@ -62,31 +62,61 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	}
 
 	// Prevent multiple instances of FontLoaderEx in the same session
-	// Create a security descritor that allow Everyone to access
+	// Create a security descriptor that allow Everyone to access
 	WCHAR lpszTrusteeNameEveryone[]{ L"EVERYONE" };
-	EXPLICIT_ACCESS ea{ MUTEX_ALL_ACCESS, SET_ACCESS, NO_INHERITANCE, { NULL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_NAME, TRUSTEE_IS_WELL_KNOWN_GROUP, lpszTrusteeNameEveryone } };
-	PACL pacl{};
-	DWORD dwRetSetEntriesInAcl{ SetEntriesInAcl(1, &ea, NULL, &pacl) };
+	EXPLICIT_ACCESS ea[]{ { MUTEX_ALL_ACCESS, SET_ACCESS, NO_INHERITANCE, { NULL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_NAME, TRUSTEE_IS_WELL_KNOWN_GROUP, lpszTrusteeNameEveryone } }, { EVENT_ALL_ACCESS, SET_ACCESS, NO_INHERITANCE, { NULL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_NAME, TRUSTEE_IS_WELL_KNOWN_GROUP, lpszTrusteeNameEveryone } } };
+	//ea[0] = { MUTEX_ALL_ACCESS, SET_ACCESS, NO_INHERITANCE, { NULL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_NAME, TRUSTEE_IS_WELL_KNOWN_GROUP, lpszTrusteeNameEveryone } };
+	//ea[1] = { EVENT_ALL_ACCESS, SET_ACCESS, NO_INHERITANCE, { NULL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_NAME, TRUSTEE_IS_WELL_KNOWN_GROUP, lpszTrusteeNameEveryone } };
+	PACL pacl[2]{};
+	DWORD dwRetSetEntriesInAcl{ SetEntriesInAcl(2, ea, NULL, pacl) };
 	assert(dwRetSetEntriesInAcl == ERROR_SUCCESS);
-	SECURITY_DESCRIPTOR sd{};
-	BOOL bRetInitializeSecurityDescriptor{ InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION) };
-	assert(bRetInitializeSecurityDescriptor);
-	BOOL bRetSetSecurityDescriptorDacl{ SetSecurityDescriptorDacl(&sd, TRUE, pacl, FALSE) };
-	assert(bRetSetSecurityDescriptorDacl);
-	SECURITY_ATTRIBUTES saMutex{ sizeof(SECURITY_ATTRIBUTES), &sd, FALSE };
+	SECURITY_DESCRIPTOR sd[2]{};
+	BOOL bRetInitializeSecurityDescriptor1{ InitializeSecurityDescriptor(&sd[0], SECURITY_DESCRIPTOR_REVISION) };
+	assert(bRetInitializeSecurityDescriptor1);
+	BOOL bRetInitializeSecurityDescriptor2{ InitializeSecurityDescriptor(&sd[1], SECURITY_DESCRIPTOR_REVISION) };
+	assert(bRetInitializeSecurityDescriptor2);
+	BOOL bRetSetSecurityDescriptorDacl1{ SetSecurityDescriptorDacl(&sd[0], TRUE, pacl[0], FALSE) };
+	assert(bRetSetSecurityDescriptorDacl1);
+	BOOL bRetSetSecurityDescriptorDacl2{ SetSecurityDescriptorDacl(&sd[1], TRUE, pacl[1], FALSE) };
+	assert(bRetSetSecurityDescriptorDacl2);
+	SECURITY_ATTRIBUTES saMutex{ sizeof(SECURITY_ATTRIBUTES), &sd[0], FALSE };
+	SECURITY_ATTRIBUTES saEvent{ sizeof(SECURITY_ATTRIBUTES), &sd[1], FALSE };
 
 	// Create and wait for a mutex to prevent race condition
 	HANDLE hMutex{ CreateMutex(&saMutex, FALSE, LR"(Global\FontLoaderEx-656A8394-5AB8-4061-8882-2FE2E7940C2E)") };
 	HANDLE hMutexSingleton[5]{};
+	BringWindowToForegroundThreadProcParams bwtftpp{};;
+	HANDLE hThreadBringWindowToForeground{};
 	if (!hMutex)
 	{
-		MessageBox(NULL, L"Failed to create singleton mutex.", szCurrentProcessName, MB_ICONWARNING);
+		MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONWARNING);
 
 		return -1;
 	}
 	else
 	{
 		WaitForSingleObject(hMutex, INFINITE);
+
+		// Create a event to bring window to foreground
+		bwtftpp.hEventBringWindowToForeground = CreateEvent(&saEvent, FALSE, FALSE, LR"(FontLoaderEx-0BA1F34A-EF01-49C5-BC77-49EE10E5C75E)");
+		if (!bwtftpp.hEventBringWindowToForeground)
+		{
+			MessageBox(NULL, L"Failed to create the event.", szCurrentProcessName, MB_ICONWARNING);
+
+			ReleaseMutex(hMutex);
+			CloseHandle(hMutex);
+
+			return -1;
+		}
+		else
+		{
+			if (GetLastError() != ERROR_ALREADY_EXISTS)
+			{
+				bwtftpp.hEventTerminateBringWindowToForegroundThread = CreateEvent(NULL, TRUE, FALSE, NULL);
+				hThreadBringWindowToForeground = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, BringWindowToForegroundThreadProc, &bwtftpp, 0, nullptr));
+				assert(hThreadBringWindowToForeground);
+			}
+		}
 
 		// Create unique strings by scope
 		// On the same machine
@@ -151,7 +181,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 			hMutexSingleton[4] = CreateMutex(&saMutex, FALSE, strMutexName[4].c_str());
 			if (!hMutexSingleton[4])
 			{
-				MessageBox(NULL, L"Failed to create singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+				MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
 
 				ReleaseMutex(hMutex);
 				CloseHandle(hMutex);
@@ -172,7 +202,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 			hMutexSingleton[3] = CreateMutex(&saMutex, FALSE, strMutexName[3].c_str());
 			if (!hMutexSingleton[3])
 			{
-				MessageBox(NULL, L"Failed to create singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+				MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
 
 				CloseHandle(hMutexSingleton[4]);
 				ReleaseMutex(hMutex);
@@ -194,7 +224,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 			hMutexSingleton[2] = CreateMutex(&saMutex, FALSE, strMutexName[2].c_str());
 			if (!hMutexSingleton[2])
 			{
-				MessageBox(NULL, L"Failed to create singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+				MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
 
 				CloseHandle(hMutexSingleton[4]);
 				CloseHandle(hMutexSingleton[3]);
@@ -217,7 +247,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 			hMutexSingleton[1] = CreateMutex(&saMutex, FALSE, strMutexName[1].c_str());
 			if (!hMutexSingleton[1])
 			{
-				MessageBox(NULL, L"Failed to create singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+				MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
 
 				CloseHandle(hMutexSingleton[4]);
 				CloseHandle(hMutexSingleton[3]);
@@ -241,7 +271,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 			hMutexSingleton[0] = CreateMutex(&saMutex, FALSE, strMutexName[0].c_str());
 			if (!hMutexSingleton[0])
 			{
-				MessageBox(NULL, L"Failed to create singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+				MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
 
 				CloseHandle(hMutexSingleton[4]);
 				CloseHandle(hMutexSingleton[3]);
@@ -266,6 +296,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 		if (!bIsSingletonMutexCreationSuccessed)
 		{
+			// If another instance is running, warn user and bring the window of that instance to the foreground.
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
 			ssMessage << L"An instance of " << szCurrentProcessName << L" is already running " << strMessage2;
@@ -279,11 +310,16 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 			ReleaseMutex(hMutex);
 			CloseHandle(hMutex);
 
-			return -1;
+			SetEvent(bwtftpp.hEventBringWindowToForeground);
+			CloseHandle(bwtftpp.hEventBringWindowToForeground);
+
+			return 0;
 		}
 
 		CloseHandle(hMutexSingleton[4]);
 		CloseHandle(hMutexSingleton[3]);
+		hMutexSingleton[4] = NULL;
+		hMutexSingleton[3] = NULL;
 
 		ReleaseMutex(hMutex);
 	}
@@ -361,9 +397,17 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		}
 	} while (bRet);
 
-	for (size_t i = 0; i < 5; i++)
+	// Terminate bring window to foreground thread
+	SetEvent(bwtftpp.hEventTerminateBringWindowToForegroundThread);
+	WaitForSingleObject(hThreadBringWindowToForeground, INFINITE);
+	CloseHandle(hThreadBringWindowToForeground);
+	CloseHandle(bwtftpp.hEventBringWindowToForeground);
+	CloseHandle(bwtftpp.hEventTerminateBringWindowToForegroundThread);
+
+	// Close singleton mutexes
+	for (auto&& i : hMutexSingleton)
 	{
-		CloseHandle(hMutexSingleton[i]);
+		CloseHandle(i);
 	}
 	CloseHandle(hMutex);
 
@@ -382,10 +426,10 @@ INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM
 void* lpRemoteAddFontProcAddr{};
 void* lpRemoteRemoveFontProcAddr{};
 
-HANDLE hThreadCloseWorkerThreadProc{};
-HANDLE hThreadButtonCloseWorkerThreadProc{};
-HANDLE hThreadButtonLoadWorkerThreadProc{};
-HANDLE hThreadButtonUnloadWorkerThreadProc{};
+HANDLE hThreadCloseWorker{};
+HANDLE hThreadButtonCloseWorker{};
+HANDLE hThreadButtonLoadWorker{};
+HANDLE hThreadButtonUnloadWorker{};
 HANDLE hThreadWatch{};
 HANDLE hThreadMessage{};
 
@@ -402,7 +446,7 @@ HANDLE hEventMessageThreadReady{};
 HANDLE hEventTerminateWatchThread{};
 HANDLE hEventSurrogateProcessReady{};
 HANDLE hEventSurrogateProcessDebugPrivilegeEnablingFinished{};
-HANDLE hEventSurrogateProcessHWNDRevieved{};
+HANDLE hEventSurrogateProcessHWNDRecieved{};
 HANDLE hEventSurrogateDllInjectionFinished{};
 HANDLE hEventSurrogateDllPullingFinished{};
 HANDLE hEventSurrogateAddFontFinished{};
@@ -446,8 +490,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 	case USERMESSAGE::CLOSEWORKERTHREADTERMINATED:
 		{
 			// Wait for close worker thread to terminate
-			CloseHandle(hThreadCloseWorkerThreadProc);
-			hThreadCloseWorkerThreadProc = NULL;
+			CloseHandle(hThreadCloseWorker);
+			hThreadCloseWorker = NULL;
 
 			// Close the handle to synchronization object
 			CloseHandle(hEventWorkerThreadReadyToTerminate);
@@ -605,12 +649,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 		{
 			// Wait for worker thread to terminate
 			// Because only one worker thread runs at a time, so use bitwise-or to get the handle to running worker thread
-			HANDLE hThreadWorker{ reinterpret_cast<HANDLE>(reinterpret_cast<UINT_PTR>(hThreadButtonCloseWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonLoadWorkerThreadProc) | reinterpret_cast<UINT_PTR>(hThreadButtonUnloadWorkerThreadProc)) };
+			HANDLE hThreadWorker{ reinterpret_cast<HANDLE>(reinterpret_cast<UINT_PTR>(hThreadButtonCloseWorker) | reinterpret_cast<UINT_PTR>(hThreadButtonLoadWorker) | reinterpret_cast<UINT_PTR>(hThreadButtonUnloadWorker)) };
 			WaitForSingleObject(hThreadWorker, INFINITE);
 			CloseHandle(hThreadWorker);
-			hThreadButtonCloseWorkerThreadProc = NULL;
-			hThreadButtonLoadWorkerThreadProc = NULL;
-			hThreadButtonUnloadWorkerThreadProc = NULL;
+			hThreadButtonCloseWorker = NULL;
+			hThreadButtonLoadWorker = NULL;
+			hThreadButtonUnloadWorker = NULL;
 
 			// Close the handle to synchronization object
 			CloseHandle(hEventWorkerThreadReadyToTerminate);
@@ -839,7 +883,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			if (lParam)
 			{
 				WaitForSingleObject(hThreadWatch, INFINITE);
-				WaitForSingleObject(ULongToHandle(HandleToULong(hThreadCloseWorkerThreadProc) | HandleToULong(hThreadButtonCloseWorkerThreadProc) | HandleToULong(hThreadButtonLoadWorkerThreadProc) | HandleToULong(hThreadButtonUnloadWorkerThreadProc)), INFINITE);
+				WaitForSingleObject(ULongToHandle(HandleToULong(hThreadCloseWorker) | HandleToULong(hThreadButtonCloseWorker) | HandleToULong(hThreadButtonLoadWorker) | HandleToULong(hThreadButtonUnloadWorker)), INFINITE);
 				CloseHandle(hThreadWatch);
 			}
 			else
@@ -1104,6 +1148,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			default:
 				break;
 			}
+		}
+		break;
+		// Bring window to foreground
+	case USERMESSAGE::BRINGWINDOWTOFOREGROUND:
+		{
+			if (!IsWindowVisible(hWnd))
+			{
+				ShowWindow(hWnd, SW_SHOW);
+			}
+			if (IsIconic(hWnd))
+			{
+				ShowWindow(hWnd, SW_RESTORE);
+			}
+			SetForegroundWindow(hWnd);
 		}
 		break;
 	default:
@@ -1625,8 +1683,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							// Create synchronization object and start worker thread
 							hEventWorkerThreadReadyToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
 							assert(hEventWorkerThreadReadyToTerminate);
-							hThreadButtonCloseWorkerThreadProc = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, ButtonCloseWorkerThreadProc, reinterpret_cast<void*>(ID::ListViewFontList), 0, nullptr));
-							assert(hThreadButtonCloseWorkerThreadProc);
+							hThreadButtonCloseWorker = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, ButtonCloseWorkerThreadProc, reinterpret_cast<void*>(ID::ListViewFontList), 0, nullptr));
+							assert(hThreadButtonCloseWorker);
 						}
 						break;
 					default:
@@ -1687,8 +1745,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							// Create synchronization object and start worker thread
 							hEventWorkerThreadReadyToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
 							assert(hEventWorkerThreadReadyToTerminate);
-							hThreadButtonLoadWorkerThreadProc = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, ButtonLoadWorkerThreadProc, reinterpret_cast<void*>(ID::ListViewFontList), 0, nullptr));
-							assert(hThreadButtonLoadWorkerThreadProc);
+							hThreadButtonLoadWorker = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, ButtonLoadWorkerThreadProc, reinterpret_cast<void*>(ID::ListViewFontList), 0, nullptr));
+							assert(hThreadButtonLoadWorker);
 						}
 					default:
 						break;
@@ -1748,8 +1806,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							// Create synchronization object and start worker thread
 							hEventWorkerThreadReadyToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
 							assert(hEventWorkerThreadReadyToTerminate);
-							hThreadButtonUnloadWorkerThreadProc = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, ButtonUnloadWorkerThreadProc, reinterpret_cast<void*>(ID::ListViewFontList), 0, nullptr));
-							assert(hThreadButtonUnloadWorkerThreadProc);
+							hThreadButtonUnloadWorker = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, ButtonUnloadWorkerThreadProc, reinterpret_cast<void*>(ID::ListViewFontList), 0, nullptr));
+							assert(hThreadButtonUnloadWorker);
 						}
 					default:
 						break;
@@ -2056,8 +2114,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									assert(hEventSurrogateProcessReady);
 									hEventSurrogateProcessDebugPrivilegeEnablingFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
 									assert(hEventSurrogateProcessDebugPrivilegeEnablingFinished);
-									hEventSurrogateProcessHWNDRevieved = CreateEvent(NULL, TRUE, FALSE, NULL);
-									assert(hEventSurrogateProcessHWNDRevieved);
+									hEventSurrogateProcessHWNDRecieved = CreateEvent(NULL, TRUE, FALSE, NULL);
+									assert(hEventSurrogateProcessHWNDRecieved);
 									hEventSurrogateDllInjectionFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
 									assert(hEventSurrogateDllInjectionFinished);
 									hEventSurrogateDllPullingFinished = CreateEvent(NULL, TRUE, FALSE, NULL);
@@ -2081,7 +2139,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 											CloseHandle(hEventMessageThreadReady);
 											CloseHandle(hEventSurrogateProcessReady);
 											CloseHandle(hEventSurrogateProcessDebugPrivilegeEnablingFinished);
-											CloseHandle(hEventSurrogateProcessHWNDRevieved);
+											CloseHandle(hEventSurrogateProcessHWNDRecieved);
 											CloseHandle(hEventSurrogateDllInjectionFinished);
 											CloseHandle(hEventSurrogateDllPullingFinished);
 										}
@@ -2160,7 +2218,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										CloseHandle(hEventMessageThreadReady);
 										CloseHandle(hEventSurrogateProcessReady);
 										CloseHandle(hEventSurrogateProcessDebugPrivilegeEnablingFinished);
-										CloseHandle(hEventSurrogateProcessHWNDRevieved);
+										CloseHandle(hEventSurrogateProcessHWNDRecieved);
 										CloseHandle(hEventSurrogateDllInjectionFinished);
 										CloseHandle(hEventSurrogateDllPullingFinished);
 
@@ -2169,8 +2227,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									CloseHandle(piSurrogateProcess.hThread);
 
 									// Wait for message-only window to receive HWND to surrogate process
-									WaitForSingleObject(hEventSurrogateProcessHWNDRevieved, INFINITE);
-									CloseHandle(hEventSurrogateProcessHWNDRevieved);
+									WaitForSingleObject(hEventSurrogateProcessHWNDRecieved, INFINITE);
+									CloseHandle(hEventSurrogateProcessHWNDRecieved);
 
 									// Wait for surrogate process to enable SeDebugPrivilege
 									WaitForSingleObject(hEventSurrogateProcessDebugPrivilegeEnablingFinished, INFINITE);
@@ -2896,8 +2954,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							// Create synchronization object and start worker thread
 							hEventWorkerThreadReadyToTerminate = CreateEvent(NULL, TRUE, FALSE, NULL);
 							assert(hEventWorkerThreadReadyToTerminate);
-							hThreadCloseWorkerThreadProc = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, CloseWorkerThreadProc, nullptr, 0, nullptr));
-							assert(hThreadCloseWorkerThreadProc);
+							hThreadCloseWorker = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, CloseWorkerThreadProc, nullptr, 0, nullptr));
+							assert(hThreadCloseWorker);
 						}
 						// Else do as usual
 						else

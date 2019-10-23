@@ -9,7 +9,7 @@ extern std::list<FontResource> FontList;
 
 extern HWND hWndMain;
 
-enum class USERMESSAGE : UINT { FONTLISTCHANGED = WM_USER + 0x100, DRAGDROPWORKERTHREADTERMINATED, BUTTONCLOSEWORKERTHREADTERMINATED, BUTTONLOADWORKERTHREADTERMINATED, BUTTONUNLOADWORKERTHREADTERMINATED, CLOSEWORKERTHREADTERMINATED, WATCHTHREADTERMINATING, WATCHTHREADTERMINATED, CHILDWINDOWPOSCHANGED, TRAYNOTIFYICON };
+enum class USERMESSAGE : UINT { FONTLISTCHANGED = WM_USER + 0x100, DRAGDROPWORKERTHREADTERMINATED, BUTTONCLOSEWORKERTHREADTERMINATED, BUTTONLOADWORKERTHREADTERMINATED, BUTTONUNLOADWORKERTHREADTERMINATED, CLOSEWORKERTHREADTERMINATED, WATCHTHREADTERMINATING, WATCHTHREADTERMINATED, CHILDWINDOWPOSCHANGED, TRAYNOTIFYICON, BRINGWINDOWTOFOREGROUND };
 
 enum class FONTLISTCHANGED : UINT { OPENED = 1, OPENED_LOADED, OPENED_NOTLOADED, LOADED, NOTLOADED, UNLOADED, NOTUNLOADED, UNLOADED_CLOSED, CLOSED, UNTOUCHED };
 
@@ -19,8 +19,9 @@ struct FONTLISTCHANGEDSTRUCT
 	LPCWSTR lpszFontName;
 };
 
-enum class TERMINATION : DWORD { DIRECT = 1 , SURROGATE, TARGET };
+enum class TERMINATION : DWORD { DIRECT = 1, SURROGATE, TARGET };
 
+extern unsigned int __stdcall BringWindowToForegroundThreadProc(void* lpParameter);
 extern void DragDropWorkerThreadProc(void* lpParameter);
 extern unsigned int __stdcall CloseWorkerThreadProc(void* lpParameter);
 extern unsigned int __stdcall ButtonCloseWorkerThreadProc(void* lpParameter);
@@ -30,10 +31,16 @@ extern unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter);
 extern unsigned int __stdcall SurrogateAndTargetProcessWatchThreadProc(void* lpParameter);
 extern unsigned int __stdcall MessageThreadProc(void* lpParameter);
 
-extern HANDLE hThreadCloseWorkerThreadProc;
-extern HANDLE hThreadButtonCloseWorkerThreadProc;
-extern HANDLE hThreadButtonLoadWorkerThreadProc;
-extern HANDLE hThreadButtonUnloadWorkerThreadProc;
+struct BringWindowToForegroundThreadProcParams
+{
+	HANDLE hEventBringWindowToForeground;
+	HANDLE hEventTerminateBringWindowToForegroundThread;
+};
+
+extern HANDLE hThreadCloseWorker;
+extern HANDLE hThreadButtonCloseWorker;
+extern HANDLE hThreadButtonLoadWorker;
+extern HANDLE hThreadButtonUnloadWorker;
 extern HANDLE hThreadWatch;
 extern HANDLE hThreadMessage;
 
@@ -63,7 +70,7 @@ extern HANDLE hEventMessageThreadReady;
 extern HANDLE hEventTerminateWatchThread;
 extern HANDLE hEventSurrogateProcessReady;
 extern HANDLE hEventSurrogateProcessDebugPrivilegeEnablingFinished;
-extern HANDLE hEventSurrogateProcessHWNDRevieved;
+extern HANDLE hEventSurrogateProcessHWNDRecieved;
 extern HANDLE hEventSurrogateDllInjectionFinished;
 extern HANDLE hEventSurrogateDllPullingFinished;
 extern HANDLE hEventSurrogateAddFontFinished;

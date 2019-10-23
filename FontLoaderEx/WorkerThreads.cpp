@@ -12,6 +12,37 @@
 
 std::atomic_flag IsTargetProcessTerminated{};
 
+// Bring window to foreground worker thread
+unsigned int __stdcall BringWindowToForegroundThreadProc(void* lpParameter)
+{
+	BringWindowToForegroundThreadProcParams* pbwtftpp = reinterpret_cast<BringWindowToForegroundThreadProcParams*>(lpParameter);
+	HANDLE handles[2]{ pbwtftpp->hEventBringWindowToForeground, pbwtftpp->hEventTerminateBringWindowToForegroundThread };
+
+	do
+	{
+		switch (WaitForMultipleObjects(2, handles, FALSE, INFINITE))
+		{
+		case WAIT_OBJECT_0:
+			{
+				SendMessage(hWndMain, static_cast<UINT>(USERMESSAGE::BRINGWINDOWTOFOREGROUND), NULL, NULL);
+			}
+			break;
+		case WAIT_OBJECT_0 + 1:
+			{
+				return 0;
+			}
+			break;
+		default:
+			{
+				assert(0 && "WaitForMultipleObjects failed");
+			}
+			break;
+		}
+	} while (true);
+
+	return 0;
+}
+
 // Process drag-drop font files onto the application icon stage II worker thread
 void DragDropWorkerThreadProc(void* lpParameter)
 {
@@ -295,7 +326,7 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 		break;
 	default:
 		{
-			assert(0 && "WaitForSingleObject() failed");
+			assert(0 && "WaitForMultipleObjects() failed");
 		}
 		break;
 	}
@@ -303,7 +334,7 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 	// Singal worker thread and wait for worker thread to ready to exit
 	// Because only one worker thread runs at a time, so use bitwise-or to get the handle to running worker thread
 	bool bIsWorkerThreadRunning{ false };
-	switch (WaitForSingleObject(ULongToHandle(HandleToULong(hThreadCloseWorkerThreadProc) | HandleToULong(hThreadButtonCloseWorkerThreadProc) | HandleToULong(hThreadButtonLoadWorkerThreadProc) | HandleToULong(hThreadButtonUnloadWorkerThreadProc)), 0))
+	switch (WaitForSingleObject(ULongToHandle(HandleToULong(hThreadCloseWorker) | HandleToULong(hThreadButtonCloseWorker) | HandleToULong(hThreadButtonLoadWorker) | HandleToULong(hThreadButtonUnloadWorker)), 0))
 	{
 	case WAIT_TIMEOUT:
 		{
@@ -362,7 +393,7 @@ unsigned int __stdcall SurrogateAndTargetProcessWatchThreadProc(void* lpParamete
 		break;
 	default:
 		{
-			assert(0 && "WaitForSingleObject() failed");
+			assert(0 && "WaitForMultipleObjects failed");
 		}
 		break;
 	}
@@ -370,7 +401,7 @@ unsigned int __stdcall SurrogateAndTargetProcessWatchThreadProc(void* lpParamete
 	// Singal worker thread and wait for worker thread to ready to exit
 	// Because only one worker thread runs at a time, so use bitwise-or to get the handle to running worker thread
 	bool bIsWorkerThreadRunning{ false };
-	switch (WaitForSingleObject(ULongToHandle(HandleToULong(hThreadCloseWorkerThreadProc) | HandleToULong(hThreadButtonCloseWorkerThreadProc) | HandleToULong(hThreadButtonLoadWorkerThreadProc) | HandleToULong(hThreadButtonUnloadWorkerThreadProc)), 0))
+	switch (WaitForSingleObject(ULongToHandle(HandleToULong(hThreadCloseWorker) | HandleToULong(hThreadButtonCloseWorker) | HandleToULong(hThreadButtonLoadWorker) | HandleToULong(hThreadButtonUnloadWorker)), 0))
 	{
 	case WAIT_TIMEOUT:
 		{
@@ -496,7 +527,7 @@ LRESULT CALLBACK MessageWndProc(HWND hWndMessage, UINT Message, WPARAM wParam, L
 			case COPYDATA::SURROGATEPROCESSHWNDSENT:
 				{
 					hWndSurrogate = *static_cast<HWND*>(reinterpret_cast<PCOPYDATASTRUCT>(lParam)->lpData);
-					SetEvent(hEventSurrogateProcessHWNDRevieved);
+					SetEvent(hEventSurrogateProcessHWNDRecieved);
 				}
 				break;
 				// Get surrogate dll injection result
