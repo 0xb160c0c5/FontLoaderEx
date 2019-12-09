@@ -331,7 +331,7 @@ unsigned int __stdcall TargetProcessWatchThreadProc(void* lpParameter)
 		break;
 	}
 
-	// Singal worker thread and wait for worker thread to ready to exit
+	// Signal worker thread and wait for worker thread to ready to exit
 	// Because only one worker thread runs at a time, so use bitwise-or to get the handle to running worker thread
 	bool bIsWorkerThreadRunning{ false };
 	switch (WaitForSingleObject(ULongToHandle(HandleToULong(hThreadCloseWorker) | HandleToULong(hThreadButtonCloseWorker) | HandleToULong(hThreadButtonLoadWorker) | HandleToULong(hThreadButtonUnloadWorker)), 0))
@@ -398,7 +398,7 @@ unsigned int __stdcall SurrogateAndTargetProcessWatchThreadProc(void* lpParamete
 		break;
 	}
 
-	// Singal worker thread and wait for worker thread to ready to exit
+	// Signal worker thread and wait for worker thread to ready to exit
 	// Because only one worker thread runs at a time, so use bitwise-or to get the handle to running worker thread
 	bool bIsWorkerThreadRunning{ false };
 	switch (WaitForSingleObject(ULongToHandle(HandleToULong(hThreadCloseWorker) | HandleToULong(hThreadButtonCloseWorker) | HandleToULong(hThreadButtonLoadWorker) | HandleToULong(hThreadButtonUnloadWorker)), 0))

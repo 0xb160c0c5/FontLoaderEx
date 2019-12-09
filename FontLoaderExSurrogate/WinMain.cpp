@@ -361,7 +361,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					lpRemoteAddFontProcAddr = reinterpret_cast<void*>(reinterpret_cast<UINT_PTR>(lpModBaseAddr) + (reinterpret_cast<UINT_PTR>(lpLocalAddFontProcAddr) - reinterpret_cast<UINT_PTR>(hModInjectionDll)));
 					lpRemoteRemoveFontProcAddr = reinterpret_cast<void*>(reinterpret_cast<UINT_PTR>(lpModBaseAddr) + (reinterpret_cast<UINT_PTR>(lpLocalRemoveFontProcAddr) - reinterpret_cast<UINT_PTR>(hModInjectionDll)));
 
-					// Send success messsage to parent process
+					// Send success message to parent process
 					i = SURROGATEDLLINJECTION::SUCCESSFUL;
 					COPYDATASTRUCT cds{ static_cast<ULONG_PTR>(COPYDATA::DLLINJECTIONFINISHED), sizeof(SURROGATEDLLINJECTION), &i };
 					FORWARD_WM_COPYDATA(hWndParentMessage, hWnd, &cds, SendMessage);

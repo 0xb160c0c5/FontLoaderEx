@@ -50,7 +50,7 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 /*
 	SPM_SETRANGE
 
-	Set the moveable area of splitter in the parent window's client area.
+	Set the movable area of splitter in the parent window's client area.
 
 	wParam:
 		Low word is the left/top border of the movable area of splitter, high word is the right/bottom border of the movable area of splitter.
@@ -70,7 +70,7 @@ enum SETLINKEDCONTROL : WORD { SLC_TOP = 1, SLC_BOTTOM, SLC_LEFT, SLC_RIGHT };
 /*
 	SPM_GETRANGE
 
-	Get the moveable area of splitter in the parent window's client area.
+	Get the movable area of splitter in the parent window's client area.
 
 	wParam, lParam:
 		Not used.
@@ -227,14 +227,14 @@ enum SPLITTERNOTIFICATION : UINT { SPN_DRAGBEGIN = 1, SPN_DRAGGING, SPN_DRAGEND 
 	If SPS_NOCAPTURE style is specified, it is only sent when the cursor is in the client area of the splitter.
 
 	These notifications are sent via WM_NOTIFY, whose lParam points to a NMSPLITTER structure.
-	If the moveable range of splitter is set and the cursor is moved outside the moveable range when holding left mouse button,
+	If the movable range of splitter is set and the cursor is moved outside the movable range when holding left mouse button,
 	the NMSPLITTER::ptCursorOffset will be adjusted to prevent further moving the splitter.
 */
 
 /*
 	The splitter also sends WM_CTLCORLORSTATIC to parent window.
 	User can use this message to change the background color and line style of the splitter.
-	The caller must take responsibility to manage the lifecycle of GDI objects.
+	The caller must take responsibility to manage the life cycle of GDI objects.
 */
 
 // ===================Splitter structure===================
@@ -249,5 +249,5 @@ typedef struct tagNMSPLITTER
 ATOM InitSplitter();	// Initialize the splitter class
 /*
 	Return value:
-		The ATOM of the splitter class if successed, or NULL if failed.
+		The ATOM of the splitter class if successful, or NULL if failed.
 */

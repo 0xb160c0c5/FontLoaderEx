@@ -22,7 +22,6 @@
 #include <cwchar>
 #include <cwctype>
 #include <string>
-#include <iomanip>
 #include <sstream>
 #include <list>
 #include <vector>
@@ -61,127 +60,61 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		return 0;
 	}
 
-	// Prevent multiple instances of FontLoaderEx in the same session
-	// Create a security descriptor that allow Everyone to access
-	WCHAR lpszTrusteeNameEveryone[]{ L"EVERYONE" };
-	EXPLICIT_ACCESS ea[]{ { MUTEX_ALL_ACCESS, SET_ACCESS, NO_INHERITANCE, { NULL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_NAME, TRUSTEE_IS_WELL_KNOWN_GROUP, lpszTrusteeNameEveryone } }, { EVENT_ALL_ACCESS, SET_ACCESS, NO_INHERITANCE, { NULL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_NAME, TRUSTEE_IS_WELL_KNOWN_GROUP, lpszTrusteeNameEveryone } } };
-	//ea[0] = { MUTEX_ALL_ACCESS, SET_ACCESS, NO_INHERITANCE, { NULL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_NAME, TRUSTEE_IS_WELL_KNOWN_GROUP, lpszTrusteeNameEveryone } };
-	//ea[1] = { EVENT_ALL_ACCESS, SET_ACCESS, NO_INHERITANCE, { NULL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_NAME, TRUSTEE_IS_WELL_KNOWN_GROUP, lpszTrusteeNameEveryone } };
-	PACL pacl[2]{};
-	DWORD dwRetSetEntriesInAcl{ SetEntriesInAcl(2, ea, NULL, pacl) };
-	assert(dwRetSetEntriesInAcl == ERROR_SUCCESS);
-	SECURITY_DESCRIPTOR sd[2]{};
-	BOOL bRetInitializeSecurityDescriptor1{ InitializeSecurityDescriptor(&sd[0], SECURITY_DESCRIPTOR_REVISION) };
-	assert(bRetInitializeSecurityDescriptor1);
-	BOOL bRetInitializeSecurityDescriptor2{ InitializeSecurityDescriptor(&sd[1], SECURITY_DESCRIPTOR_REVISION) };
-	assert(bRetInitializeSecurityDescriptor2);
-	BOOL bRetSetSecurityDescriptorDacl1{ SetSecurityDescriptorDacl(&sd[0], TRUE, pacl[0], FALSE) };
-	assert(bRetSetSecurityDescriptorDacl1);
-	BOOL bRetSetSecurityDescriptorDacl2{ SetSecurityDescriptorDacl(&sd[1], TRUE, pacl[1], FALSE) };
-	assert(bRetSetSecurityDescriptorDacl2);
-	SECURITY_ATTRIBUTES saMutex{ sizeof(SECURITY_ATTRIBUTES), &sd[0], FALSE };
-	SECURITY_ATTRIBUTES saEvent{ sizeof(SECURITY_ATTRIBUTES), &sd[1], FALSE };
+	// Read ini
+	// ButtonBroadcastWM_FONTCHANGEInitialState 0 = Initial unchecked, 1 = Initial checked
+	// AllowMultipleInstances 0 = Disallow 1 = Allow
+	// Scope 0 = Machine, 1 = User, 2 = Session, 3 = Window station, 4 = Desktop
+	WCHAR szIniPath[MAX_PATH]{};
+	GetModuleFileName(NULL, szIniPath, MAX_PATH);
+	PathRemoveFileSpec(szIniPath);
+	PathAppend(szIniPath, L"FontLoaderEx.ini");
 
-	// Create and wait for a mutex to prevent race condition
-	HANDLE hMutex{ CreateMutex(&saMutex, FALSE, LR"(Global\FontLoaderEx-656A8394-5AB8-4061-8882-2FE2E7940C2E)") };
+	unsigned int uiButtonBroadcastWM_FONTCHANGEInitialState{ GetPrivateProfileInt(L"Controls", L"ButtonBroadcastWM_FONTCHANGEInitialState", 0, szIniPath) };
+	unsigned int uiAllowMultipleInstances{ GetPrivateProfileInt(L"Instances", L"AllowMultipleInstances", 0, szIniPath) };
+	unsigned int uiScope{ GetPrivateProfileInt(L"Instances", L"Scope", 2, szIniPath) };
+
+	HANDLE hMutex{};
 	HANDLE hMutexSingleton[5]{};
-	BringWindowToForegroundThreadProcParams bwtftpp{};;
+	BringWindowToForegroundThreadProcParams bwtftpp{};
 	HANDLE hThreadBringWindowToForeground{};
-	if (!hMutex)
+	if (uiAllowMultipleInstances == 0)
 	{
-		MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONWARNING);
+		// Prevent multiple instances of FontLoaderEx in the same session
+		// Create a security descriptor that allow Everyone to access
+		WCHAR lpszTrusteeNameEveryone[]{ L"EVERYONE" };
+		EXPLICIT_ACCESS ea[]{ { MUTEX_ALL_ACCESS, SET_ACCESS, NO_INHERITANCE, { NULL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_NAME, TRUSTEE_IS_WELL_KNOWN_GROUP, lpszTrusteeNameEveryone } }, { EVENT_ALL_ACCESS, SET_ACCESS, NO_INHERITANCE, { NULL, NO_MULTIPLE_TRUSTEE, TRUSTEE_IS_NAME, TRUSTEE_IS_WELL_KNOWN_GROUP, lpszTrusteeNameEveryone } } };
+		PACL pacl[2]{};
+		DWORD dwRetSetEntriesInAcl{ SetEntriesInAcl(2, ea, NULL, pacl) };
+		assert(dwRetSetEntriesInAcl == ERROR_SUCCESS);
+		SECURITY_DESCRIPTOR sd[2]{};
+		BOOL bRetInitializeSecurityDescriptor1{ InitializeSecurityDescriptor(&sd[0], SECURITY_DESCRIPTOR_REVISION) };
+		assert(bRetInitializeSecurityDescriptor1);
+		BOOL bRetInitializeSecurityDescriptor2{ InitializeSecurityDescriptor(&sd[1], SECURITY_DESCRIPTOR_REVISION) };
+		assert(bRetInitializeSecurityDescriptor2);
+		BOOL bRetSetSecurityDescriptorDacl1{ SetSecurityDescriptorDacl(&sd[0], TRUE, pacl[0], FALSE) };
+		assert(bRetSetSecurityDescriptorDacl1);
+		BOOL bRetSetSecurityDescriptorDacl2{ SetSecurityDescriptorDacl(&sd[1], TRUE, pacl[1], FALSE) };
+		assert(bRetSetSecurityDescriptorDacl2);
+		SECURITY_ATTRIBUTES saMutex{ sizeof(SECURITY_ATTRIBUTES), &sd[0], FALSE };
+		SECURITY_ATTRIBUTES saEvent{ sizeof(SECURITY_ATTRIBUTES), &sd[1], FALSE };
 
-		return -1;
-	}
-	else
-	{
-		WaitForSingleObject(hMutex, INFINITE);
-
-		// Create a event to bring window to foreground
-		bwtftpp.hEventBringWindowToForeground = CreateEvent(&saEvent, FALSE, FALSE, LR"(FontLoaderEx-0BA1F34A-EF01-49C5-BC77-49EE10E5C75E)");
-		if (!bwtftpp.hEventBringWindowToForeground)
+		// Create and wait for a mutex to prevent race condition
+		hMutex = CreateMutex(&saMutex, FALSE, LR"(Global\FontLoaderEx-656A8394-5AB8-4061-8882-2FE2E7940C2E)");
+		if (!hMutex)
 		{
-			MessageBox(NULL, L"Failed to create the event.", szCurrentProcessName, MB_ICONWARNING);
-
-			ReleaseMutex(hMutex);
-			CloseHandle(hMutex);
+			MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONWARNING);
 
 			return -1;
 		}
 		else
 		{
-			if (GetLastError() != ERROR_ALREADY_EXISTS)
+			WaitForSingleObject(hMutex, INFINITE);
+
+			// Create a event to bring window to foreground
+			bwtftpp.hEventBringWindowToForeground = CreateEvent(&saEvent, FALSE, FALSE, LR"(FontLoaderEx-0BA1F34A-EF01-49C5-BC77-49EE10E5C75E)");
+			if (!bwtftpp.hEventBringWindowToForeground)
 			{
-				bwtftpp.hEventTerminateBringWindowToForegroundThread = CreateEvent(NULL, TRUE, FALSE, NULL);
-				hThreadBringWindowToForeground = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, BringWindowToForegroundThreadProc, &bwtftpp, 0, nullptr));
-				assert(hThreadBringWindowToForeground);
-			}
-		}
-
-		// Create unique strings by scope
-		// On the same machine
-		std::wstringstream ssTemp{};
-		std::wstring strMutexName[5]{};
-
-		ssTemp << LR"(Global\FontLoaderEx-884271DC-B0E4-4BA8-8AA5-C3C217B9E85D)";
-		strMutexName[0] = ssTemp.str();
-
-		// By the same user
-		ssTemp << L"--";
-
-		HANDLE hTokenProcess{};
-		DWORD dwLength{};
-		OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hTokenProcess);
-		GetTokenInformation(hTokenProcess, TokenUser, NULL, 0, &dwLength);
-		std::unique_ptr<BYTE[]> lpBuffer{ new BYTE[dwLength]{} };
-		GetTokenInformation(hTokenProcess, TokenUser, lpBuffer.get(), dwLength, &dwLength);
-		LPWSTR lpszSID{};
-		ConvertSidToStringSid((reinterpret_cast<PTOKEN_USER>(lpBuffer.get()))->User.Sid, &lpszSID);
-		ssTemp << lpszSID;
-		LocalFree(lpszSID);
-		CloseHandle(hTokenProcess);
-		strMutexName[1] = ssTemp.str();
-
-		// In the same session
-		ssTemp << L"--";
-
-		DWORD dwSessionID{};
-		ProcessIdToSessionId(GetCurrentProcessId(), &dwSessionID);
-		ssTemp << dwSessionID;
-		strMutexName[2] = ssTemp.str();
-
-		// In the same window station
-		ssTemp << L"--";
-
-		DWORD dwLength2{};
-		HWINSTA hWinStaProcess{ GetProcessWindowStation() };
-		GetUserObjectInformation(hWinStaProcess, UOI_NAME, NULL, 0, &dwLength2);
-		std::unique_ptr<BYTE[]> lpBuffer2{ new BYTE[dwLength2]{} };
-		GetUserObjectInformation(hWinStaProcess, UOI_NAME, lpBuffer2.get(), dwLength2, &dwLength2);
-		ssTemp << reinterpret_cast<LPWSTR>(lpBuffer2.get());
-		strMutexName[3] = ssTemp.str();
-
-		// On the same desktop
-		ssTemp << L"--";
-
-		DWORD dwLength3{};
-		HDESK hDeskThread{ GetThreadDesktop(GetCurrentThreadId()) };
-		GetUserObjectInformation(hDeskThread, UOI_NAME, NULL, 0, &dwLength3);
-		std::unique_ptr<BYTE[]> lpBuffer3{ new BYTE[dwLength3]{} };
-		GetUserObjectInformation(hDeskThread, UOI_NAME, lpBuffer3.get(), dwLength3, &dwLength3);
-		ssTemp << reinterpret_cast<LPWSTR>(lpBuffer3.get());
-		strMutexName[4] = ssTemp.str();
-
-		// Create singleton mutexes
-		std::wstring strMessage2{};
-		bool bIsSingletonMutexCreationSuccessed{ true };
-
-		do
-		{
-			hMutexSingleton[4] = CreateMutex(&saMutex, FALSE, strMutexName[4].c_str());
-			if (!hMutexSingleton[4])
-			{
-				MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+				MessageBox(NULL, L"Failed to create the event.", szCurrentProcessName, MB_ICONWARNING);
 
 				ReleaseMutex(hMutex);
 				CloseHandle(hMutex);
@@ -190,138 +123,234 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 			}
 			else
 			{
-				if (GetLastError() == ERROR_ALREADY_EXISTS)
+				if (GetLastError() != ERROR_ALREADY_EXISTS)
 				{
-					strMessage2 = L"on the same desktop.";
-					bIsSingletonMutexCreationSuccessed = false;
-
-					break;
+					bwtftpp.hEventTerminateBringWindowToForegroundThread = CreateEvent(NULL, TRUE, FALSE, NULL);
+					hThreadBringWindowToForeground = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, BringWindowToForegroundThreadProc, &bwtftpp, 0, nullptr));
+					assert(hThreadBringWindowToForeground);
 				}
 			}
 
-			hMutexSingleton[3] = CreateMutex(&saMutex, FALSE, strMutexName[3].c_str());
-			if (!hMutexSingleton[3])
-			{
-				MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+			// Create unique strings by scope
+			// On the same machine
+			std::wstringstream ssTemp{};
+			std::wstring strMutexName[5]{};
 
-				CloseHandle(hMutexSingleton[4]);
+			ssTemp << LR"(Global\FontLoaderEx-884271DC-B0E4-4BA8-8AA5-C3C217B9E85D)";
+			strMutexName[0] = ssTemp.str();
+
+			// By the same user
+			ssTemp << L"--";
+
+			HANDLE hTokenProcess{};
+			DWORD dwLength{};
+			OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hTokenProcess);
+			GetTokenInformation(hTokenProcess, TokenUser, NULL, 0, &dwLength);
+			std::unique_ptr<BYTE[]> lpBuffer{ new BYTE[dwLength]{} };
+			GetTokenInformation(hTokenProcess, TokenUser, lpBuffer.get(), dwLength, &dwLength);
+			LPWSTR lpszSID{};
+			ConvertSidToStringSid((reinterpret_cast<PTOKEN_USER>(lpBuffer.get()))->User.Sid, &lpszSID);
+			ssTemp << lpszSID;
+			LocalFree(lpszSID);
+			CloseHandle(hTokenProcess);
+			strMutexName[1] = ssTemp.str();
+
+			// In the same session
+			ssTemp << L"--";
+
+			DWORD dwSessionID{};
+			ProcessIdToSessionId(GetCurrentProcessId(), &dwSessionID);
+			ssTemp << dwSessionID;
+			strMutexName[2] = ssTemp.str();
+
+			// In the same window station
+			ssTemp << L"--";
+
+			DWORD dwLength2{};
+			HWINSTA hWinStaProcess{ GetProcessWindowStation() };
+			GetUserObjectInformation(hWinStaProcess, UOI_NAME, NULL, 0, &dwLength2);
+			std::unique_ptr<BYTE[]> lpBuffer2{ new BYTE[dwLength2]{} };
+			GetUserObjectInformation(hWinStaProcess, UOI_NAME, lpBuffer2.get(), dwLength2, &dwLength2);
+			ssTemp << reinterpret_cast<LPWSTR>(lpBuffer2.get());
+			strMutexName[3] = ssTemp.str();
+
+			// On the same desktop
+			ssTemp << L"--";
+
+			DWORD dwLength3{};
+			HDESK hDeskThread{ GetThreadDesktop(GetCurrentThreadId()) };
+			GetUserObjectInformation(hDeskThread, UOI_NAME, NULL, 0, &dwLength3);
+			std::unique_ptr<BYTE[]> lpBuffer3{ new BYTE[dwLength3]{} };
+			GetUserObjectInformation(hDeskThread, UOI_NAME, lpBuffer3.get(), dwLength3, &dwLength3);
+			ssTemp << reinterpret_cast<LPWSTR>(lpBuffer3.get());
+			strMutexName[4] = ssTemp.str();
+
+			// Create singleton mutexes
+			std::wstring strMessage2{};
+			bool bIsSingletonMutexCreationSuccessed{ true };
+
+			do
+			{
+				hMutexSingleton[4] = CreateMutex(&saMutex, FALSE, strMutexName[4].c_str());
+				if (!hMutexSingleton[4])
+				{
+					MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+
+					ReleaseMutex(hMutex);
+					CloseHandle(hMutex);
+
+					return -1;
+				}
+				else
+				{
+					if (GetLastError() == ERROR_ALREADY_EXISTS)
+					{
+						strMessage2 = L"on the same desktop.";
+						bIsSingletonMutexCreationSuccessed = false;
+
+						break;
+					}
+				}
+
+				hMutexSingleton[3] = CreateMutex(&saMutex, FALSE, strMutexName[3].c_str());
+				if (!hMutexSingleton[3])
+				{
+					MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+
+					CloseHandle(hMutexSingleton[4]);
+					ReleaseMutex(hMutex);
+					CloseHandle(hMutex);
+
+					return -1;
+				}
+				else
+				{
+					if (GetLastError() == ERROR_ALREADY_EXISTS)
+					{
+						strMessage2 = L"in the same window station.";
+						bIsSingletonMutexCreationSuccessed = false;
+
+						break;
+					}
+				}
+
+				hMutexSingleton[2] = CreateMutex(&saMutex, FALSE, strMutexName[2].c_str());
+				if (!hMutexSingleton[2])
+				{
+					MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+
+					CloseHandle(hMutexSingleton[4]);
+					CloseHandle(hMutexSingleton[3]);
+					ReleaseMutex(hMutex);
+					CloseHandle(hMutex);
+
+					return -1;
+				}
+				else
+				{
+					if (GetLastError() == ERROR_ALREADY_EXISTS)
+					{
+						strMessage2 = L"in the same session.";
+						bIsSingletonMutexCreationSuccessed = false;
+
+						break;
+					}
+				}
+
+				hMutexSingleton[1] = CreateMutex(&saMutex, FALSE, strMutexName[1].c_str());
+				if (!hMutexSingleton[1])
+				{
+					MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+
+					CloseHandle(hMutexSingleton[4]);
+					CloseHandle(hMutexSingleton[3]);
+					CloseHandle(hMutexSingleton[2]);
+					ReleaseMutex(hMutex);
+					CloseHandle(hMutex);
+
+					return -1;
+				}
+				else
+				{
+					if (GetLastError() == ERROR_ALREADY_EXISTS)
+					{
+						strMessage2 = L"by the same user.";
+						bIsSingletonMutexCreationSuccessed = false;
+
+						break;
+					}
+				}
+
+				hMutexSingleton[0] = CreateMutex(&saMutex, FALSE, strMutexName[0].c_str());
+				if (!hMutexSingleton[0])
+				{
+					MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
+
+					CloseHandle(hMutexSingleton[4]);
+					CloseHandle(hMutexSingleton[3]);
+					CloseHandle(hMutexSingleton[2]);
+					CloseHandle(hMutexSingleton[1]);
+					ReleaseMutex(hMutex);
+					CloseHandle(hMutex);
+
+					return -1;
+				}
+				else
+				{
+					if (GetLastError() == ERROR_ALREADY_EXISTS)
+					{
+						strMessage2 = L"on the same machine.";
+						bIsSingletonMutexCreationSuccessed = false;
+
+						break;
+					}
+				}
+			} while (false);
+
+			if (!bIsSingletonMutexCreationSuccessed)
+			{
+				// If another instance is running, warn user and bring the window of that instance to the foreground.
+				std::wstringstream ssMessage{};
+				std::wstring strMessage{};
+				ssMessage << L"An instance of " << szCurrentProcessName << L" is already running " << strMessage2;
+				strMessage = ssMessage.str();
+				MessageBox(NULL, strMessage.c_str(), szCurrentProcessName, MB_ICONWARNING);
+
+				for (size_t i = 0; i < 4; i++)
+				{
+					CloseHandle(hMutexSingleton[i]);
+				}
 				ReleaseMutex(hMutex);
 				CloseHandle(hMutex);
 
-				return -1;
-			}
-			else
-			{
-				if (GetLastError() == ERROR_ALREADY_EXISTS)
-				{
-					strMessage2 = L"in the same window station.";
-					bIsSingletonMutexCreationSuccessed = false;
+				SetEvent(bwtftpp.hEventBringWindowToForeground);
+				CloseHandle(bwtftpp.hEventBringWindowToForeground);
 
-					break;
-				}
+				return 0;
 			}
 
-			hMutexSingleton[2] = CreateMutex(&saMutex, FALSE, strMutexName[2].c_str());
-			if (!hMutexSingleton[2])
+			switch (uiScope)
 			{
-				MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
-
-				CloseHandle(hMutexSingleton[4]);
-				CloseHandle(hMutexSingleton[3]);
-				ReleaseMutex(hMutex);
-				CloseHandle(hMutex);
-
-				return -1;
-			}
-			else
-			{
-				if (GetLastError() == ERROR_ALREADY_EXISTS)
-				{
-					strMessage2 = L"in the same session.";
-					bIsSingletonMutexCreationSuccessed = false;
-
-					break;
-				}
-			}
-
-			hMutexSingleton[1] = CreateMutex(&saMutex, FALSE, strMutexName[1].c_str());
-			if (!hMutexSingleton[1])
-			{
-				MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
-
-				CloseHandle(hMutexSingleton[4]);
-				CloseHandle(hMutexSingleton[3]);
-				CloseHandle(hMutexSingleton[2]);
-				ReleaseMutex(hMutex);
-				CloseHandle(hMutex);
-
-				return -1;
-			}
-			else
-			{
-				if (GetLastError() == ERROR_ALREADY_EXISTS)
-				{
-					strMessage2 = L"by the same user.";
-					bIsSingletonMutexCreationSuccessed = false;
-
-					break;
-				}
-			}
-
-			hMutexSingleton[0] = CreateMutex(&saMutex, FALSE, strMutexName[0].c_str());
-			if (!hMutexSingleton[0])
-			{
-				MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
-
-				CloseHandle(hMutexSingleton[4]);
-				CloseHandle(hMutexSingleton[3]);
-				CloseHandle(hMutexSingleton[2]);
+			case 0:
 				CloseHandle(hMutexSingleton[1]);
-				ReleaseMutex(hMutex);
-				CloseHandle(hMutex);
-
-				return -1;
+				hMutexSingleton[1] = NULL;
+			case 1:
+				CloseHandle(hMutexSingleton[2]);
+				hMutexSingleton[2] = NULL;
+			case 2:
+				CloseHandle(hMutexSingleton[3]);
+				hMutexSingleton[3] = NULL;
+			case 3:
+				CloseHandle(hMutexSingleton[4]);
+				hMutexSingleton[4] = NULL;
+			case 4:
+				break;
+			default:
+				break;
 			}
-			else
-			{
-				if (GetLastError() == ERROR_ALREADY_EXISTS)
-				{
-					strMessage2 = L"on the same machine.";
-					bIsSingletonMutexCreationSuccessed = false;
 
-					break;
-				}
-			}
-		} while (false);
-
-		if (!bIsSingletonMutexCreationSuccessed)
-		{
-			// If another instance is running, warn user and bring the window of that instance to the foreground.
-			std::wstringstream ssMessage{};
-			std::wstring strMessage{};
-			ssMessage << L"An instance of " << szCurrentProcessName << L" is already running " << strMessage2;
-			strMessage = ssMessage.str();
-			MessageBox(NULL, strMessage.c_str(), szCurrentProcessName, MB_ICONWARNING);
-
-			for (size_t i = 0; i < 4; i++)
-			{
-				CloseHandle(hMutexSingleton[i]);
-			}
 			ReleaseMutex(hMutex);
-			CloseHandle(hMutex);
-
-			SetEvent(bwtftpp.hEventBringWindowToForeground);
-			CloseHandle(bwtftpp.hEventBringWindowToForeground);
-
-			return 0;
 		}
-
-		CloseHandle(hMutexSingleton[4]);
-		CloseHandle(hMutexSingleton[3]);
-		hMutexSingleton[4] = NULL;
-		hMutexSingleton[3] = NULL;
-
-		ReleaseMutex(hMutex);
 	}
 
 	// Register global AddFont() and RemoveFont() procedure
@@ -330,17 +359,45 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	// Process drag-drop font files onto the application icon stage I
 	int argc{};
 	LPWSTR* argv = CommandLineToArgvW(GetCommandLine(), &argc);
-	if (argc > 1)
+	for (int i = 1; i < argc; i++)
 	{
-		bDragDropHasFonts = true;
+		if (PathIsDirectory(argv[i]))
+		{
+			WCHAR szFontFileName[MAX_PATH]{};
+			if (PathCombine(szFontFileName, argv[i], L"*"))
+			{
+				WIN32_FIND_DATA w32fd{};
+				HANDLE hFindFile{ FindFirstFile(szFontFileName, &w32fd) };
+				if (hFindFile)
+				{
+					do
+					{
+						if (PathMatchSpec(w32fd.cFileName, L"*.ttf") || PathMatchSpec(w32fd.cFileName, L"*.ttc") || PathMatchSpec(w32fd.cFileName, L"*.otf"))
+						{
+							PathCombine(szFontFileName, argv[i], w32fd.cFileName);
+							auto iter{ std::find_if(FontList.begin(), FontList.end(), [szFontFileName](FontResource v) { return v.GetFontName() == szFontFileName; }) };
+							if (iter == FontList.end())
+							{
+								FontList.push_back(szFontFileName);
+							}
+						}
+					} while (FindNextFile(hFindFile, &w32fd));
 
-		for (int i = 1; i < argc; i++)
+					FindClose(hFindFile);
+				}
+			}
+		}
+		else
 		{
 			if (PathMatchSpec(argv[i], L"*.ttf") || PathMatchSpec(argv[i], L"*.ttc") || PathMatchSpec(argv[i], L"*.otf"))
 			{
 				FontList.push_back(argv[i]);
 			}
 		}
+	}
+	if (!FontList.empty())
+	{
+		bDragDropHasFonts = true;
 	}
 	LocalFree(argv);
 
@@ -357,7 +414,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 	{
 		return -1;
 	}
-	if (!(hWndMain = CreateWindow(szCurrentProcessName, szCurrentProcessName, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 700, 700, NULL, NULL, hInstance, NULL)))
+	if (!(hWndMain = CreateWindow(szCurrentProcessName, szCurrentProcessName, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 700, 700, NULL, NULL, hInstance, &uiButtonBroadcastWM_FONTCHANGEInitialState)))
 	{
 		return -1;
 	}
@@ -397,19 +454,22 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 		}
 	} while (bRet);
 
-	// Terminate bring window to foreground thread
-	SetEvent(bwtftpp.hEventTerminateBringWindowToForegroundThread);
-	WaitForSingleObject(hThreadBringWindowToForeground, INFINITE);
-	CloseHandle(hThreadBringWindowToForeground);
-	CloseHandle(bwtftpp.hEventBringWindowToForeground);
-	CloseHandle(bwtftpp.hEventTerminateBringWindowToForegroundThread);
-
-	// Close singleton mutexes
-	for (auto&& i : hMutexSingleton)
+	if (uiAllowMultipleInstances == 0)
 	{
-		CloseHandle(i);
+		// Terminate bring window to foreground thread
+		SetEvent(bwtftpp.hEventTerminateBringWindowToForegroundThread);
+		WaitForSingleObject(hThreadBringWindowToForeground, INFINITE);
+		CloseHandle(hThreadBringWindowToForeground);
+		CloseHandle(bwtftpp.hEventBringWindowToForeground);
+		CloseHandle(bwtftpp.hEventTerminateBringWindowToForegroundThread);
+
+		// Close singleton mutexes
+		for (auto&& i : hMutexSingleton)
+		{
+			CloseHandle(i);
+		}
+		CloseHandle(hMutex);
 	}
-	CloseHandle(hMutex);
 
 	return iRet;
 }
@@ -420,7 +480,7 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 #ifdef DBGPRINTWNDPOSINFO
 LRESULT CALLBACK SplitterSubclassProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
 LRESULT CALLBACK ProgressBarFontSubclassProc(HWND hWndProgressBarFont, UINT Message, WPARAM wParam, LPARAM lParam, UINT_PTR uIDSubclass, DWORD_PTR dwRefData);
-#endif // SHOWPOSINFO
+#endif // DBGPRINTWNDPOSINFO
 INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM IParam);
 
 void* lpRemoteAddFontProcAddr{};
@@ -539,7 +599,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				int aiStatusBarFontInfoParts[]{ -1 };
 				SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 1, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 
-				// Update syatem tray icon tip
+				// Update system tray icon tip
 				if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
 				{
 					NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
@@ -557,7 +617,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				}
 				else
 				{
-					// Else, prompt user whether inisit to exit
+					// Else, prompt user whether insist to exit
 					switch (MessageBoxCentered(hWnd, L"Some fonts are not successfully unloaded\r\n\r\nDo you still want to exit?", szCurrentProcessName, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1 | MB_APPLMODAL))
 					{
 					case IDYES:
@@ -604,7 +664,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							int aiStatusBarFontInfoParts[]{ -1 };
 							SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 1, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 
-							// Update syatem tray icon tip
+							// Update system tray icon tip
 							if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
 							{
 								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
@@ -735,7 +795,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			int aiStatusBarFontInfoParts[]{ -1 };
 			SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 1, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 
-			// Update syatem tray icon tip
+			// Update system tray icon tip
 			if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
 			{
 				NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
@@ -752,7 +812,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		break;
-		// Watch thread about to termiate notification
+		// Watch thread about to terminate notification
 		// wParam = What terminated(Surrogate/Target) : enum TERMINATION
 		// lParam = Whether worker thread is still running : bool
 	case USERMESSAGE::WATCHTHREADTERMINATING:
@@ -801,7 +861,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
 				}
 				break;
-				// If target process termiantes and surrogate process is launched, print messages and terminate surrogate process
+				// If target process terminates and surrogate process is launched, print messages and terminate surrogate process
 			case TERMINATION::TARGET:
 				{
 					ssMessage << L"Target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L") terminated\r\n\r\n";
@@ -832,7 +892,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			Button_SetText(GetDlgItem(hWnd, static_cast<int>(ID::ButtonSelectProcess)), L"Select process");
 		}
 		break;
-		// Watch thread terminated notofication
+		// Watch thread terminated notification
 		// wParam = The exit code of message thread
 		// lParam = Whether worker thread is still running : bool
 	case USERMESSAGE::WATCHTHREADTERMINATED:
@@ -855,7 +915,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			// Update StatusBarFontInfo
 			SendMessage(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(L"0 font(s) opened, 0 font(s) loaded."));
 
-			// Update syatem tray icon tip
+			// Update system tray icon tip
 			if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
 			{
 				NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP, 0, NULL, L"0 font(s) opened, 0 font(s) loaded." };
@@ -893,7 +953,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		break;
-		// Font list changed notofication
+		// Font list changed notification
 		// wParam = Font change event : enum FONTLISTCHANGED
 		// lParam = iItem in ListViewFontList and font name : struct FONTLISTCHANGEDSTRUCT*
 	case USERMESSAGE::FONTLISTCHANGED:
@@ -1049,7 +1109,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
 		}
 		break;
-		// Child window size/position changed notidfication
+		// Child window size/position changed notification
 		// wParam = Handle to child window : HWND
 		// lParam = WINDOWPOSCHANGE::flags in WM_WINDOWPOSCHANGED : UINT
 	case USERMESSAGE::CHILDWINDOWPOSCHANGED:
@@ -1075,7 +1135,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							int iItemCount{ ListView_GetItemCount(reinterpret_cast<HWND>(wParam)) };
 							for (int i = iItemCount - 1; i >= 0; i--)
 							{
-								if (ListView_GetItemState(reinterpret_cast<HWND>(wParam), LVIS_SELECTED, LVIS_SELECTED) & LVIS_SELECTED)
+								if (ListView_GetItemState(reinterpret_cast<HWND>(wParam), LVIS_SELECTED, LVIS_SELECTED)& LVIS_SELECTED)
 								{
 									ListView_EnsureVisible(reinterpret_cast<HWND>(wParam), i, FALSE);
 
@@ -1211,7 +1271,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			┃                                                                              ├───┨
 			┃ How to unload fonts from Windows:                                            │   ┃
 			┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃
-			┃ upper-right cornor.                                                          │   ┃
+			┃ upper-right corner.                                                          │   ┃
 			┃                                                                              │   ┃
 			┃ How to load fonts to process:                                                │   ┃
 			┃ 1.Click "Select process", select a process.                                  │   ┃
@@ -1270,6 +1330,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			HWND hWndButtonBroadcastWM_FONTCHANGE{ CreateWindow(WC_BUTTON, L"&Broadcast WM_FONTCHANGE", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, rcButtonUnload.right, rcMainClient.top, 250, 21, hWnd, reinterpret_cast<HMENU>(ID::ButtonBroadcastWM_FONTCHANGE), reinterpret_cast<LPCREATESTRUCT>(lParam)->hInstance, NULL) };
 			assert(hWndButtonBroadcastWM_FONTCHANGE);
 			SetWindowFont(hWndButtonBroadcastWM_FONTCHANGE, hFontMain, TRUE);
+			if (*reinterpret_cast<unsigned int*>(reinterpret_cast<LPCREATESTRUCT>(lParam)->lpCreateParams) == 1)
+			{
+				Button_SetCheck(hWndButtonBroadcastWM_FONTCHANGE, BST_CHECKED);
+			}
 
 			// Initialize EditTimeout and its label
 			RECT rcButtonBroadcastWM_FONTCHANGE{};
@@ -1318,7 +1382,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 #ifdef DBGPRINTWNDPOSINFO
 			SetWindowSubclass(hWndProgressBarFont, ProgressBarFontSubclassProc, 0, 0);
-#endif // SHOWPOSINFO
+#endif // DBGPRINTWNDPOSINFO
 
 			// Initialize Splitter
 			RECT rcStatusBarFontInfo{};
@@ -1330,7 +1394,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 
 #ifdef DBGPRINTWNDPOSINFO
 			SetWindowSubclass(hWndSplitter, SplitterSubclassProc, 0, 0);
-#endif // SHOWPOSINFO
+#endif // DBGPRINTWNDPOSINFO
 
 			SendMessage(hWndSplitter, SPM_SETMARGIN, 3, 0);
 
@@ -1379,14 +1443,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				R"(2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.)""\r\n"
 				"\r\n"
 				R"(How to unload fonts from Windows:)""\r\n"
-				R"(Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.)""\r\n"
+				R"(Select all fonts then click "Unload" or "Close" button or the X at the upper-right corner.)""\r\n"
 				"\r\n"
 				R"(How to load fonts to process:)""\r\n"
 				R"(1.Click "Select process", select a process.)""\r\n"
 				R"(2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.)""\r\n"
 				"\r\n"
 				R"(How to unload fonts from process:)""\r\n"
-				R"(Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor or terminate selected process.)""\r\n"
+				R"(Select all fonts then click "Unload" or "Close" button or the X at the upper-right corner or terminate selected process.)""\r\n"
 				"\r\n"
 				R"(UI description:)""\r\n"
 				R"("Open": Add fonts to the list view.)""\r\n"
@@ -1396,7 +1460,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				R"("Broadcast WM_FONTCHANGE": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.)""\r\n"
 				R"("Select process": Select a process to only load fonts to selected process.)""\r\n"
 				R"("Timeout": The time in milliseconds FontLoaderEx waits before reporting failure while injecting dll into target process via surrogate process, the default value is 5000. Type 0, 4294967295 or clear content to wait infinitely.)""\r\n"
-				R"("Minimize to tray": If checked, click the minimize or close button in the upper-right cornor will minimize the window to system tray.)""\r\n"
+				R"("Minimize to tray": If checked, click the minimize or close button in the upper-right corner will minimize the window to system tray.)""\r\n"
 				R"("Font Name": Names of the fonts added to the list view.)""\r\n"
 				R"("State": State of the font. There are five states, "Not loaded", "Loaded", "Load failed", "Unloaded" and "Unload failed".)""\r\n"
 				"\r\n"
@@ -1615,7 +1679,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							strFontInfo = ssFontInfo.str();
 							SendMessage(GetDlgItem(hWnd, static_cast<int>(ID::StatusBarFontInfo)), SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(strFontInfo.c_str()));
 
-							// Update syatem tray icon tip
+							// Update system tray icon tip
 							if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
 							{
 								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
@@ -1673,7 +1737,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							}
 							SendMessage(hWndProgressBarFont, PBM_SETRANGE, 0, MAKELPARAM(0, iSelectedItemCount));
 
-							// Update syatem tray icon tip
+							// Update system tray icon tip
 							if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
 							{
 								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP, 0, NULL, L"Unloading and closing fonts..." };
@@ -1735,7 +1799,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							}
 							SendMessage(hWndProgressBarFont, PBM_SETRANGE, 0, MAKELPARAM(0, iSelectedItemCount));
 
-							// Update syatem tray icon tip
+							// Update system tray icon tip
 							if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
 							{
 								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP, 0, NULL, L"Loading fonts..." };
@@ -1796,7 +1860,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							}
 							SendMessage(hWndProgressBarFont, PBM_SETRANGE, 0, MAKELPARAM(0, iSelectedItemCount));
 
-							// Update syatem tray icon tip
+							// Update system tray icon tip
 							if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
 							{
 								NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP, 0, NULL, L"Unloading fonts..." };
@@ -2043,7 +2107,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 								// Determine current and target process machine architecture
 								USHORT usCurrentProcessMachineArchitecture{}, usTargetProcessMachineArchitecture{}, usNativeMachineArchitecture{};
 								// Get the function pointer to IsWow64Process2() for compatibility
-								typedef BOOL(__stdcall *pfnIsWow64Process2)(HANDLE hProcess, USHORT *pProcessMachine, USHORT *pNativeMachine);
+								typedef BOOL(__stdcall* pfnIsWow64Process2)(HANDLE hProcess, USHORT* pProcessMachine, USHORT* pNativeMachine);
 								pfnIsWow64Process2 IsWow64Process2_{ reinterpret_cast<pfnIsWow64Process2>(GetProcAddress(GetModuleHandle(L"Kernel32.dll"), "IsWow64Process2")) };
 								// For Win10 1709+, IsWow64Process2 exists
 								if (IsWow64Process2_)
@@ -2175,19 +2239,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									std::size_t cchParamLength{ ssParams.str().length() };
 									std::unique_ptr<WCHAR[]> lpszParams{ new WCHAR[cchParamLength + 1]{} };
 									wcsncpy_s(lpszParams.get(), cchParamLength + 1, ssParams.str().c_str(), cchParamLength);
-									std::wstringstream ssSurrogatePath{};
+									std::wstringstream ssSurrogateProcessPath{};
 									STARTUPINFO si{ sizeof(STARTUPINFO) };
 									PROCESS_INFORMATION piSurrogateProcess{};
 #ifdef _DEBUG
 #ifdef _WIN64
-									ssSurrogatePath << LR"(..\Debug\)" << szSurrogateProcessName;
+									ssSurrogateProcessPath << LR"(..\Debug\)" << szSurrogateProcessName;
 #else
-									ssSurrogatePath << LR"(..\x64\Debug\)" << szSurrogateProcessName;
+									ssSurrogateProcessPath << LR"(..\x64\Debug\)" << szSurrogateProcessName;
 #endif // _WIN64
 #else
-									ssSurrogatePath << szCurrentProcessName;
+									ssSurrogateProcessPath << szSurrogateProcessName;
 #endif // _DEBUG
-									if (!CreateProcess(ssSurrogatePath.str().c_str(), lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piSurrogateProcess))
+									if (!CreateProcess(ssSurrogateProcessPath.str().c_str(), lpszParams.get(), NULL, NULL, TRUE, 0, NULL, NULL, &si, &piSurrogateProcess))
 									{
 										CloseHandle(SelectedProcessInfo.hProcess);
 										CloseHandle(hProcessCurrentDuplicated);
@@ -2301,7 +2365,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hEventMessageThreadReady);
 									CloseHandle(hEventParentProcessRunning);
 
-									ssMessage << szCurrentProcessName << L"(" << piSurrogateProcess.dwProcessId << L") succesfully launched\r\n\r\n";
+									ssMessage << szCurrentProcessName << L"(" << piSurrogateProcess.dwProcessId << L") successfully launched\r\n\r\n";
 									strMessage = ssMessage.str();
 									cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2734,7 +2798,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					}
 				}
 				break;
-				// "Minimize to trat" button
+				// "Minimize to tray" button
 			case ID::ButtonMinimizeToTray:
 				{
 					switch (HIWORD(wParam))
@@ -2833,7 +2897,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					// Reset window size and control position
 					WINDOWPLACEMENT wp{ sizeof(WINDOWPLACEMENT) };
 					GetWindowPlacement(hWnd, &wp);
-					if ((wp.showCmd == SW_MAXIMIZE) || (wp.showCmd == SW_SHOWMAXIMIZED))
+					if (wp.showCmd == SW_MAXIMIZE)
 					{
 						wp.showCmd = SW_RESTORE;
 					}
@@ -3065,10 +3129,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 		/*
-		   Sizing related messasge sequences:
+		   Sizing related message sequences:
 		   1. Drag window edge: WS_SIZING( SizingEdge = WMSZ_* ) -> WM_WINDOWPOSCHANGING -> WS_SIZED
-		   2. Maximimze/Restore: WM_WINDOWPOSCHANGING -> WS_SIZED
-		   3. Cornor/Border sticky: WM_WINDOWPOSCHANGING -> WS_SIZED, SizingEdge = 0
+		   2. Maximize/Restore: WM_WINDOWPOSCHANGING -> WS_SIZED
+		   3. Corner/Border sticky: WM_WINDOWPOSCHANGING -> WS_SIZED, SizingEdge = 0
 		*/
 	case WM_WINDOWPOSCHANGING:
 		{
@@ -3112,7 +3176,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			┃                                                                              ├───┨
 			┃ How to unload fonts from Windows:                                            │   ┃
 			┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃
-			┃ upper-right cornor.                                                          │   ┃
+			┃ upper-right corner.                                                          │   ┃
 			┃                                                                              │   ┃
 			┃ How to load fonts to process:                                                │   ┃
 			┃ 1.Click "Select process", select a process.                                  │   ┃          ptSpliitterRange.bottom
@@ -3173,7 +3237,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
-			ssMessage << L"* Main revieved WM_WINDOWPOSCHANGED\r\n"
+			ssMessage << L"* Main received WM_WINDOWPOSCHANGED\r\n"
 				<< L"hwndInsertAfter: " << lpwp->hwndInsertAfter << L" "
 				<< L"hwnd: " << lpwp->hwnd << L" "
 				<< L"x: " << lpwp->x << L" "
@@ -3233,7 +3297,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				strMessage.erase(strMessage.find_last_of(L'|') - 1, 3);
 			}
 			OutputDebugString(strMessage.c_str());
-#endif // SHOWPOSINFO
+#endif // DBGPRINTWNDPOSINFO
 		}
 		break;
 	case WM_SIZING:
@@ -3259,7 +3323,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						{
 							switch (SizingEdge)
 							{
-								// Proportionally scale the position of splitter, caused by cornor/border sticky
+								// Proportionally scale the position of splitter, caused by corner/border sticky
 							case 0:
 								{
 									/*
@@ -3294,7 +3358,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃	┃                                                                              ├───┨                                                                               ┃
 									┃	┃ How to unload fonts from Windows:                                            │   ┃                                                                               ┃
 									┃	┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃                                                                               ┃
-									┃	┃ upper-right cornor.                                                          │   ┃                                                                               ┃
+									┃	┃ upper-right corner.                                                          │   ┃                                                                               ┃
 									┃	┃                                                                              │   ┃                                                                               ┃
 									┃	┃ How to load fonts to process:                                                │   ┃                                                                               ┃
 									┃	┃ 1.Click "Select process", select a process.                                  │   ┃                                                                               ┃
@@ -3437,7 +3501,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃                                                                              ├───┨      ┃                                                                              ├───┨
 									┃ How to unload fonts from Windows:                                            │   ┃      ┃ How to unload fonts from Windows:                                            │   ┃
 									┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃
-									┃ upper-right cornor.                                                          │   ┃      ┃ upper-right cornor.                                                          │   ┃
+									┃ upper-right corner.                                                          │   ┃      ┃ upper-right corner.                                                          │   ┃
 									┃                                                                              │   ┃      ┃                                                                              │   ┃
 									┃ How to load fonts to process:                                                │   ┃      ┃ How to load fonts to process:                                                │   ┃
 									┃ 1.Click "Select process", select a process.                                  │   ┃      ┃ 1.Click "Select process", select a process.                                  │   ┃
@@ -3569,7 +3633,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃                                                                              ├───┨      ┃                                                                              │▓▓▓┃
 									┃ How to unload fonts from Windows:                                            │   ┃      ┃ How to unload fonts from Windows:                                            │▓▓▓┃
 									┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the       ├───┨
-									┃ upper-right cornor.                                                          │   ┃      ┃ upper-right cornor.                                                          │   ┃
+									┃ upper-right corner.                                                          │   ┃      ┃ upper-right corner.                                                          │   ┃
 									┃                                                                              │   ┃      ┃                                                                              │   ┃
 									┃ How to load fonts to process:                                                │   ┃      ┃ How to load fonts to process:                                                │   ┃
 									┃ 1.Click "Select process", select a process.                                  │   ┃      ┃ 1.Click "Select process", select a process.                                  │   ┃
@@ -3577,7 +3641,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃ view, then click "Load" button.                                              │ ↓ ┃      ┃ view, then click "Load" button.                                              │   ┃
 									┠──────────────────────────────────────────────────────────────────────────────┴───┨      ┃ How to unload fonts from process:                                            │   ┃
 									┃ 0 font(s) opened, 0 font(s) loaded.                                              ┃	  ┃ Select all fonts then click "Unload" or "Close" button or the X at the       ├───┨
-									┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛	  ┃  upper-right cornor or terminate selected process.                           │ ↓ ┃
+									┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛	  ┃  upper-right corner or terminate selected process.                           │ ↓ ┃
 																															  ┠──────────────────────────────────────────────────────────────────────────────┴───┨
 																															  ┃ 0 font(s) opened, 0 font(s) loaded.                                              ┃
 																															  ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
@@ -3693,8 +3757,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									┃  view, then click "Load" button.                                             │▓▓▓┃      ┃  click "Load" button.                                                                      │▓▓▓┃
 									┃                                                                              ├───┨      ┃                                                                                            ├───┨
 									┃ How to unload fonts from Windows:                                            │   ┃      ┃ How to unload fonts from Windows:                                                          │   ┃
-									┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor. │   ┃
-									┃ upper-right cornor.                                                          │   ┃      ┃                                                                                            │   ┃
+									┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃      ┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right corner. │   ┃
+									┃ upper-right corner.                                                          │   ┃      ┃                                                                                            │   ┃
 									┃                                                                              │   ┃      ┃ How to load fonts to process:                                                              │   ┃
 									┃ How to load fonts to process:                                                │   ┃      ┃ 1.Click "Select process", select a process.                                                │   ┃
 									┃ 1.Click "Select process", select a process.                                  │   ┃      ┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then     │   ┃
@@ -3783,7 +3847,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							┃                                                                              ├───┨
 							┃ How to unload fonts from Windows:                                            │   ┃
 							┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃
-							┃ upper-right cornor.                                                          │   ┃
+							┃ upper-right corner.                                                          │   ┃
 							┃                                                                              │   ┃
 							┃ How to load fonts to process:                                                │   ┃
 							┃ 1.Click "Select process", select a process.                                  │   ┃
@@ -3822,14 +3886,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.               │▓▓▓┃
 							┃	                                                                                                                        │▓▓▓┃
 							┃ How to unload fonts from Windows:                                                                                         │▓▓▓┃
-							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.                                │▓▓▓┃
+							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right corner.                                │▓▓▓┃
 							┃                                                                                                                           │▓▓▓┃
 							┃ How to load fonts to process:                                                                                             ├───┨
 							┃ 1.Click "Select process", select a process.                                                                               │   ┃
 							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.               │   ┃
 							┃                                                                                                                           │   ┃
 							┃ How to unload fonts from process:	                                                                                        │   ┃
-							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor or terminate selected process.	│   ┃
+							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right corner or terminate selected process.	│   ┃
 							┃                                                                                                                           │   ┃
 							┃ UI description:                                                                                                           │   ┃
 							┃ "Open": Add fonts to the list view.                                                                                       │   ┃
@@ -3937,14 +4001,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.               │▓▓▓┃
 							┃	                                                                                                                        │▓▓▓┃
 							┃ How to unload fonts from Windows:                                                                                         │▓▓▓┃
-							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.                                │▓▓▓┃
+							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right corner.                                │▓▓▓┃
 							┃                                                                                                                           │▓▓▓┃
 							┃ How to load fonts to process:                                                                                             ├───┨
 							┃ 1.Click "Select process", select a process.                                                                               │   ┃
 							┃ 2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.               │   ┃
 							┃                                                                                                                           │   ┃
 							┃ How to unload fonts from process:	                                                                                        │   ┃
-							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor or terminate selected process.	│   ┃
+							┃ Select all fonts then click "Unload" or "Close" button or the X at the upper-right corner or terminate selected process.	│   ┃
 							┃                                                                                                                           │   ┃
 							┃ UI description:                                                                                                           │   ┃
 							┃ "Open": Add fonts to the list view.                                                                                       │   ┃
@@ -3984,7 +4048,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							┃                                                                              ├───┨
 							┃ How to unload fonts from Windows:                                            │   ┃
 							┃ Select all fonts then click "Unload" or "Close" button or the X at the       │   ┃
-							┃ upper-right cornor.                                                          │   ┃
+							┃ upper-right corner.                                                          │   ┃
 							┃                                                                              │   ┃
 							┃ How to load fonts to process:                                                │   ┃
 							┃ 1.Click "Select process", select a process.                                  │   ┃
@@ -4134,10 +4198,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				break;
 			}
 
-#ifdef _DEBUG
+#ifdef DBGPRINTWNDPOSINFO
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
-			ssMessage << L"* Main revieved WM_SIZE\r\n"
+			ssMessage << L"* Main received WM_SIZE\r\n"
 				<< L"cxClient: " << LOWORD(lParam) << L" "
 				<< L"cyClient: " << HIWORD(lParam) << L" "
 				<< L"PreviousShowCmd: ";
@@ -4291,7 +4355,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			ssMessage << L"\r\n";
 			strMessage = ssMessage.str();
 			OutputDebugString(strMessage.c_str());
-#endif
+#endif //DBGPRINTWNDPOSINFO
 
 			// Clear sizing edge
 			SizingEdge = 0;
@@ -4438,7 +4502,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 						int aiStatusBarFontInfoParts[]{ -1 };
 						SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 1, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 
-						// Update syatem tray icon tip
+						// Update system tray icon tip
 						if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
 						{
 							NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
@@ -4535,7 +4599,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					int aiStatusBarFontInfoParts[]{ -1 };
 					SendMessage(hWndStatusBarFontInfo, SB_SETPARTS, 1, reinterpret_cast<LPARAM>(aiStatusBarFontInfoParts));
 
-					// Update syatem tray icon tip
+					// Update system tray icon tip
 					if (Button_GetCheck(GetDlgItem(hWnd, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
 					{
 						NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
@@ -4695,18 +4759,8 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 								if (PathMatchSpec(w32fd.cFileName, L"*.ttf") || PathMatchSpec(w32fd.cFileName, L"*.ttc") || PathMatchSpec(w32fd.cFileName, L"*.otf"))
 								{
 									PathCombine(szFontFileName, szFileName, w32fd.cFileName);
-
-									bool bIsFontDuplicate{ false };
-									for (const auto& j : FontList)
-									{
-										if (j.GetFontName() == szFontFileName)
-										{
-											bIsFontDuplicate = true;
-
-											break;
-										}
-									}
-									if (!bIsFontDuplicate)
+									auto iter{ std::find_if(FontList.begin(), FontList.end(), [szFontFileName](FontResource v) { return v.GetFontName() == szFontFileName; }) };
+									if (iter == FontList.end())
 									{
 										FontList.push_back(szFontFileName);
 
@@ -4780,7 +4834,7 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 			strFontInfo = ssFontInfo.str();
 			SendMessage(GetDlgItem(hWndParent, static_cast<int>(ID::StatusBarFontInfo)), SB_SETTEXT, MAKEWPARAM(MAKEWORD(0, 0), 0), reinterpret_cast<LPARAM>(strFontInfo.c_str()));
 
-			// Update syatem tray icon tip
+			// Update system tray icon tip
 			if (Button_GetCheck(GetDlgItem(hWndParent, static_cast<int>(ID::ButtonMinimizeToTray))) == BST_CHECKED)
 			{
 				NOTIFYICONDATA nid{ sizeof(NOTIFYICONDATA), hWndMain, 0, NIF_TIP | NIF_SHOWTIP };
@@ -4800,7 +4854,7 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
-			ssMessage << L"* ListViewFontList revieved WM_WINDOWPOSCHANGED\r\n"
+			ssMessage << L"* ListViewFontList received WM_WINDOWPOSCHANGED\r\n"
 				<< L"hwndInsertAfter: " << lpwp->hwndInsertAfter << L" "
 				<< L"hwnd: " << lpwp->hwnd << L" "
 				<< L"x: " << lpwp->x << L" "
@@ -4860,7 +4914,7 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 				strMessage.erase(strMessage.find_last_of(L'|') - 1, 3);
 			}
 			OutputDebugString(strMessage.c_str());
-#endif // SHOWPOSINFO
+#endif // DBGPRINTWNDPOSINFO
 		}
 		break;
 	default:
@@ -4929,7 +4983,7 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 							DeleteMenu(hMenuContextEditMessage, WM_CUT, MF_BYCOMMAND);		// Cut
 							DeleteMenu(hMenuContextEditMessage, WM_PASTE, MF_BYCOMMAND);	// Paste
 							DeleteMenu(hMenuContextEditMessage, WM_CLEAR, MF_BYCOMMAND);	// Clear
-							DeleteMenu(hMenuContextEditMessage, 0, MF_BYPOSITION);			// Seperator
+							DeleteMenu(hMenuContextEditMessage, 0, MF_BYPOSITION);			// Separator
 							InsertMenu(hMenuContextEditMessage, 0, MF_BYPOSITION | MF_SEPARATOR, 0, NULL);
 							InsertMenu(hMenuContextEditMessage, 0, MF_BYPOSITION | MF_STRING, WM_USER + 100, L"C&lear log");
 
@@ -4979,7 +5033,7 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
-			ssMessage << L"* EditMessage revieved WM_WINDOWPOSCHANGED\r\n"
+			ssMessage << L"* EditMessage received WM_WINDOWPOSCHANGED\r\n"
 				<< L"hwndInsertAfter: " << lpwp->hwndInsertAfter << L" "
 				<< L"hwnd: " << lpwp->hwnd << L" "
 				<< L"x: " << lpwp->x << L" "
@@ -5039,7 +5093,7 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 				strMessage.erase(strMessage.find_last_of(L'|') - 1, 3);
 			}
 			OutputDebugString(strMessage.c_str());
-#endif // SHOWPOSINFO
+#endif // DBGPRINTWNDPOSINFO
 		}
 		break;
 		// "Clear log" custom message
@@ -5053,14 +5107,14 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 				R"(2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.)""\r\n"
 				"\r\n"
 				R"(How to unload fonts from Windows:)""\r\n"
-				R"(Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor.)""\r\n"
+				R"(Select all fonts then click "Unload" or "Close" button or the X at the upper-right corner.)""\r\n"
 				"\r\n"
 				R"(How to load fonts to process:)""\r\n"
 				R"(1.Click "Select process", select a process.)""\r\n"
 				R"(2.Click "Open" button to select fonts or drag-drop font files onto the list view, then click "Load" button.)""\r\n"
 				"\r\n"
 				R"(How to unload fonts from process:)""\r\n"
-				R"(Select all fonts then click "Unload" or "Close" button or the X at the upper-right cornor or terminate selected process.)""\r\n"
+				R"(Select all fonts then click "Unload" or "Close" button or the X at the upper-right corner or terminate selected process.)""\r\n"
 				"\r\n"
 				R"(UI description:)""\r\n"
 				R"("Open": Add fonts to the list view.)""\r\n"
@@ -5070,7 +5124,7 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 				R"("Broadcast WM_FONTCHANGE": If checked, broadcast WM_FONTCHANGE message to all top windows when loading or unloading fonts.)""\r\n"
 				R"("Select process": Select a process to only load fonts to selected process.)""\r\n"
 				R"("Timeout": The time in milliseconds FontLoaderEx waits before reporting failure while injecting dll into target process via surrogate process, the default value is 5000. Type 0, 4294967295 or clear content to wait infinitely.)""\r\n"
-				R"("Minimize to tray": If checked, click the minimize or close button in the upper-right cornor will minimize the window to system tray.)""\r\n"
+				R"("Minimize to tray": If checked, click the minimize or close button in the upper-right corner will minimize the window to system tray.)""\r\n"
 				R"("Font Name": Names of the fonts added to the list view.)""\r\n"
 				R"("State": State of the font. There are five states, "Not loaded", "Loaded", "Load failed", "Unloaded" and "Unload failed".)""\r\n"
 				"\r\n"
@@ -5101,7 +5155,7 @@ LRESULT CALLBACK SplitterSubclassProc(HWND hWndSplitter, UINT Message, WPARAM wP
 			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
-			ssMessage << L"* Splitter revieved WM_WINDOWPOSCHANGED\r\n"
+			ssMessage << L"* Splitter received WM_WINDOWPOSCHANGED\r\n"
 				<< L"hwndInsertAfter: " << lpwp->hwndInsertAfter << L" "
 				<< L"hwnd: " << lpwp->hwnd << L" "
 				<< L"x: " << lpwp->x << L" "
@@ -5186,7 +5240,7 @@ LRESULT CALLBACK ProgressBarFontSubclassProc(HWND hWndProgressBarFont, UINT Mess
 			LPWINDOWPOS lpwp{ reinterpret_cast<LPWINDOWPOS>(lParam) };
 			std::wstringstream ssMessage{};
 			std::wstring strMessage{};
-			ssMessage << L"* ProgressBarFont revieved WM_WINDOWPOSCHANGED\r\n"
+			ssMessage << L"* ProgressBarFont received WM_WINDOWPOSCHANGED\r\n"
 				<< L"hwndInsertAfter: " << lpwp->hwndInsertAfter << L" "
 				<< L"hwnd: " << lpwp->hwnd << L" "
 				<< L"x: " << lpwp->x << L" "
@@ -5257,7 +5311,7 @@ LRESULT CALLBACK ProgressBarFontSubclassProc(HWND hWndProgressBarFont, UINT Mess
 
 	return ret;
 }
-#endif // SHOWPOSINFO
+#endif // DBGPRINTWNDPOSINFO
 
 INT_PTR CALLBACK DialogProc(HWND hWndDialog, UINT Message, WPARAM wParam, LPARAM lParam)
 {
