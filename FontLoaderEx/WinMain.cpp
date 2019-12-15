@@ -48,7 +48,6 @@ bool bDragDropHasFonts{ false };
 
 // Create an unique string by scope
 enum class Scope { Machine, User, Session, WindowStation, Desktop };
-std::wstring GetUniqueName(LPCWSTR lpszString, Scope scope);
 
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
@@ -187,129 +186,79 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
 			// Create singleton mutexes
 			std::wstring strMessage2{};
-			bool bIsSingletonMutexCreationSuccessed{ true };
-
 			do
 			{
-				hMutexSingleton[4] = CreateMutex(&saMutex, FALSE, strMutexName[4].c_str());
-				if (!hMutexSingleton[4])
+				for (size_t i = 0; i < 5; i++)
 				{
-					MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
-
-					ReleaseMutex(hMutex);
-					CloseHandle(hMutex);
-
-					return -1;
-				}
-				else
-				{
-					if (GetLastError() == ERROR_ALREADY_EXISTS)
+					hMutexSingleton[4 - i] = CreateMutex(&saMutex, FALSE, strMutexName[4 - i].c_str());
+					if (!hMutexSingleton[4 - i])
 					{
-						strMessage2 = L"on the same desktop.";
-						bIsSingletonMutexCreationSuccessed = false;
+						MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
 
-						break;
+						switch (4 - i)
+						{
+						case 0:
+							CloseHandle(hMutexSingleton[1]);
+						case 1:
+							CloseHandle(hMutexSingleton[2]);
+						case 2:
+							CloseHandle(hMutexSingleton[3]);
+						case 3:
+							CloseHandle(hMutexSingleton[4]);
+						case 4:
+						default:
+							break;
+						}
+
+						ReleaseMutex(hMutex);
+						CloseHandle(hMutex);
+
+						return -1;
 					}
-				}
-
-				hMutexSingleton[3] = CreateMutex(&saMutex, FALSE, strMutexName[3].c_str());
-				if (!hMutexSingleton[3])
-				{
-					MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
-
-					CloseHandle(hMutexSingleton[4]);
-					ReleaseMutex(hMutex);
-					CloseHandle(hMutex);
-
-					return -1;
-				}
-				else
-				{
-					if (GetLastError() == ERROR_ALREADY_EXISTS)
+					else
 					{
-						strMessage2 = L"in the same window station.";
-						bIsSingletonMutexCreationSuccessed = false;
+						if (GetLastError() == ERROR_ALREADY_EXISTS)
+						{
+							switch (4 - i)
+							{
+							case 0:
+								{
+									strMessage2 = L"on the same machine.";
+								}
+								break;
+							case 1:
+								{
+									strMessage2 = L"by the same user.";
+								}
+								break;
+							case 2:
+								{
+									strMessage2 = L"in the same session.";
+								}
+								break;
+							case 3:
+								{
+									strMessage2 = L"in the same window station.";
+								}
+								break;
+							case 4:
+								{
+									strMessage2 = L"on the same desktop.";
+								}
+								break;
+							default:
+								break;
+							}
 
-						break;
-					}
-				}
-
-				hMutexSingleton[2] = CreateMutex(&saMutex, FALSE, strMutexName[2].c_str());
-				if (!hMutexSingleton[2])
-				{
-					MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
-
-					CloseHandle(hMutexSingleton[4]);
-					CloseHandle(hMutexSingleton[3]);
-					ReleaseMutex(hMutex);
-					CloseHandle(hMutex);
-
-					return -1;
-				}
-				else
-				{
-					if (GetLastError() == ERROR_ALREADY_EXISTS)
-					{
-						strMessage2 = L"in the same session.";
-						bIsSingletonMutexCreationSuccessed = false;
-
-						break;
-					}
-				}
-
-				hMutexSingleton[1] = CreateMutex(&saMutex, FALSE, strMutexName[1].c_str());
-				if (!hMutexSingleton[1])
-				{
-					MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
-
-					CloseHandle(hMutexSingleton[4]);
-					CloseHandle(hMutexSingleton[3]);
-					CloseHandle(hMutexSingleton[2]);
-					ReleaseMutex(hMutex);
-					CloseHandle(hMutex);
-
-					return -1;
-				}
-				else
-				{
-					if (GetLastError() == ERROR_ALREADY_EXISTS)
-					{
-						strMessage2 = L"by the same user.";
-						bIsSingletonMutexCreationSuccessed = false;
-
-						break;
-					}
-				}
-
-				hMutexSingleton[0] = CreateMutex(&saMutex, FALSE, strMutexName[0].c_str());
-				if (!hMutexSingleton[0])
-				{
-					MessageBox(NULL, L"Failed to create the singleton mutex.", szCurrentProcessName, MB_ICONERROR);
-
-					CloseHandle(hMutexSingleton[4]);
-					CloseHandle(hMutexSingleton[3]);
-					CloseHandle(hMutexSingleton[2]);
-					CloseHandle(hMutexSingleton[1]);
-					ReleaseMutex(hMutex);
-					CloseHandle(hMutex);
-
-					return -1;
-				}
-				else
-				{
-					if (GetLastError() == ERROR_ALREADY_EXISTS)
-					{
-						strMessage2 = L"on the same machine.";
-						bIsSingletonMutexCreationSuccessed = false;
-
-						break;
+							break;
+						}
 					}
 				}
 			} while (false);
 
-			if (!bIsSingletonMutexCreationSuccessed)
+			// If another instance is running, warn user and bring the window of that instance to the foreground.
+			if (!strMessage2.empty())
 			{
-				// If another instance is running, warn user and bring the window of that instance to the foreground.
 				std::wstringstream ssMessage{};
 				std::wstring strMessage{};
 				ssMessage << L"An instance of " << szCurrentProcessName << L" is already running " << strMessage2;
@@ -329,6 +278,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 				return 0;
 			}
 
+			// Close unused singleton mutexes
 			switch (uiScope)
 			{
 			case 0:
