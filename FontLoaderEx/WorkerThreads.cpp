@@ -34,7 +34,7 @@ unsigned int __stdcall BringWindowToForegroundThreadProc(void* lpParameter)
 			break;
 		default:
 			{
-				assert(0 && "WaitForMultipleObjects failed");
+				assert(0 && "WaitForMultipleObjects() failed");
 			}
 			break;
 		}
@@ -46,7 +46,7 @@ unsigned int __stdcall BringWindowToForegroundThreadProc(void* lpParameter)
 // Process drag-drop font files onto the application icon stage II worker thread
 void DragDropWorkerThreadProc(void* lpParameter)
 {
-	std::list<FontResource>::iterator iter{ FontList.begin() };
+	auto iter{ FontList.begin() };
 	FONTLISTCHANGEDSTRUCT flcs{};
 	for (flcs.iItem = 0; flcs.iItem < static_cast<int>(FontList.size()); flcs.iItem++)
 	{
@@ -74,7 +74,7 @@ unsigned int __stdcall CloseWorkerThreadProc(void* lpParameter)
 	bool bIsFontListChanged{ false };
 
 	FontList.reverse();
-	std::list<FontResource>::iterator iter{ FontList.begin() };
+	auto iter{ FontList.begin() };
 	FONTLISTCHANGEDSTRUCT flcs{};
 	for (flcs.iItem = static_cast<int>(FontList.size()) - 1; flcs.iItem >= 0; flcs.iItem--)
 	{
@@ -137,7 +137,7 @@ unsigned int __stdcall ButtonCloseWorkerThreadProc(void* lpParameter)
 	bool bIsFontListChanged{ false };
 
 	FontList.reverse();
-	std::list<FontResource>::iterator iter{ FontList.begin() };
+	auto iter{ FontList.begin() };
 	FONTLISTCHANGEDSTRUCT flcs{};
 	for (flcs.iItem = static_cast<int>(FontList.size()) - 1; flcs.iItem >= 0; flcs.iItem--)
 	{
@@ -204,7 +204,7 @@ unsigned int __stdcall ButtonLoadWorkerThreadProc(void* lpParameter)
 	bool bIsInterrupted{ false };
 	bool bIsFontListChanged{ false };
 
-	std::list<FontResource>::iterator iter{ FontList.begin() };
+	auto iter{ FontList.begin() };
 	FONTLISTCHANGEDSTRUCT flcs{};
 	for (flcs.iItem = 0; flcs.iItem < static_cast<int>(FontList.size()); flcs.iItem++)
 	{
@@ -261,7 +261,7 @@ unsigned int __stdcall ButtonUnloadWorkerThreadProc(void* lpParameter)
 	bool bIsInterrupted{ false };
 	bool bIsFontListChanged{ false };
 
-	std::list<FontResource>::iterator iter{ FontList.begin() };
+	auto iter{ FontList.begin() };
 	FONTLISTCHANGEDSTRUCT flcs{};
 	for (flcs.iItem = 0; flcs.iItem < static_cast<int>(FontList.size()); flcs.iItem++)
 	{
@@ -393,7 +393,7 @@ unsigned int __stdcall SurrogateAndTargetProcessWatchThreadProc(void* lpParamete
 		break;
 	default:
 		{
-			assert(0 && "WaitForMultipleObjects failed");
+			assert(0 && "WaitForMultipleObjects() failed");
 		}
 		break;
 	}

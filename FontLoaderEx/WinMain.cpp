@@ -324,11 +324,13 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 					{
 						if (PathMatchSpec(w32fd.cFileName, L"*.ttf") || PathMatchSpec(w32fd.cFileName, L"*.ttc") || PathMatchSpec(w32fd.cFileName, L"*.otf"))
 						{
-							PathCombine(szFontFileName, argv[i], w32fd.cFileName);
-							auto iter{ std::find_if(FontList.begin(), FontList.end(), [szFontFileName](FontResource v) { return v.GetFontName() == szFontFileName; }) };
-							if (iter == FontList.end())
+							if (PathCombine(szFontFileName, argv[i], w32fd.cFileName))
 							{
-								FontList.push_back(szFontFileName);
+								auto iter{ std::find_if(FontList.begin(), FontList.end(), [szFontFileName](FontResource j) { return j.GetFontName() == szFontFileName; }) };
+								if (iter == FontList.end())
+								{
+									FontList.push_back(szFontFileName);
+								}
 							}
 						}
 					} while (FindNextFile(hFindFile, &w32fd));
@@ -1568,25 +1570,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									do
 									{
 										WCHAR lpszPath[MAX_PATH]{};
-										PathCombine(lpszPath, ofn.lpstrFile, lpszFileName);
-										lpszFileName += std::wcslen(lpszFileName) + 1;
-										bool bIsFontDuplicate{ false };
-										for (const auto& i : FontList)
+										if (PathCombine(lpszPath, ofn.lpstrFile, lpszFileName))
 										{
-											if (i.GetFontName() == lpszPath)
+											lpszFileName += std::wcslen(lpszFileName) + 1;
+											bool bIsFontDuplicate{ false };
+											for (const auto& i : FontList)
 											{
-												bIsFontDuplicate = true;
+												if (i.GetFontName() == lpszPath)
+												{
+													bIsFontDuplicate = true;
 
-												break;
+													break;
+												}
 											}
-										}
-										if (!bIsFontDuplicate)
-										{
-											FontList.push_back(lpszPath);
-											flcs.lpszFontName = lpszPath;
-											SendMessage(hWnd, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED), reinterpret_cast<LPARAM>(&flcs));
+											if (!bIsFontDuplicate)
+											{
+												FontList.push_back(lpszPath);
+												flcs.lpszFontName = lpszPath;
+												SendMessage(hWnd, static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED), reinterpret_cast<LPARAM>(&flcs));
 
-											flcs.iItem++;
+												flcs.iItem++;
+											}
 										}
 									} while (*lpszFileName);
 								}
@@ -2059,7 +2063,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 								// Get the function pointer to IsWow64Process2() for compatibility
 								typedef BOOL(__stdcall* pfnIsWow64Process2)(HANDLE hProcess, USHORT* pProcessMachine, USHORT* pNativeMachine);
 								pfnIsWow64Process2 IsWow64Process2_{ reinterpret_cast<pfnIsWow64Process2>(GetProcAddress(GetModuleHandle(L"Kernel32.dll"), "IsWow64Process2")) };
-								// For Win10 1709+, IsWow64Process2 exists
+								// For Win10 1709+, IsWow64Process2() exists
 								if (IsWow64Process2_)
 								{
 									BOOL bRetIsWow64Process21{ IsWow64Process2_(GetCurrentProcess(), &usCurrentProcessMachineArchitecture, &usNativeMachineArchitecture) };
@@ -2315,7 +2319,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 									CloseHandle(hEventMessageThreadReady);
 									CloseHandle(hEventParentProcessRunning);
 
-									ssMessage << szCurrentProcessName << L"(" << piSurrogateProcess.dwProcessId << L") successfully launched\r\n\r\n";
+									ssMessage << szSurrogateProcessName << L"(" << piSurrogateProcess.dwProcessId << L") successfully launched\r\n\r\n";
 									strMessage = ssMessage.str();
 									cchMessageLength = Edit_GetTextLength(hWndEditMessage);
 									Edit_SetSel(hWndEditMessage, cchMessageLength, cchMessageLength);
@@ -2382,7 +2386,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 										goto continue_DBEA36FE;
 									case SURROGATEDLLINJECTION::MODULENOTFOUND:
 										{
-											ssMessage << L"Failed to enumerate modules in target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")\r\n\r\n";
+											ssMessage << szInjectionDllNameBySurrogate << " not found in target process " << SelectedProcessInfo.strProcessName << L"(" << SelectedProcessInfo.dwProcessID << L")\r\n\r\n";
 										}
 										goto continue_DBEA36FE;
 									continue_DBEA36FE:
@@ -4370,7 +4374,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 			}
 			LONG cyListViewFontListMin{ (rcListViewFontListItem.bottom - rcListViewFontListItem.top) + (rcHeaderListViewFontList.bottom - rcHeaderListViewFontList.top) + ((rcListViewFontList.bottom - rcListViewFontList.top) - (rcListViewFontListClient.bottom - rcListViewFontListClient.top)) };
 
-			// Calculate the minimal height of Editmessage
+			// Calculate the minimal height of EditMessage
 			HWND hWndEditMessage{ GetDlgItem(hWnd, static_cast<int>(ID::EditMessage)) };
 			HDC hDCEditMessage{ GetDC(hWndEditMessage) };
 			SelectFont(hDCEditMessage, GetWindowFont(hWndEditMessage));
@@ -4708,16 +4712,18 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 							{
 								if (PathMatchSpec(w32fd.cFileName, L"*.ttf") || PathMatchSpec(w32fd.cFileName, L"*.ttc") || PathMatchSpec(w32fd.cFileName, L"*.otf"))
 								{
-									PathCombine(szFontFileName, szFileName, w32fd.cFileName);
-									auto iter{ std::find_if(FontList.begin(), FontList.end(), [szFontFileName](FontResource v) { return v.GetFontName() == szFontFileName; }) };
-									if (iter == FontList.end())
+									if (PathCombine(szFontFileName, szFileName, w32fd.cFileName))
 									{
-										FontList.push_back(szFontFileName);
+										auto iter{ std::find_if(FontList.begin(), FontList.end(), [szFontFileName](FontResource j) { return j.GetFontName() == szFontFileName; }) };
+										if (iter == FontList.end())
+										{
+											FontList.push_back(szFontFileName);
 
-										flcs.lpszFontName = szFontFileName;
-										SendMessage(GetAncestor(hWndListViewFontList, GA_PARENT), static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED), reinterpret_cast<LPARAM>(&flcs));
+											flcs.lpszFontName = szFontFileName;
+											SendMessage(GetAncestor(hWndListViewFontList, GA_PARENT), static_cast<UINT>(USERMESSAGE::FONTLISTCHANGED), static_cast<WPARAM>(FONTLISTCHANGED::OPENED), reinterpret_cast<LPARAM>(&flcs));
 
-										flcs.iItem++;
+											flcs.iItem++;
+										}
 									}
 								}
 							} while (FindNextFile(hFindFile, &w32fd));
