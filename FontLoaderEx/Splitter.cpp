@@ -1,8 +1,7 @@
 ﻿#include <windows.h>
 #include <windowsx.h>
-#include <vector>
+#include <set>
 #include <array>
-#include <algorithm>
 #include <cassert>
 #include "Splitter.h"
 
@@ -21,7 +20,15 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 	static POINT ptSplitterRange{};
 	static DWORD dwLineMargin{};
 	static POINT ptCursorOffset{};
-	static std::array<std::vector<HWND>, 2> LinkedControl;
+
+	struct HWNDCmp
+	{
+		bool operator()(HWND lhs, HWND rhs) const
+		{
+			return HandleToULong(lhs) < HandleToULong(rhs);
+		}
+	};
+	static std::array<std::set<HWND, HWNDCmp>, 2> LinkedControl;
 
 	switch (Message)
 	{
@@ -149,11 +156,9 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 							{
 								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
 								{
-									LinkedControl[0].push_back(reinterpret_cast<HWND*>(lParam)[i]);
+									LinkedControl[0].insert(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
-							std::sort(LinkedControl[0].begin(), LinkedControl[0].end());
-							LinkedControl[0].erase(std::unique(LinkedControl[0].begin(), LinkedControl[0].end()), LinkedControl[0].end());
 						}
 						catch (...)
 						{
@@ -182,11 +187,9 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 							{
 								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
 								{
-									LinkedControl[1].push_back(reinterpret_cast<HWND*>(lParam)[i]);
+									LinkedControl[1].insert(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
-							std::sort(LinkedControl[1].begin(), LinkedControl[1].end());
-							LinkedControl[1].erase(std::unique(LinkedControl[1].begin(), LinkedControl[1].end()), LinkedControl[1].end());
 						}
 						catch (...)
 						{
@@ -215,11 +218,9 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 							{
 								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
 								{
-									LinkedControl[0].push_back(reinterpret_cast<HWND*>(lParam)[i]);
+									LinkedControl[0].insert(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
-							std::sort(LinkedControl[0].begin(), LinkedControl[0].end());
-							LinkedControl[0].erase(std::unique(LinkedControl[0].begin(), LinkedControl[0].end()), LinkedControl[0].end());
 						}
 						catch (...)
 						{
@@ -248,11 +249,9 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 							{
 								if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
 								{
-									LinkedControl[1].push_back(reinterpret_cast<HWND*>(lParam)[i]);
+									LinkedControl[1].insert(reinterpret_cast<HWND*>(lParam)[i]);
 								}
 							}
-							std::sort(LinkedControl[1].begin(), LinkedControl[1].end());
-							LinkedControl[1].erase(std::unique(LinkedControl[1].begin(), LinkedControl[1].end()), LinkedControl[1].end());
 						}
 						catch (...)
 						{
@@ -290,7 +289,9 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 						{
 							for (WORD i = 0; i < static_cast<WORD>(LinkedControl[0].size()); i++)
 							{
-								reinterpret_cast<HWND*>(lParam)[i] = LinkedControl[0][i];
+								auto iter{ LinkedControl[0].begin() };
+								reinterpret_cast<HWND*>(lParam)[i] = *iter;
+								iter++;
 							}
 						}
 
@@ -310,7 +311,9 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 						{
 							for (WORD i = 0; i < static_cast<WORD>(LinkedControl[1].size()); i++)
 							{
-								reinterpret_cast<HWND*>(lParam)[i] = LinkedControl[1][i];
+								auto iter{ LinkedControl[1].begin() };
+								reinterpret_cast<HWND*>(lParam)[i] = *iter;
+								iter++;
 							}
 						}
 
@@ -330,7 +333,9 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 						{
 							for (WORD i = 0; i < static_cast<WORD>(LinkedControl[0].size()); i++)
 							{
-								reinterpret_cast<HWND*>(lParam)[i] = LinkedControl[0][i];
+								auto iter{ LinkedControl[0].begin() };
+								reinterpret_cast<HWND*>(lParam)[i] = *iter;
+								iter++;
 							}
 						}
 
@@ -350,7 +355,9 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 						{
 							for (WORD i = 0; i < static_cast<WORD>(LinkedControl[1].size()); i++)
 							{
-								reinterpret_cast<HWND*>(lParam)[i] = LinkedControl[1][i];
+								auto iter{ LinkedControl[1].begin() };
+								reinterpret_cast<HWND*>(lParam)[i] = *iter;
+								iter++;
 							}
 						}
 
@@ -374,7 +381,8 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 		{
 			try
 			{
-				std::vector<HWND> LinkedControlTemp{};
+				std::set<HWND> LinkedControlTemp{};
+				std::size_t LinkedControlOriginalSize{};
 
 				switch (HIWORD(wParam))
 				{
@@ -388,21 +396,19 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 								{
 									if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
 									{
-										LinkedControlTemp.push_back(reinterpret_cast<HWND*>(lParam)[i]);
+										LinkedControlTemp.insert(reinterpret_cast<HWND*>(lParam)[i]);
 									}
 								}
-								std::sort(LinkedControlTemp.begin(), LinkedControlTemp.end());
-								LinkedControlTemp.erase(std::unique(LinkedControlTemp.begin(), LinkedControlTemp.end()), LinkedControlTemp.end());
-								LinkedControl[0].reserve(LinkedControl[0].size() + LinkedControlTemp.size());
 							}
 							catch (...)
 							{
 								ret = 0;
 								break;
 							}
-							LinkedControl[0].insert(LinkedControl[0].end(), LinkedControlTemp.begin(), LinkedControlTemp.end());
+							LinkedControlOriginalSize = LinkedControl[0].size();
+							LinkedControl[0].merge(LinkedControlTemp);
 
-							ret = static_cast<LRESULT>(LinkedControlTemp.size());
+							ret = static_cast<LRESULT>(LinkedControl[0].size() - LinkedControlOriginalSize);
 						}
 						else
 						{
@@ -420,21 +426,19 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 								{
 									if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
 									{
-										LinkedControlTemp.push_back(reinterpret_cast<HWND*>(lParam)[i]);
+										LinkedControlTemp.insert(reinterpret_cast<HWND*>(lParam)[i]);
 									}
 								}
-								std::sort(LinkedControlTemp.begin(), LinkedControlTemp.end());
-								LinkedControlTemp.erase(std::unique(LinkedControlTemp.begin(), LinkedControlTemp.end()), LinkedControlTemp.end());
-								LinkedControl[1].reserve(LinkedControl[1].size() + LinkedControlTemp.size());
 							}
 							catch (...)
 							{
 								ret = 0;
 								break;
 							}
-							LinkedControl[1].insert(LinkedControl[1].end(), LinkedControlTemp.begin(), LinkedControlTemp.end());
+							LinkedControlOriginalSize = LinkedControl[1].size();
+							LinkedControl[1].merge(LinkedControlTemp);
 
-							ret = static_cast<LRESULT>(LinkedControlTemp.size());
+							ret = static_cast<LRESULT>(LinkedControl[1].size() - LinkedControlOriginalSize);
 						}
 						else
 						{
@@ -452,21 +456,19 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 								{
 									if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
 									{
-										LinkedControlTemp.push_back(reinterpret_cast<HWND*>(lParam)[i]);
+										LinkedControlTemp.insert(reinterpret_cast<HWND*>(lParam)[i]);
 									}
 								}
-								std::sort(LinkedControlTemp.begin(), LinkedControlTemp.end());
-								LinkedControlTemp.erase(std::unique(LinkedControlTemp.begin(), LinkedControlTemp.end()), LinkedControlTemp.end());
-								LinkedControl[0].reserve(LinkedControl[0].size() + LinkedControlTemp.size());
 							}
 							catch (...)
 							{
 								ret = 0;
 								break;
 							}
-							LinkedControl[0].insert(LinkedControl[0].end(), LinkedControlTemp.begin(), LinkedControlTemp.end());
+							LinkedControlOriginalSize = LinkedControl[0].size();
+							LinkedControl[0].merge(LinkedControlTemp);
 
-							ret = static_cast<LRESULT>(LinkedControlTemp.size());
+							ret = static_cast<LRESULT>(LinkedControl[0].size() - LinkedControlOriginalSize);
 						}
 						else
 						{
@@ -484,21 +486,19 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 								{
 									if (IsWindow(reinterpret_cast<HWND*>(lParam)[i]) && (GetAncestor(reinterpret_cast<HWND*>(lParam)[i], GA_PARENT) == GetAncestor(hWndSplitter, GA_PARENT)))
 									{
-										LinkedControlTemp.push_back(reinterpret_cast<HWND*>(lParam)[i]);
+										LinkedControlTemp.insert(reinterpret_cast<HWND*>(lParam)[i]);
 									}
 								}
-								std::sort(LinkedControlTemp.begin(), LinkedControlTemp.end());
-								LinkedControlTemp.erase(std::unique(LinkedControlTemp.begin(), LinkedControlTemp.end()), LinkedControlTemp.end());
-								LinkedControl[1].reserve(LinkedControl[1].size() + LinkedControlTemp.size());
 							}
 							catch (...)
 							{
 								ret = 0;
 								break;
 							}
-							LinkedControl[1].insert(LinkedControl[1].end(), LinkedControlTemp.begin(), LinkedControlTemp.end());
+							LinkedControlOriginalSize = LinkedControl[1].size();
+							LinkedControl[1].merge(LinkedControlTemp);
 
-							ret = static_cast<LRESULT>(LinkedControlTemp.size());
+							ret = static_cast<LRESULT>(LinkedControl[1].size() - LinkedControlOriginalSize);
 						}
 					}
 					break;
@@ -517,16 +517,18 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 		break;
 	case SPM_REMOVELINKEDCTL:
 		{
+			std::size_t LinkedControlOriginalSize{};
+
 			switch (HIWORD(wParam))
 			{
 			case SLC_TOP:
 				{
 					if (GetWindowStyle(hWndSplitter) & SPS_HORZ)
 					{
-						std::size_t LinkedControlOriginalSize{ LinkedControl[0].size() };
+						LinkedControlOriginalSize = LinkedControl[0].size();
 						for (WORD i = 0; i < LOWORD(wParam); i++)
 						{
-							LinkedControl[0].erase(std::find(LinkedControl[0].begin(), LinkedControl[0].end(), reinterpret_cast<HWND*>(lParam)[i]));
+							LinkedControl[0].erase(reinterpret_cast<HWND*>(lParam)[i]);
 						}
 
 						ret = static_cast<LRESULT>(LinkedControlOriginalSize - LinkedControl[0].size());
@@ -541,10 +543,10 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 				{
 					if (GetWindowStyle(hWndSplitter) & SPS_HORZ)
 					{
-						std::size_t LinkedControlOriginalSize{ LinkedControl[1].size() };
+						LinkedControlOriginalSize = LinkedControl[1].size();
 						for (WORD i = 0; i < LOWORD(wParam); i++)
 						{
-							LinkedControl[1].erase(std::find(LinkedControl[1].begin(), LinkedControl[1].end(), reinterpret_cast<HWND*>(lParam)[i]));
+							LinkedControl[1].erase(reinterpret_cast<HWND*>(lParam)[i]);
 						}
 
 						ret = static_cast<LRESULT>(LinkedControlOriginalSize - LinkedControl[1].size());
@@ -559,10 +561,10 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 				{
 					if (GetWindowStyle(hWndSplitter) & SPS_VERT)
 					{
-						std::size_t LinkedControlOriginalSize{ LinkedControl[0].size() };
+						LinkedControlOriginalSize = LinkedControl[0].size();
 						for (WORD i = 0; i < LOWORD(wParam); i++)
 						{
-							LinkedControl[0].erase(std::find(LinkedControl[0].begin(), LinkedControl[0].end(), reinterpret_cast<HWND*>(lParam)[i]));
+							LinkedControl[0].erase(reinterpret_cast<HWND*>(lParam)[i]);
 						}
 
 						ret = static_cast<LRESULT>(LinkedControlOriginalSize - LinkedControl[0].size());
@@ -577,10 +579,10 @@ LRESULT CALLBACK SplitterProc(HWND hWndSplitter, UINT Message, WPARAM wParam, LP
 				{
 					if (GetWindowStyle(hWndSplitter) & SPS_VERT)
 					{
-						std::size_t LinkedControlOriginalSize{ LinkedControl[1].size() };
+						LinkedControlOriginalSize = LinkedControl[1].size();
 						for (WORD i = 0; i < LOWORD(wParam); i++)
 						{
-							LinkedControl[1].erase(std::find(LinkedControl[1].begin(), LinkedControl[1].end(), reinterpret_cast<HWND*>(lParam)[i]));
+							LinkedControl[1].erase(reinterpret_cast<HWND*>(lParam)[i]);
 						}
 
 						ret = static_cast<LRESULT>(LinkedControlOriginalSize - LinkedControl[1].size());

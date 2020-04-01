@@ -46,9 +46,6 @@ HICON hIconApplication{};
 
 bool bDragDropHasFonts{ false };
 
-// Create an unique string by scope
-enum class Scope { Machine, User, Session, WindowStation, Desktop };
-
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nShowCmd)
 {
 	// Check Windows version
@@ -326,7 +323,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 						{
 							if (PathCombine(szFontFileName, argv[i], w32fd.cFileName))
 							{
-								auto iter{ std::find_if(FontList.begin(), FontList.end(), [szFontFileName](FontResource j) { return j.GetFontName() == szFontFileName; }) };
+								auto iter{ std::find_if(FontList.begin(), FontList.end(), [&szFontFileName](FontResource j) { return j.GetFontName() == szFontFileName; }) };
 								if (iter == FontList.end())
 								{
 									FontList.push_back(szFontFileName);
@@ -502,6 +499,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 	case USERMESSAGE::CLOSEWORKERTHREADTERMINATED:
 		{
 			// Wait for close worker thread to terminate
+			WaitForSingleObject(hThreadCloseWorker, INFINITE);
 			CloseHandle(hThreadCloseWorker);
 			hThreadCloseWorker = NULL;
 
@@ -661,7 +659,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 		{
 			// Wait for worker thread to terminate
 			// Because only one worker thread runs at a time, so use bitwise-or to get the handle to running worker thread
-			HANDLE hThreadWorker{ reinterpret_cast<HANDLE>(reinterpret_cast<UINT_PTR>(hThreadButtonCloseWorker) | reinterpret_cast<UINT_PTR>(hThreadButtonLoadWorker) | reinterpret_cast<UINT_PTR>(hThreadButtonUnloadWorker)) };
+			HANDLE hThreadWorker{ ULongToHandle(HandleToULong(hThreadButtonCloseWorker) | HandleToULong(hThreadButtonLoadWorker) | HandleToULong(hThreadButtonUnloadWorker)) };
 			WaitForSingleObject(hThreadWorker, INFINITE);
 			CloseHandle(hThreadWorker);
 			hThreadButtonCloseWorker = NULL;
@@ -803,7 +801,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
 				}
 				break;
-				// If surrogate process terminates, just print message
+				// If surrogate process terminates, just print message.
 			case TERMINATION::SURROGATE:
 				{
 					ssMessage << SurrogateProcessInfo.strProcessName << L"(" << SurrogateProcessInfo.dwProcessID << L") terminated\r\n\r\n";
@@ -813,7 +811,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 					Edit_ReplaceSel(hWndEditMessage, strMessage.c_str());
 				}
 				break;
-				// If target process terminates and surrogate process is launched, print messages and terminate surrogate process
+				// If target process terminates and surrogate process is launched, print messages and terminate surrogate process.
 			case TERMINATION::TARGET:
 				{
 					ssMessage << L"Target process " << TargetProcessInfo.strProcessName << L"(" << TargetProcessInfo.dwProcessID << L") terminated\r\n\r\n";
@@ -1087,7 +1085,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 							int iItemCount{ ListView_GetItemCount(reinterpret_cast<HWND>(wParam)) };
 							for (int i = iItemCount - 1; i >= 0; i--)
 							{
-								if (ListView_GetItemState(reinterpret_cast<HWND>(wParam), LVIS_SELECTED, LVIS_SELECTED)& LVIS_SELECTED)
+								if (ListView_GetItemState(reinterpret_cast<HWND>(wParam), LVIS_SELECTED, LVIS_SELECTED) & LVIS_SELECTED)
 								{
 									ListView_EnsureVisible(reinterpret_cast<HWND>(wParam), i, FALSE);
 
@@ -1416,7 +1414,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT Message, WPARAM wParam, LPARAM lParam)
 				R"("Font Name": Names of the fonts added to the list view.)""\r\n"
 				R"("State": State of the font. There are five states, "Not loaded", "Loaded", "Load failed", "Unloaded" and "Unload failed".)""\r\n"
 				"\r\n"
-			);
+				);
 
 			SetWindowSubclass(hWndEditMessage, EditMessageSubclassProc, 0, NULL);
 
@@ -4714,7 +4712,7 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 								{
 									if (PathCombine(szFontFileName, szFileName, w32fd.cFileName))
 									{
-										auto iter{ std::find_if(FontList.begin(), FontList.end(), [szFontFileName](FontResource j) { return j.GetFontName() == szFontFileName; }) };
+										auto iter{ std::find_if(FontList.begin(), FontList.end(), [&szFontFileName](FontResource j) { return j.GetFontName() == szFontFileName; }) };
 										if (iter == FontList.end())
 										{
 											FontList.push_back(szFontFileName);
@@ -4736,17 +4734,8 @@ LRESULT CALLBACK ListViewFontListSubclassProc(HWND hWndListViewFontList, UINT Me
 				{
 					if (PathMatchSpec(szFileName, L"*.ttf") || PathMatchSpec(szFileName, L"*.ttc") || PathMatchSpec(szFileName, L"*.otf"))
 					{
-						bool bIsFontDuplicate{ false };
-						for (const auto& j : FontList)
-						{
-							if (j.GetFontName() == szFileName)
-							{
-								bIsFontDuplicate = true;
-
-								break;
-							}
-						}
-						if (!bIsFontDuplicate)
+						auto iter{ std::find_if(FontList.begin(), FontList.end(), [&szFileName](FontResource j) { return j.GetFontName() == szFileName; }) };
+						if (iter == FontList.end())
 						{
 							FontList.push_back(szFileName);
 
@@ -5084,7 +5073,7 @@ LRESULT CALLBACK EditMessageSubclassProc(HWND hWndEditMessage, UINT Message, WPA
 				R"("Font Name": Names of the fonts added to the list view.)""\r\n"
 				R"("State": State of the font. There are five states, "Not loaded", "Loaded", "Load failed", "Unloaded" and "Unload failed".)""\r\n"
 				"\r\n"
-			);
+				);
 		}
 		break;
 	default:
